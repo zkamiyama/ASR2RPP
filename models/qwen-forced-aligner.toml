@@ -1,0 +1,10 @@
+runtime = "audio_cpp"
+task = "align"
+family = "qwen3_forced_aligner"
+name = "Qwen3 Forced Aligner · Q8"
+description = "認識テキストと対応音声を再整列します。初期版は55秒以下の対応区間ごとに実行します。"
+[source]
+repo = "https://huggingface.co/audio-cpp/audio.cpp-gguf"
+files = ["Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf"]
+[defaults]
+language = "Japanese"

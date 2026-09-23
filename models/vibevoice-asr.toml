@@ -1,0 +1,11 @@
+runtime = "audio_cpp"
+task = "asr"
+family = "vibevoice_asr"
+name = "VibeVoice ASR · Q8 / 大容量"
+sample_rate = 24000
+description = "オフライン統合モデル。メモリ使用量大。Diarizationオフ時は内蔵話者ラベルを出力トラックへ使用しません。"
+[source]
+repo = "https://huggingface.co/audio-cpp/audio.cpp-gguf"
+files = ["VibeVoice-ASR-GGUF/vibevoice-asr-q8_0.gguf"]
+[defaults]
+language = "ja"

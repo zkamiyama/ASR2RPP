@@ -1,0 +1,10 @@
+runtime = "audio_cpp"
+task = "asr"
+family = "nemotron_asr"
+name = "Nemotron 3.5 ASR · Q8"
+description = "トークン出力フレーム由来の時刻です。境界精度にはForced Alignmentの比較が必要です。"
+[source]
+repo = "https://huggingface.co/audio-cpp/audio.cpp-gguf"
+files = ["Nemotron-3.5-ASR-Streaming-0.6B-GGUF/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf"]
+[defaults]
+language = "ja-JP"
