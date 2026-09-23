@@ -28,10 +28,12 @@ printf '%s  %s\n' "$EXPECTED" "$WORK/$ASSET" | sha256sum --check > "$OUT/runtime
 tar -xzf "$WORK/$ASSET" -C "$WORK"
 BIN="$(find "$WORK" -type f -name nemo-speech -print -quit)"
 test -n "$BIN" && test -x "$BIN"
-export LD_LIBRARY_PATH="$(dirname "$BIN")/../lib:${LD_LIBRARY_PATH:-}"
-"$BIN" --help > "$OUT/cli-help.txt" 2>&1
-"$BIN" doctor > "$OUT/doctor.txt" 2>&1
-"$BIN" --json model list > "$OUT/model-index.json" 2> "$OUT/model-index.stderr.txt"
+# Do NOT export a bundled C++ runtime into ffmpeg/espeak/Python's environment.
+NATIVE_LIB="$(dirname "$BIN")/../lib"
+NATIVE=(env "LD_LIBRARY_PATH=$NATIVE_LIB" "$BIN")
+"${NATIVE[@]}" --help > "$OUT/cli-help.txt" 2>&1
+"${NATIVE[@]}" doctor > "$OUT/doctor.txt" 2>&1
+"${NATIVE[@]}" --json model list > "$OUT/model-index.json" 2> "$OUT/model-index.stderr.txt"
 # Original synthetic text. No Drive data, signed URLs, or private media.
 espeak-ng -v en-us -s 145 -w "$WORK/speech.wav" \
   'This is a local speech recognition test. The sample is shorter than one minute.'
@@ -51,10 +53,10 @@ PY
 # Separate download and inference. The pinned CLI verifies model size/hash.
 /usr/bin/time -v -o "$OUT/download-resources.txt" \
   timeout --signal=TERM --kill-after=30s 600 \
-  "$BIN" pull nemotron-3.5 > "$OUT/download.stdout.txt" 2> "$OUT/download.stderr.txt"
+  "${NATIVE[@]}" pull nemotron-3.5 > "$OUT/download.stdout.txt" 2> "$OUT/download.stderr.txt"
 /usr/bin/time -v -o "$OUT/inference-resources.txt" \
   timeout --signal=TERM --kill-after=30s 900 \
-  "$BIN" transcribe "$WORK/input.wav" --model nemotron-3.5 \
+  "${NATIVE[@]}" transcribe "$WORK/input.wav" --model nemotron-3.5 \
   --device cpu --language en-US --json --output "$OUT/transcript.json" \
   > "$OUT/inference.stdout.txt" 2> "$OUT/inference.stderr.txt"
 python3 - "$OUT/transcript.json" "$OUT/smoke-status.json" <<'PY'
