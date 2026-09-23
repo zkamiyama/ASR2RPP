@@ -1,0 +1,102 @@
+name: ASR2RPP application
+on:
+  push:
+    branches: [feat/queue-gui]
+    paths: ['asr2rpp/**', 'rpp_writer.py', 'models/**', 'tests/**', 'tools/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+      ASR2RPP_HOME: ${{ github.workspace }}/build/test-home
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 fonts-noto-cjk
+      - run: python -m pip install pytest PySide6==6.8.3
+      - run: python -m pytest tests/test_app.py -v --junitxml=reports/tests.xml
+      - if: always()
+        run: mkdir -p reports && git archive --format=zip --output=reports/source.zip HEAD
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-tests-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+  windows:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      ASR2RPP_HOME: ${{ github.workspace }}/build/runtime-home
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PySide6==6.8.3 pyinstaller==6.12.0 imageio-ffmpeg==0.6.0 pytest
+      - run: python -m pytest tests/test_app.py -v --junitxml=reports/windows-tests.xml
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - run: python tools/build_native.py whisper_cpp audio_cpp
+      - run: python tools/package_windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASR2RPP-Windows-x64-${{ github.run_id }}
+          path: dist/ASR2RPP-Windows-x64.zip
+          retention-days: 14
+          compression-level: 0
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+  linux-native:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ASR2RPP_HOME: ${{ github.workspace }}/build/runtime-home
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+      - run: python tools/build_native.py whisper_cpp
+      - run: python -m asr2rpp.cli models install whisper-base
+      - run: |
+          mkdir -p reports
+          espeak-ng -v en-us -w reports/synthetic.wav 'This is a short test of the audio conversion application.'
+          python -m asr2rpp.cli run reports/synthetic.wav --asr-language en --output-dir reports/output
+          python -c "import pathlib; assert list(pathlib.Path('reports/output').glob('*.rpp'))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-local-validation-kit-${{ github.run_id }}
+          path: |
+            engines/whisper_cpp-cpu/
+            build/runtime-home/weights/whisper-base/
+          retention-days: 3
+          compression-level: 1
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-native-reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
