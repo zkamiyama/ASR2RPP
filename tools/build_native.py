@@ -26,16 +26,21 @@ def build(name):
     source = WORK / name
     source.mkdir(parents=True, exist_ok=True)
     run('git', 'init', source)
-    run('git', 'remote', 'add', 'origin', 'https://github.com/' + repo, cwd=source)
+    if subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=source, capture_output=True).returncode:
+        run('git', 'remote', 'add', 'origin', 'https://github.com/' + repo, cwd=source)
     run('git', 'fetch', '--depth', '1', 'origin', revision, cwd=source)
     run('git', 'checkout', '--detach', 'FETCH_HEAD', cwd=source)
-    run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
+    # At the pinned audio.cpp revision, ggml is vendored. Its only submodule is
+    # the optional server frontend (SSH URL), which a standalone CLI does not use.
+    if name != 'audio_cpp':
+        run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
     output = source / 'build'
     flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF']
     if name == 'audio_cpp':
         flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON', '-DENGINE_ENABLE_NATIVE_CPU=OFF',
                   '-DENGINE_ENABLE_CUDA=OFF', '-DENGINE_ENABLE_VULKAN=OFF',
-                  '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF']
+                  '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
+                  '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
     else:
         flags += ['-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF', '-DWHISPER_CURL=OFF']
     if os.name == 'nt':
@@ -53,6 +58,14 @@ def build(name):
     for suffix in ('*.dll', '*.so', '*.so.*', '*.dylib'):
         for library in output.rglob(suffix):
             shutil.copy2(library, destination / library.name)
+    licenses = destination / 'licenses'
+    licenses.mkdir(exist_ok=True)
+    for file in source.rglob('*'):
+        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and 'build' not in file.relative_to(source).parts:
+            if file.suffix.lower() in {'', '.txt', '.md', '.rst'}:
+                target_license = licenses / file.relative_to(source)
+                target_license.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file, target_license)
     for filename in ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
         if (source / filename).is_file():
             shutil.copy2(source / filename, destination / filename)
