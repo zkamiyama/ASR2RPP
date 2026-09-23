@@ -1,0 +1,20 @@
+# Exact requested checkpoint: pcunwa/Mel-Band-Roformer-big / big_beta7.ckpt.
+# audio.cpp does not use this .ckpt directly through this adapter.
+# Point path at a converted, verified package for THIS checkpoint.
+# Do not replace it with the generic Mel-Band-RoFormer GGUF: those weights differ.
+runtime = "audio_cpp"
+task = "sep"
+family = "mel_band_roformer"
+name = "Mel-Band RoFormer big beta7（変換済みモデルが必要）"
+sample_rate = 44100
+description = "指定のbig_beta7.ckpt用。変換・一致検証は未完了。対応するGGUF/SafeTensorsをpathで指定してください。"
+
+[source]
+path = "../converted/mel-big-beta7"
+checkpoint_repo = "https://huggingface.co/pcunwa/Mel-Band-Roformer-big"
+checkpoint_file = "big_beta7.ckpt"
+checkpoint_config = "big_beta7.yaml"
+checkpoint_sha256 = "9d68b9a8689a3500c45d3418a7811934e557760db07285f483088a0965b0eb88"
+
+[defaults.session]
+num_overlap = 2

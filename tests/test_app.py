@@ -40,7 +40,7 @@ def test_all_templates():
     models, errors = load_catalog(Path('models'))
     assert not errors
     assert len(models) >= 6
-    assert {m.task for m in models.values()} == {'asr', 'diar', 'align'}
+    assert {m.task for m in models.values()} == {'asr', 'diar', 'align', 'sep'}
 
 
 def test_output_collision_and_same_directory(tmp_path):

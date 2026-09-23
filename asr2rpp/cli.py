@@ -5,10 +5,14 @@ from pathlib import Path
 import sys
 import threading
 from .catalog import load_catalog, resolve_model
-from .pipeline import Stage, Settings, run_job
+from .pipeline import Stage
+from .preprocessing import Settings, run_job
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser(prog='asr2rpp')
     sub = parser.add_subparsers(dest='command', required=True)
     models = sub.add_parser('models', help='list/install TOML model definitions')
@@ -19,13 +23,16 @@ def main(argv=None):
     run.add_argument('--asr', default='whisper-base')
     run.add_argument('--diar', help='omit to disable diarization')
     run.add_argument('--align', help='omit to disable forced alignment')
+    run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')
+    run.add_argument('--rpp-audio', choices=['original', 'processed'], default='original',
+                     help='processed keeps a persistent WAV next to the RPP; requires --preprocess')
     run.add_argument('--output-dir', default='')
     run.add_argument('--same-directory', action='store_true')
     run.add_argument('--ffmpeg', default='')
     run.add_argument('--start', type=float, default=0)
     run.add_argument('--duration', type=float, default=0)
     run.add_argument('--threads', type=int, default=4)
-    for stage in ['asr', 'diar', 'align']:
+    for stage in ['asr', 'diar', 'align', 'preprocess']:
         run.add_argument('--' + stage + '-device', default='cpu', choices=['cpu', 'vulkan', 'metal', 'cuda', 'auto'])
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
@@ -33,7 +40,7 @@ def main(argv=None):
     sub.add_parser('gui')
     args = parser.parse_args(argv)
     if args.command == 'gui':
-        from .gui import main as gui_main
+        from .gui_preprocessing import main as gui_main
         return gui_main()
     catalog, errors = load_catalog()
     for error in errors:
@@ -66,7 +73,7 @@ def main(argv=None):
         if args.same_directory and args.output_dir:
             raise ValueError('Choose --same-directory OR --output-dir, not both')
         settings = Settings(stage('asr'), stage('diar'), stage('align'), not bool(args.output_dir), args.output_dir,
-                            args.ffmpeg, args.start, args.duration)
+                            args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio)
         settings.validate(catalog)
         failed = 0
         for source in args.files:

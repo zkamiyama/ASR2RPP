@@ -67,13 +67,13 @@ class Model:
     def validate(self):
         if self.runtime not in {'whisper_cpp', 'audio_cpp'}:
             raise ValueError('runtime must be whisper_cpp or audio_cpp')
-        if self.task not in {'asr', 'diar', 'align'}:
-            raise ValueError('task must be asr, diar or align')
+        if self.task not in {'asr', 'diar', 'align', 'sep'}:
+            raise ValueError('task must be asr, diar, align or sep')
         if self.runtime == 'whisper_cpp' and self.task != 'asr':
             raise ValueError('whisper_cpp only supports ASR in this adapter')
         if self.runtime == 'audio_cpp' and not self.family:
             raise ValueError('audio_cpp requires family for output interpretation')
-        if self.sample_rate not in {16000, 24000, 48000}:
+        if self.sample_rate not in {16000, 24000, 44100, 48000}:
             raise ValueError('unsupported sample_rate')
         if 'path' not in self.source:
             repo_id(self.source.get('repo', ''))
