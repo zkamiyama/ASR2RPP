@@ -26,13 +26,13 @@ def test_processed_reference_requires_preprocessing():
 
 
 def test_distinct_file_and_timeline_origins(tmp_path):
-    reference = tmp_path / 'project.media' / 'vocals.wav'
+    reference = tmp_path / 'project_vocals.wav'
     make_wave(reference)
     output = tmp_path / 'project.rpp'
     prep.write_reference(output, reference, [Unit(.25, 1.5, '発話')], 10, 10, False, 44100)
     text = output.read_text(encoding='utf-8')
     assert 'POSITION 10.25' in text and 'SOFFS 0.25' in text
-    assert 'FILE "project.media/vocals.wav"' in text
+    assert 'FILE "project_vocals.wav"' in text
     assert 'LENGTH 1.25' in text and 'SAMPLERATE 44100' in text
 
 
@@ -86,13 +86,38 @@ def test_pipeline_reference_and_cleanup(tmp_path, monkeypatch, mode, same):
     assert metadata['source_unchanged'] is True
     assert metadata['temporary_preprocessed_audio_removed'] is True
     if mode == 'processed':
-        saved = out.with_suffix('.media') / 'vocals.wav'
+        saved = out.with_name(out.stem + '_vocals.wav')
         assert saved.exists() and prep.wave_info(saved).frames == 88200
-        assert 'SOFFS 0.25' in text and '.media/vocals.wav' in text
+        assert 'SOFFS 0.25' in text and f'{out.stem}_vocals.wav' in text
     else:
-        assert 'SOFFS 10.25' in text and not out.with_suffix('.media').exists()
+        assert 'SOFFS 10.25' in text and not out.with_name(out.stem + '_vocals.wav').exists()
     assert out.parent == (source.parent if same else tmp_path / 'output')
 
+
+
+def test_processed_audio_collision_advances_project_suffix(tmp_path):
+    source = tmp_path / 'meeting.wav'
+    make_wave(source, 2)
+    (tmp_path / 'meeting_vocals.wav').write_bytes(b'existing')
+    settings = prep.Settings(Stage('asr'), preprocess=Stage('sep'), reference_audio='processed')
+    output, report = prep.core.reserve_output(source, settings, sibling_suffixes=('_vocals.wav',))
+    assert output.name == 'meeting_2.rpp'
+    assert output.with_name('meeting_2_vocals.wav').name.endswith('_vocals.wav')
+    report.rmdir()
+
+
+def test_long_output_names_are_compacted_and_keep_vocals_suffix(tmp_path):
+    long_stem = 'a' * 180
+    source = tmp_path / (long_stem + '.wav')
+    source.write_bytes(b'x')
+    settings = prep.Settings(Stage('asr'))
+    output, report = prep.core.reserve_output(source, settings, sibling_suffixes=('_vocals.wav',))
+    vocals = output.with_name(output.stem + '_vocals.wav')
+    assert len(output.stem) <= prep.core.MAX_OUTPUT_STEM_CHARS
+    assert vocals.name.endswith('_vocals.wav')
+    assert '~' in output.stem
+    assert len(vocals.name) < 255
+    report.rmdir()
 
 def test_off_does_not_call_separator(tmp_path, monkeypatch):
     source = tmp_path / 'input.wav'
