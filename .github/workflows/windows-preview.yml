@@ -1,0 +1,95 @@
+name: Windows CLI and GUI preview
+on:
+  push:
+    branches: [feature/cli-registry-windows-preview]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests without Qt or PyTorch
+        run: python -m unittest -v
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: 927cfce34f31707e17f2bff35c349632fb9e2c3a
+          path: vendor/whisper
+          persist-credentials: false
+      - name: Build pinned whisper.cpp CPU runtime
+        shell: pwsh
+        run: |
+          cmake -S vendor/whisper -B build-native -A x64 -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DGGML_AVX512=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-native --config Release --target whisper-cli --parallel 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows launchers
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pyinstaller==6.22.0 PySide6-Essentials==6.8.3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m PyInstaller --noconfirm app.spec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force dist/ASR2RPP/runtime/whisper, dist/ASR2RPP/licenses, validation | Out-Null
+          Copy-Item models.json, models.user.example.json, README.md, LICENSE dist/ASR2RPP/
+          $exe = Get-ChildItem build-native -Filter whisper-cli.exe -Recurse | Select-Object -First 1
+          if (!$exe) { throw 'whisper-cli.exe not built' }
+          Copy-Item $exe.FullName dist/ASR2RPP/runtime/whisper/
+          Get-ChildItem build-native -Filter *.dll -Recurse | ForEach-Object { Copy-Item $_.FullName dist/ASR2RPP/runtime/whisper/ -Force }
+          Copy-Item vendor/whisper/LICENSE dist/ASR2RPP/licenses/whisper.cpp-LICENSE
+          if (Test-Path vendor/whisper/ggml/LICENSE) { Copy-Item vendor/whisper/ggml/LICENSE dist/ASR2RPP/licenses/ggml-LICENSE }
+          python -c "import importlib.metadata,pathlib,shutil; root=pathlib.Path('dist/ASR2RPP/licenses'); [(shutil.copy2(d.locate_file(f),root/(d.metadata['Name']+'-'+pathlib.Path(str(f)).name))) for d in [importlib.metadata.distribution(n) for n in ['PySide6-Essentials','shiboken6','pyinstaller']] for f in d.files if 'license' in str(f).lower() and d.locate_file(f).is_file()]"
+          'PySide6/Qt remain dynamically linked. See their bundled license files and https://doc.qt.io/qtforpython-6/licenses.html . Build scripts and editable application sources are in the repository/source package. Third-party model weights are not included.' | Set-Content dist/ASR2RPP/licenses/NOTICE.txt
+          Get-ChildItem dist/ASR2RPP -Recurse -File | Where-Object { $_.Extension -in '.ttf','.otf','.woff','.woff2' } | Remove-Item
+          python -m pip freeze | Out-File validation/build-packages.txt
+      - name: Real CPU ASR using packaged CLI, then RPP export
+        shell: pwsh
+        run: |
+          $env:PYTHONUTF8='1'
+          & ./dist/ASR2RPP/asr2rpp.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./dist/ASR2RPP/asr2rpp.exe install whisper-tiny
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item vendor/whisper/samples/jfk.wav validation/input.wav
+          & ./dist/ASR2RPP/asr2rpp.exe run validation/input.wav --out validation/real-smoke --asr whisper-tiny --duration 12 --asr-params '{"language":"en","threads":4}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import json,pathlib; d=json.loads(pathlib.Path('validation/real-smoke/transcript.json').read_text(encoding='utf-8')); assert d['segments'], 'Empty ASR'; assert pathlib.Path('validation/real-smoke/project.rpp').is_file(); print('REAL_CPU_ASR_AND_RPP_PASS',len(d['segments']))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./dist/ASR2RPP/asr2rpp.exe export validation/real-smoke/transcript.json --out validation/reexport.rpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item dist/ASR2RPP/models/*.provenance.json validation/
+      - name: GUI startup and screenshot
+        shell: pwsh
+        run: |
+          & ./dist/ASR2RPP/asr2rpp.exe gui --screenshot validation/gui-windows.png
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package without weights or private media
+        shell: pwsh
+        run: |
+          Remove-Item dist/ASR2RPP/models -Recurse -Force
+          New-Item -ItemType Directory -Force dist/ASR2RPP/models | Out-Null
+          'Download selected model with the GUI or: asr2rpp.exe install whisper-tiny' | Set-Content dist/ASR2RPP/models/README.txt
+          Compress-Archive -Path dist/ASR2RPP -DestinationPath ASR2RPP-Windows-x64-preview.zip
+          Get-FileHash ASR2RPP-Windows-x64-preview.zip -Algorithm SHA256 | Format-List | Out-File validation/package-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASR2RPP-Windows-x64-preview
+          path: ASR2RPP-Windows-x64-preview.zip
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-preview-validation
+          path: validation/
+          retention-days: 7

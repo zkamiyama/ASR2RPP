@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "tools": {"ffmpeg": "C:/Tools/ffmpeg/bin/ffmpeg.exe", "ffprobe": "C:/Tools/ffmpeg/bin/ffprobe.exe"},
+  "engines": {"audio.cpp": {"vulkan": "C:/Tools/audio.cpp-vulkan/audiocpp_cli.exe"}},
+  "models": []
+}

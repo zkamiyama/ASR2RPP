@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+build-native/
+dist/
+models/
+runtime/
+vendor/
+validation/
+models.user.json
+*.zip
+*.wav
+*.mp4
