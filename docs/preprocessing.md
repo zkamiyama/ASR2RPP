@@ -17,7 +17,7 @@ These require the exact model to have been converted and installed, as below. `-
 
 ## Asset lifetime
 
-Original reference: generated preprocessing audio is temporary. The RPP points to the original media, so playback retains the original background audio. Processed reference: the chosen stem is copied, without further conversion, to `<project-stem>.media/vocals.wav`. This is a persistent project asset outside the temporary directory. Keep the `.media` folder with the RPP. Same directory and Output directory both use this placement rule. Other drives use an absolute path when relative paths are not possible.
+Original reference: generated preprocessing audio is temporary. The RPP points to the original media, so playback retains the original background audio. Processed reference: the chosen stem is copied, without further conversion, next to the RPP as `<project-stem>_vocals.wav`. No media subfolder is created by default. Existing files are never overwritten; output-name collisions advance the project suffix together (for example `meeting_2.rpp` and `meeting_2_vocals.wav`). Excessively long stems are truncated with a short hash before the suffix. Same directory and Output directory both use this placement rule. Other drives use an absolute path when relative paths are not possible.
 
 RPP generation remains non-destructive in both modes. A processed WAV is a new source master, not one file per spoken segment. A limited validation interval creates a master for that interval, not a full-length reconstructed original.
 
