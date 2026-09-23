@@ -1,0 +1,35 @@
+name: Native CPU ASR smoke
+on:
+  push:
+    branches: [validation/cpu-native-smoke]
+    paths:
+      - .github/workflows/native-cpu-smoke.yml
+      - tools/native_cpu_smoke.sh
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-cpu-smoke-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install small system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng libsndfile1 libgomp1 time
+      - name: Test native CPU ASR without installing PyTorch
+        run: bash tools/native_cpu_smoke.sh
+      - name: Upload public synthetic-test reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-cpu-smoke-${{ github.run_id }}
+          path: reports/native-cpu/
+          retention-days: 3
+          if-no-files-found: warn
