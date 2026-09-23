@@ -57,35 +57,41 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONUTF8='1'
-          & ./dist/ASR2RPP/asr2rpp.exe --version
+          & ./dist/ASR2RPP/asr2rpp-cli.exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./dist/ASR2RPP/asr2rpp.exe install whisper-tiny
+          & ./dist/ASR2RPP/asr2rpp-cli.exe install whisper-tiny
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item vendor/whisper/samples/jfk.wav validation/input.wav
-          & ./dist/ASR2RPP/asr2rpp.exe run validation/input.wav --out validation/real-smoke --asr whisper-tiny --duration 12 --asr-params '{"language":"en","threads":4}'
+          & ./dist/ASR2RPP/asr2rpp-cli.exe run validation/input.wav --out validation/real-smoke --asr whisper-tiny --duration 12 --asr-params '{"language":"en","threads":4}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import json,pathlib; d=json.loads(pathlib.Path('validation/real-smoke/transcript.json').read_text(encoding='utf-8')); assert d['segments'], 'Empty ASR'; assert pathlib.Path('validation/real-smoke/project.rpp').is_file(); print('REAL_CPU_ASR_AND_RPP_PASS',len(d['segments']))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./dist/ASR2RPP/asr2rpp.exe export validation/real-smoke/transcript.json --out validation/reexport.rpp
+          & ./dist/ASR2RPP/asr2rpp-cli.exe export validation/real-smoke/transcript.json --out validation/reexport.rpp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item dist/ASR2RPP/models/*.provenance.json validation/
       - name: GUI startup and screenshot
         shell: pwsh
         run: |
-          & ./dist/ASR2RPP/asr2rpp.exe gui --screenshot validation/gui-windows.png
+          & ./dist/ASR2RPP/asr2rpp-cli.exe gui --screenshot validation/gui-windows.png
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package without weights or private media
         shell: pwsh
         run: |
           Remove-Item dist/ASR2RPP/models -Recurse -Force
           New-Item -ItemType Directory -Force dist/ASR2RPP/models | Out-Null
-          'Download selected model with the GUI or: asr2rpp.exe install whisper-tiny' | Set-Content dist/ASR2RPP/models/README.txt
+          'Download selected model with the GUI or: asr2rpp-cli.exe install whisper-tiny' | Set-Content dist/ASR2RPP/models/README.txt
           Compress-Archive -Path dist/ASR2RPP -DestinationPath ASR2RPP-Windows-x64-preview.zip
           Get-FileHash ASR2RPP-Windows-x64-preview.zip -Algorithm SHA256 | Format-List | Out-File validation/package-sha256.txt
+          git archive HEAD --format=zip --output=ASR2RPP-source.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ASR2RPP-Windows-x64-preview
           path: ASR2RPP-Windows-x64-preview.zip
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASR2RPP-source
+          path: ASR2RPP-source.zip
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()

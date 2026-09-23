@@ -6,7 +6,7 @@ ASRとDiarizationを別々に選択し、外部JSONでモデルを追加でき�
 ## Windows
 
 ZIPをすべて書き込み可能なフォルダへ展開してください。exeだけを移動しないでください。
-`ASR2RPP.exe` はPySide6 GUI、`asr2rpp.exe` はCLIです。モデル・実行先・パラメータはASRと話者推定で独立です。
+`ASR2RPP.exe` はPySide6 GUI、`asr2rpp-cli.exe` はCLIです。モデル・実行先・パラメータはASRと話者推定で独立です。
 Python/PyTorchのインストールは不要。CPU版whisper.cppを同梱し、モデル重みは含みません。
 最初はWhisper tinyを選択して「このモデルを取得」で動作確認できます。Tinyは日本語の品質基準ではありません。
 
@@ -21,13 +21,13 @@ Windows x64プレビュー版。署名・SmartScreen評価・インストーラ�
 ## CLI
 
 ```powershell
-.\asr2rpp.exe models
-.\asr2rpp.exe doctor
-.\asr2rpp.exe install whisper-tiny
-.\asr2rpp.exe run input.wav --out output-001 --asr whisper-tiny --duration 55
-.\asr2rpp.exe run input.mp4 --out output-002 --start 10 --duration 55 --asr anime-whisper --diarization nemotron-diarization --asr-device cpu --diarization-device vulkan
-.\asr2rpp.exe compare input.wav --out comparison-001 --asr anime-whisper nemotron-asr vibevoice-asr --duration 15
-.\asr2rpp.exe export output-001\transcript.json --out revised.rpp
+.\asr2rpp-cli.exe models
+.\asr2rpp-cli.exe doctor
+.\asr2rpp-cli.exe install whisper-tiny
+.\asr2rpp-cli.exe run input.wav --out output-001 --asr whisper-tiny --duration 55
+.\asr2rpp-cli.exe run input.mp4 --out output-002 --start 10 --duration 55 --asr anime-whisper --diarization nemotron-diarization --asr-device cpu --diarization-device vulkan
+.\asr2rpp-cli.exe compare input.wav --out comparison-001 --asr anime-whisper nemotron-asr vibevoice-asr --duration 15
+.\asr2rpp-cli.exe export output-001\transcript.json --out revised.rpp
 ```
 
 --asr-paramsと--diarization-paramsは個別のJSONオブジェクトです。

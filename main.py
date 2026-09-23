@@ -47,6 +47,9 @@ def parser():
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     args = parser().parse_args(argv)
     try:
         if args.command in (None, 'gui'):

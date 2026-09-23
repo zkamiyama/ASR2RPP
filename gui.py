@@ -124,11 +124,17 @@ class Window(QMainWindow):
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.finished.connect(self.finished)
-        self.process.errorOccurred.connect(lambda error: self.log.appendPlainText(self.process.errorString()))
+        self.process.errorOccurred.connect(self.process_error)
         self.asr.download.clicked.connect(lambda: self.download(self.asr))
         self.diar.download.clicked.connect(lambda: self.download(self.diar))
         self.cancel_path = None
         self.installing = False
+
+    def process_error(self, error):
+        self.log.appendPlainText(self.process.errorString())
+        if error == QProcess.FailedToStart:
+            self.run_button.setEnabled(True)
+            self.cancel_button.setEnabled(False)
 
     def choose_source(self):
         path, _ = QFileDialog.getOpenFileName(self, '音声・動画を選択', '', 'Media (*.wav *.mp4 *.mkv *.mov *.mp3 *.flac *.ogg);;All (*)')
@@ -141,7 +147,7 @@ class Window(QMainWindow):
             return
         self.installing = installing
         if getattr(sys, 'frozen', False):
-            executable = app_dir() / 'asr2rpp.exe'
+            executable = app_dir() / 'asr2rpp-cli.exe'
             base = []
         else:
             executable = Path(sys.executable)
