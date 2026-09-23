@@ -46,7 +46,7 @@ class PreprocessPanel(base.StagePanel):
         self.badge.setText('ON · 実行する' if enabled else 'OFF · 実行しない')
         saved = hasattr(self, 'processed') and self.processed.isChecked()
         self.note.setText('オフ：元メディアを推論・RPPの両方に使います。' if not enabled else
-                         ('RPPの隣の .media フォルダーへWAVを保存します。削除しないでください。' if saved else
+                         ('RPPと同じフォルダーへ <RPP名>_vocals.wav として保存します。既存ファイルは上書きしません。' if saved else
                           '推論にだけ前処理済み音声を使用します。RPPの再生音は元のままです。'))
         self.changed.emit()
 
