@@ -37,7 +37,10 @@ def build(name):
     output = source / 'build'
     flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF']
     if name == 'audio_cpp':
-        flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON', '-DENGINE_ENABLE_NATIVE_CPU=OFF',
+        flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON',
+                  '-DAUDIOCPP_MODEL_SET=custom',
+                  '-DAUDIOCPP_MODELS=nemotron_asr,nemotron_3_diar,vibevoice_asr,qwen3_forced_aligner,roformer',
+                  '-DENGINE_ENABLE_NATIVE_CPU=OFF',
                   '-DENGINE_ENABLE_CUDA=OFF', '-DENGINE_ENABLE_VULKAN=OFF',
                   '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
                   '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
