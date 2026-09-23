@@ -12,8 +12,7 @@ import subprocess
 import sys
 import threading
 import time
-from .catalog import Model, Cancelled, checkpoint, assets_root
-
+from .catalog import Model, checkpoint, assets_root
 
 @dataclass
 class Unit:
@@ -23,7 +22,6 @@ class Unit:
     speaker: str | None = None
     granularity: str = 'segment'
     method: str = 'native_interval'
-
 
 @dataclass
 class Result:
@@ -70,21 +68,27 @@ def ffmpeg_path(custom: str = '') -> str:
     raise FileNotFoundError('FFmpeg not found. Select ffmpeg in Runtime settings.')
 
 
-def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
-                timeout: float = 7200) -> None:
-    checkpoint(cancel)
+def process_environment(binary: Path) -> dict:
     env = os.environ.copy()
     if 'LD_LIBRARY_PATH_ORIG' in env:
         env['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH_ORIG']
     else:
         env.pop('LD_LIBRARY_PATH', None)
     env['OMP_NUM_THREADS'] = env.get('ASR2RPP_THREADS', '4')
-    library = Path(argv[0]).parent.parent / 'lib'
-    if library.exists() and sys.platform.startswith('linux'):
-        env['LD_LIBRARY_PATH'] = str(library)
-    # Standalone Linux builds keep their shared libraries next to the CLI.
-    if sys.platform.startswith('linux') and list(Path(argv[0]).parent.glob('libggml*.so*')):
-        env['LD_LIBRARY_PATH'] = str(Path(argv[0]).parent)
+    # Never add generic /usr/lib: it can contain incompatible system libraries.
+    # Only explicitly recognize libraries belonging to a native speech executable.
+    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'audiocpp_cli', 'nemo-speech'}:
+        for directory in (binary.resolve().parent, binary.resolve().parent.parent / 'lib'):
+            if list(directory.glob('libggml*.so*')):
+                env['LD_LIBRARY_PATH'] = str(directory)
+                break
+    return env
+
+
+def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
+                timeout: float = 7200) -> None:
+    checkpoint(cancel)
+    env = process_environment(Path(argv[0]))
     log.parent.mkdir(parents=True, exist_ok=True)
     kwargs = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
     started = time.monotonic()
@@ -158,8 +162,7 @@ def parse_whisper(data: dict) -> Result:
 def parse_audio(data, task: str, family: str, sample_rate: int | None = None) -> Result:
     keys = {'asr': ('segments', 'words', 'speaker_turns', 'turns'),
             'diar': ('speaker_turns', 'turns', 'segments'), 'align': ('words', 'segments')}[task]
-    records = data
-    detected = ''
+    records, detected = data, ''
     if isinstance(data, dict):
         for key in keys:
             if isinstance(data.get(key), list):
@@ -201,6 +204,8 @@ def scalar(value) -> str:
         return str(value).lower()
     if not isinstance(value, (int, float, str)):
         raise ValueError('Engine parameters must be scalar values')
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError('Engine parameters must be finite')
     return str(value)
 
 
@@ -213,6 +218,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
     threads = int(options.get('threads', 4))
     if not 1 <= threads <= 128:
         raise ValueError('Threads must be 1..128')
+    parameters = {**model.defaults.get('request', {}), **options.get('parameters', {})}
     if model.runtime == 'whisper_cpp':
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
@@ -222,7 +228,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         elif device not in {'auto', 'vulkan', 'cuda', 'metal'}:
             raise ValueError('Unsupported Whisper device')
         allowed = {'beam_size': '-bs', 'temperature': '-tp', 'no_speech_thold': '-nth'}
-        for key, value in options.get('parameters', {}).items():
+        for key, value in parameters.items():
             if key not in allowed:
                 raise ValueError(f'Unsupported Whisper parameter: {key}')
             argv += [allowed[key], scalar(value)]
@@ -243,7 +249,6 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
                 argv += ['--segments-out', str(output), '--text-out', str(work / 'text.txt')]
             else:
                 argv += ['--words-out', str(output), '--text-out', str(work / 'text.txt')]
-        parameters = {**model.defaults.get('request', {}), **options.get('parameters', {})}
         for key, value in parameters.items():
             if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
                 raise ValueError('Invalid parameter name')

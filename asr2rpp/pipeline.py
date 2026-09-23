@@ -5,17 +5,18 @@ from fractions import Fraction
 from pathlib import Path
 import copy
 import json
+import math
 import os
 import threading
 import time
 import wave
 from .catalog import Model, checkpoint, resolve_model, digest
-from .adapters import Unit, Result, infer, run_process, ffmpeg_path, executable
+from .adapters import Unit, infer, run_process, ffmpeg_path, executable
+from .text_join import join_timed
 from rpp_writer import Source, Item, Track, Project, dumps
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
                     '.m4a', '.aac', '.mp4', '.mkv', '.mov', '.webm', '.avi', '.wma'}
-
 
 @dataclass
 class Stage:
@@ -31,7 +32,6 @@ class Stage:
         data['parameters'] = self.parameters or {}
         return data
 
-
 @dataclass
 class Settings:
     asr: Stage
@@ -46,8 +46,10 @@ class Settings:
     def validate(self, catalog: dict[str, Model]):
         if not self.same_directory and not self.output_directory.strip():
             raise ValueError('Same directory is OFF: specify Output directory.')
-        if self.clip_start < 0 or self.clip_duration < 0:
-            raise ValueError('Clip start/duration cannot be negative')
+        if not all(math.isfinite(x) and x >= 0 for x in (self.clip_start, self.clip_duration)):
+            raise ValueError('Clip start/duration must be finite and nonnegative')
+        if self.asr is None:
+            raise ValueError('ASR is required')
         for task, stage in [('asr', self.asr), ('diar', self.diar), ('align', self.align)]:
             if stage is not None:
                 if stage.model_id not in catalog:
@@ -82,7 +84,6 @@ def decode(source: Path, destination: Path, rate: int, settings: Settings,
            cancel, progress, start: float | None = None, duration: float | None = None) -> float:
     offset = settings.clip_start if start is None else start
     length = settings.clip_duration if duration is None else duration
-    # Normalize to the demuxed media origin, retaining leading gaps and source-relative offsets.
     filters = f'aresample={rate}:async=1:first_pts=0,atrim=start={offset}'
     if length:
         filters += f':duration={length}'
@@ -104,20 +105,9 @@ def clean_bounds(units: list[Unit], duration: float, warnings: list[str]) -> lis
         start, end = max(0.0, unit.start), min(duration, unit.end)
         if start != unit.start or end != unit.end:
             warnings.append(f'Interval {index} clipped to media duration for editing; raw unchanged')
-        if end <= start:
-            continue
-        result.append(replace(unit, start=start, end=end))
+        if end > start:
+            result.append(replace(unit, start=start, end=end))
     return sorted(result, key=lambda u: (u.start, u.end))
-
-
-def join_text(parts: list[str]) -> str:
-    text = ''
-    for part in parts:
-        part = part.replace('\u2581', ' ')
-        if text and part and text[-1].isascii() and text[-1].isalnum() and part[0].isascii() and part[0].isalnum():
-            text += ' '
-        text += part
-    return text.strip()
 
 
 def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
@@ -132,10 +122,10 @@ def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
                 unit.end - grouped[-1].start <= maximum and
                 not grouped[-1].text.rstrip().endswith(('。', '！', '？', '!', '?'))):
             previous = grouped[-1]
-            previous.text = join_text([previous.text, unit.text])
+            previous.text = join_timed(previous.text, unit.text, unit.granularity)
             previous.end = max(previous.end, unit.end)
         else:
-            grouped.append(replace(unit))
+            grouped.append(replace(unit, text=unit.text.replace('\u2581', ' ')))
     return grouped
 
 
@@ -158,7 +148,6 @@ def assign_speakers(units: list[Unit], turns: list[Unit], warnings: list[str]) -
 
 
 def safe_label(text: str) -> str:
-    # Display-only sanitation; original text stays in transcript.json.
     text = text.replace('\r', ' ').replace('\n', ' ').replace('\0', '')
     if all(c in text for c in ('"', "'", '`')):
         text = text.replace('`', 'ˋ')
@@ -168,7 +157,7 @@ def safe_label(text: str) -> str:
 def export_rpp(source: Path, output: Path, units: list[Unit], offset: float, diar: bool):
     try:
         path = os.path.relpath(source, output.parent).replace('\\', '/')
-    except ValueError:  # Windows: source and destination on different drives.
+    except ValueError:
         path = str(source).replace('\\', '/')
     ext = source.suffix.lower()
     kind = {'.wav': 'WAVE', '.wave': 'WAVE', '.aif': 'WAVE', '.aiff': 'WAVE',
@@ -176,12 +165,11 @@ def export_rpp(source: Path, output: Path, units: list[Unit], offset: float, dia
     ref = Source(path, kind)
     tracks = {}
     for unit in units:
-        key = unit.speaker or 'UNKNOWN' if diar else 'Transcript'
+        key = (unit.speaker or 'UNKNOWN') if diar else 'Transcript'
         start = Fraction(str(unit.start)) + Fraction(str(offset))
         end = Fraction(str(unit.end)) + Fraction(str(offset))
         tracks.setdefault(key, []).append(Item(safe_label(unit.text), ref, start, start, end - start))
     project = Project(tuple(Track(safe_label(str(name)), tuple(items)) for name, items in tracks.items()))
-    # Exclusive file creation also protects against a file appearing after reservation.
     with output.open('x', encoding='utf-8', newline='\n') as handle:
         handle.write(dumps(project))
 
@@ -193,7 +181,6 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     if not source.is_file() or source.suffix.lower() not in MEDIA_EXTENSIONS:
         raise ValueError(f'Unsupported or missing input: {source}')
     checkpoint(cancel)
-    # Preflight all requested engines/models before decoding large input or creating outputs.
     weights, provenance = {}, {}
     for task, stage in [('asr', settings.asr), ('diar', settings.diar), ('align', settings.align)]:
         if stage is not None:
@@ -203,8 +190,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     ffmpeg_path(settings.ffmpeg)
     output, report = reserve_output(source, settings)
     started = time.monotonic()
-    warnings = []
-    pcm_files = []
+    warnings, pcm_files = [], []
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
                 'models': provenance, 'status': 'running', 'reference_mode': 'non_destructive',
                 'audio_stream': '0:a:0', 'time_origin': 'FFmpeg normalized demuxed-media origin',
@@ -215,12 +201,12 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         def pcm(rate):
             if rate not in pcm_by_rate:
                 file = report / f'inference_{rate}.wav'
+                pcm_files.append(file)
                 progress(f'Decode {rate} Hz (inference cache only)')
                 duration = decode(source, file, rate, settings, cancel, progress)
                 if duration <= 0:
                     raise ValueError('No audio in selected interval')
                 pcm_by_rate[rate] = (file, duration)
-                pcm_files.append(file)
             return pcm_by_rate[rate]
         asr_model = catalog[settings.asr.model_id]
         audio, duration = pcm(asr_model.sample_rate)
@@ -232,7 +218,6 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         if any(u.method == 'emission_frame' for u in units):
             warnings.append('ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
         units = group_units(units)
-        # Speaker output from integrated ASR is deliberately ignored when diarization is OFF.
         units = [replace(u, speaker=None) for u in units]
         if settings.align is not None:
             align_model = catalog[settings.align.model_id]
@@ -252,7 +237,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                                settings.align.options(), cancel, progress, segment.text)
                 if not result.units:
                     raise ValueError('Aligner returned no intervals')
-                aligned += [replace(u, start=u.start + begin, end=u.end + begin) for u in result.units]
+                local = clean_bounds(result.units, length, warnings)
+                aligned += [replace(u, start=u.start + begin, end=u.end + begin) for u in local]
             units = clean_bounds(aligned, duration, warnings)
         if settings.diar is not None:
             model = catalog[settings.diar.model_id]
@@ -261,6 +247,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             result = infer(model, weights['diar'], audio, report / 'diar', settings.diar.options(), cancel, progress)
             units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
         units = group_units(units)
+        if not units:
+            raise ValueError('No valid intervals remain after normalization')
         checkpoint(cancel)
         progress('RPP — writing non-destructive references')
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
@@ -271,10 +259,10 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                         output=str(output))
         return output
     except BaseException as error:
-        manifest.update(status='failed', error=str(error), elapsed_seconds=time.monotonic() - started)
+        manifest.update(status='cancelled' if cancel.is_set() else 'failed', error=str(error),
+                        elapsed_seconds=time.monotonic() - started)
         raise
     finally:
-        # PCM is temporary; only RPP + JSON/logs remain. No split audio is used by RPP.
         for file in pcm_files:
             file.unlink(missing_ok=True)
         json_write(report / 'manifest.json', manifest)

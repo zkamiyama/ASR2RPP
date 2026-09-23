@@ -6,14 +6,14 @@ from pathlib import Path
 import sys
 import threading
 import tomllib
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl
 from PySide6.QtGui import QDesktopServices, QCloseEvent
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
     QProgressBar, QPlainTextEdit, QScrollArea, QFrame, QSplitter, QDialog,
     QDialogButtonBox, QFormLayout, QAbstractItemView)
-from .catalog import load_catalog, model_directory, resolve_model, Cancelled, assets_root
+from .catalog import load_catalog, model_directory, resolve_model, Cancelled
 from .pipeline import Stage, Settings, MEDIA_EXTENSIONS, run_job
 
 STYLE = '''
@@ -29,7 +29,7 @@ QPushButton:hover { border-color: #4876ab; background: #edf4fc; }
 QPushButton#primary { background: #245b91; color: white; font-weight: 600; border-color: #245b91; }
 QPushButton#primary:hover { background: #1a4b7d; }
 QPushButton#stop { color: #a43535; border-color: #cf9d9d; }
-QPushButton:disabled { color: #8993a1; background: #e9edf2; border-color: #dce2eb; }
+QPushButton#primary:disabled, QPushButton#stop:disabled, QPushButton:disabled { color: #8993a1; background: #e9edf2; border-color: #dce2eb; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: white; border: 1px solid #cbd4df; border-radius: 4px; padding: 5px; min-height: 20px; }
 QComboBox:disabled, QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { color: #9099a5; background: #edf0f4; border-color: #e0e4eb; }
 QLabel:disabled { color: #929ba8; }
@@ -234,7 +234,10 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 720)
         self.setAcceptDrops(True)
         self.preferences = QSettings('ASR2RPP', 'ASR2RPP')
-        self.runtime_paths = json.loads(self.preferences.value('runtime_paths', '{}'))
+        try:
+            self.runtime_paths = json.loads(self.preferences.value('runtime_paths', '{}'))
+        except (ValueError, TypeError):
+            self.runtime_paths = {}
         self.worker = None
         self.entries = []
         self.catalog = {}
@@ -495,7 +498,10 @@ class MainWindow(QMainWindow):
             return
         try:
             settings = self.settings()
-            settings.validate(self.catalog)
+            validation = copy.deepcopy(settings)
+            if download:
+                validation.same_directory = True
+            validation.validate(self.catalog)
             jobs = [(i, e['path']) for i, e in enumerate(self.entries) if e['status'] == '待機']
             if not download and not jobs:
                 return
