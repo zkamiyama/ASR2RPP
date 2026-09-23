@@ -4,6 +4,7 @@ from dataclasses import dataclass, asdict, replace
 from fractions import Fraction
 from pathlib import Path
 import copy
+import hashlib
 import json
 import math
 import os
@@ -17,6 +18,17 @@ from rpp_writer import Source, Item, Track, Project, dumps
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
                     '.m4a', '.aac', '.mp4', '.mkv', '.mov', '.webm', '.avi', '.wma'}
+MAX_OUTPUT_STEM_CHARS = 120
+
+
+def compact_output_stem(value: str, max_chars: int = MAX_OUTPUT_STEM_CHARS) -> str:
+    """Keep output components short and stable without losing collision resistance."""
+    value = value.rstrip(' .') or 'output'
+    if len(value) <= max_chars:
+        return value
+    tag = hashlib.sha256(value.encode('utf-8')).hexdigest()[:8]
+    keep = max(1, max_chars - len(tag) - 1)
+    return value[:keep].rstrip(' .') + '~' + tag
 
 @dataclass
 class Stage:
@@ -60,13 +72,16 @@ class Settings:
                     raise ValueError('Unsupported device')
 
 
-def reserve_output(source: Path, settings: Settings) -> tuple[Path, Path]:
+def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
     parent = source.parent if settings.same_directory else Path(settings.output_directory).expanduser().resolve()
     parent.mkdir(parents=True, exist_ok=True)
     for index in range(1, 100000):
-        stem = source.stem + ('' if index == 1 else f'_{index}')
+        suffix = '' if index == 1 else f'_{index}'
+        base = compact_output_stem(source.stem, MAX_OUTPUT_STEM_CHARS - len(suffix))
+        stem = base + suffix
         output, report = parent / f'{stem}.rpp', parent / f'{stem}.asr2rpp'
-        if output.exists():
+        siblings = [parent / f'{stem}{extra}' for extra in sibling_suffixes]
+        if output.exists() or any(path.exists() for path in siblings):
             continue
         try:
             report.mkdir()
