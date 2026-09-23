@@ -41,7 +41,6 @@ def executable(runtime: str, device: str, custom: str = '') -> Path:
         return path
     name = {'whisper_cpp': 'whisper-cli', 'audio_cpp': 'audiocpp_cli'}[runtime]
     suffix = '.exe' if sys.platform == 'win32' else ''
-    # Bundle folders are backend-specific; do not pretend a CPU binary is Vulkan capable.
     for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
         for directory in [root / f'{runtime}-{device}', root / runtime]:
             if directory.exists():
@@ -75,7 +74,6 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                 timeout: float = 7200) -> None:
     checkpoint(cancel)
     env = os.environ.copy()
-    # PyInstaller's library search path must not leak into external FFmpeg/engines.
     if 'LD_LIBRARY_PATH_ORIG' in env:
         env['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH_ORIG']
     else:
@@ -84,6 +82,9 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
     library = Path(argv[0]).parent.parent / 'lib'
     if library.exists() and sys.platform.startswith('linux'):
         env['LD_LIBRARY_PATH'] = str(library)
+    # Standalone Linux builds keep their shared libraries next to the CLI.
+    if sys.platform.startswith('linux') and list(Path(argv[0]).parent.glob('libggml*.so*')):
+        env['LD_LIBRARY_PATH'] = str(Path(argv[0]).parent)
     log.parent.mkdir(parents=True, exist_ok=True)
     kwargs = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
     started = time.monotonic()
@@ -154,7 +155,7 @@ def parse_whisper(data: dict) -> Result:
     return Result(units, data, ''.join(u.text for u in units), [])
 
 
-def parse_audio(data, task: str, family: str) -> Result:
+def parse_audio(data, task: str, family: str, sample_rate: int | None = None) -> Result:
     keys = {'asr': ('segments', 'words', 'speaker_turns', 'turns'),
             'diar': ('speaker_turns', 'turns', 'segments'), 'align': ('words', 'segments')}[task]
     records = data
@@ -175,8 +176,14 @@ def parse_audio(data, task: str, family: str) -> Result:
                 if name in record:
                     return record[name]
             raise ValueError(f'Missing {names[0]} in timed entry: {list(record)}')
-        start = number(pick('start', 'start_time', 'start_sec', 'start_seconds'))
-        end = number(pick('end', 'end_time', 'end_sec', 'end_seconds'))
+        if 'start_sample' in record or 'end_sample' in record:
+            if sample_rate is None or sample_rate <= 0:
+                raise ValueError('Sample timestamps require an explicit positive sample rate')
+            start = number(pick('start_sample')) / sample_rate
+            end = number(pick('end_sample')) / sample_rate
+        else:
+            start = number(pick('start', 'start_time', 'start_sec', 'start_seconds'))
+            end = number(pick('end', 'end_time', 'end_sec', 'end_seconds'))
         text = str(record.get('text', record.get('word', record.get('token', record.get('content', '')))))
         speaker = record.get('speaker', record.get('speaker_id', record.get('speaker_label')))
         granularity = 'word' if task == 'align' or detected == 'words' else 'segment'
@@ -246,6 +253,6 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         run_process(argv, cancel, progress, work / 'engine.log')
         if not output.exists():
             raise ValueError('Engine did not produce timestamps. Use a supported timed model; no times were fabricated.')
-        result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family)
+        result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
     (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in result.units], ensure_ascii=False, indent=2), encoding='utf-8')
     return result
