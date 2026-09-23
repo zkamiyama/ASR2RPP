@@ -168,10 +168,8 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
         raise ValueError('Unsupported or missing input')
     model = catalog[settings.preprocess.model_id]
     weights, provenance = resolve_model(model, cancel, progress)
-    output, report = core.reserve_output(source, settings)
-    media_dir = output.with_suffix('.media')
-    if settings.reference_audio == 'processed' and media_dir.exists():
-        raise FileExistsError(f'Will not overwrite an existing media directory: {media_dir}')
+    siblings = ('_vocals.wav',) if settings.reference_audio == 'processed' else ()
+    output, report = core.reserve_output(source, settings, sibling_suffixes=siblings)
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
                 'status': 'running', 'model': provenance, 'reference_audio': settings.reference_audio,
                 'clip_start': settings.clip_start, 'source_unchanged': None}
@@ -199,8 +197,7 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
             if digest(source) != manifest['source_sha256']:
                 raise ValueError('Original input changed while processing')
             if settings.reference_audio == 'processed':
-                media_dir.mkdir()  # exclusive creation: existing assets are never overwritten
-                reference = media_dir / 'vocals.wav'
+                reference = output.with_name(output.stem + '_vocals.wav')
                 with vocals.open('rb') as incoming, reference.open('xb') as outgoing:
                     shutil.copyfileobj(incoming, outgoing)
                 origin = settings.clip_start
