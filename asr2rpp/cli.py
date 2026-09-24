@@ -34,7 +34,7 @@ def main(argv=None):
     run.add_argument('--duration', type=float, default=0)
     run.add_argument('--threads', type=int, default=4)
     for stage in ['asr', 'diar', 'align', 'preprocess']:
-        run.add_argument('--' + stage + '-device', default='cpu', choices=['cpu', 'vulkan', 'metal', 'cuda', 'auto'])
+        run.add_argument('--' + stage + '-device', default='vulkan', choices=['cpu', 'vulkan'])
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
         run.add_argument('--' + stage + '-params', default='{}', help='JSON object of scalar request parameters')
