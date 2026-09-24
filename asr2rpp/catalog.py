@@ -67,6 +67,7 @@ class Model:
     task: str
     source: dict
     defaults: dict = field(default_factory=dict)
+    constraints: dict = field(default_factory=dict)
     family: str = ''
     name: str = ''
     sample_rate: int = 16000
@@ -113,6 +114,18 @@ class Model:
                     raise ValueError('conversion precision must be f16 or q8_0')
         if self.defaults.get('request') and not isinstance(self.defaults['request'], dict):
             raise ValueError('defaults.request must be a TOML table')
+        if not isinstance(self.constraints, dict):
+            raise ValueError('constraints must be a TOML table')
+        unknown_constraints = set(self.constraints) - {'disabled_parameters'}
+        if unknown_constraints:
+            raise ValueError(f'Unknown constraints: {sorted(unknown_constraints)}')
+        disabled = self.constraints.get('disabled_parameters', [])
+        if not isinstance(disabled, list) or any(not isinstance(x, str) or not x.strip() for x in disabled):
+            raise ValueError('constraints.disabled_parameters must be an array of non-empty strings')
+
+    @property
+    def disabled_parameters(self) -> frozenset[str]:
+        return frozenset(self.constraints.get('disabled_parameters', []))
 
 
 def safe_relative(value: str) -> str:
@@ -139,7 +152,7 @@ def load_catalog(directory: Path | None = None) -> tuple[dict[str, Model], list[
     for file in sorted((directory or model_directory()).glob('*.toml')):
         try:
             data = tomllib.loads(file.read_text(encoding='utf-8-sig'))
-            allowed = {'runtime', 'task', 'source', 'defaults', 'family', 'name', 'sample_rate', 'description'}
+            allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description'}
             unknown = set(data) - allowed
             if unknown:
                 raise ValueError(f'Unknown fields: {sorted(unknown)}')
