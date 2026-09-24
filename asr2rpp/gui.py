@@ -202,11 +202,14 @@ class Worker(QThread):
     item = Signal(int, str, str)
     error = Signal(str)
 
-    def __init__(self, jobs, settings, catalog, download=False, keep_model_sources=False):
+    def __init__(self, jobs, settings, catalog, download=False, keep_model_sources=False,
+                 queue_strategy='stage', batch_audio_ram_mb=512):
         super().__init__()
         self.jobs, self.settings, self.catalog = jobs, copy.deepcopy(settings), catalog.copy()
         self.download = download
         self.keep_model_sources = bool(keep_model_sources)
+        self.queue_strategy = queue_strategy
+        self.batch_audio_ram_mb = int(batch_audio_ram_mb)
         self.cancel = threading.Event()
 
     def run(self):
@@ -218,6 +221,14 @@ class Worker(QThread):
                 self.progress.emit('選択モデルのダウンロードが完了しました。')
             except Exception as exc:
                 self.error.emit(str(exc))
+            return
+        if self.queue_strategy == 'stage' and len(self.jobs) > 1:
+            from .queue_runner import run_queue
+            try:
+                run_queue(self.jobs, self.settings, self.catalog, self.cancel, self.progress.emit,
+                          self.item.emit, self.batch_audio_ram_mb)
+            except Cancelled:
+                pass
             return
         for index, path in self.jobs:
             if self.cancel.is_set():
@@ -256,6 +267,11 @@ class MainWindow(QMainWindow):
             'audio_cpp': str(self.preferences.value('runtime_default/audio_cpp', 'cpu')),
         }
         self.keep_model_sources = self.preferences.value('models/keep_source_checkpoints', False, type=bool)
+        self.queue_strategy = str(self.preferences.value('queue/strategy', 'stage'))
+        if self.queue_strategy not in {'stage', 'file'}:
+            self.queue_strategy = 'stage'
+        self.batch_audio_ram_mb = int(self.preferences.value('queue/batch_audio_ram_mb', 512))
+        self.batch_audio_ram_mb = max(128, min(self.batch_audio_ram_mb, 8192))
         for runtime in self.runtime_defaults:
             if self.runtime_defaults[runtime] not in {'cpu', 'vulkan', 'metal', 'cuda', 'auto'}:
                 self.runtime_defaults[runtime] = 'cpu'
@@ -485,7 +501,8 @@ class MainWindow(QMainWindow):
                 item.setToolTip(entry['path'] if col == 0 else text)
                 self.table.setItem(row, col, item)
             self.table.setRowHeight(row, 40)
-        self.queue_note.setText(f'{len(self.entries)} ファイル  ·  上から順番に実行  ·  完了行をダブルクリックで出力先を開く' if self.entries
+        strategy = 'ステージ優先' if self.queue_strategy == 'stage' else 'ファイル優先'
+        self.queue_note.setText(f'{len(self.entries)} ファイル  ·  {strategy}  ·  完了行をダブルクリックで出力先を開く' if self.entries
                                else 'キューは空です。ここに音声・動画ファイルをドロップできます。')
         self.update_summary()
 
@@ -540,7 +557,8 @@ class MainWindow(QMainWindow):
             self.save_preferences()
             self.completed = 0
             self.progress.setRange(0, 0 if download else len(jobs))
-            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources)
+            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources,
+                                 self.queue_strategy, self.batch_audio_ram_mb)
             self.worker.progress.connect(self.show_progress)
             self.worker.item.connect(self.item_changed)
             self.worker.error.connect(self.show_error)
@@ -628,6 +646,19 @@ class MainWindow(QMainWindow):
         keep_sources.setChecked(self.keep_model_sources)
         keep_sources.setToolTip('通常はOFF推奨。変換に成功したCKPT等の大きな元重みを残したい場合だけ有効にします。')
         runtime_form.addRow('モデル保存', keep_sources)
+        queue_strategy = QComboBox()
+        queue_strategy.addItem('ステージ優先 — SEP→ASR→Align→Diar（推奨）', 'stage')
+        queue_strategy.addItem('ファイル優先 — 1ファイルずつ完走（互換）', 'file')
+        queue_strategy.setCurrentIndex(max(0, queue_strategy.findData(self.queue_strategy)))
+        queue_strategy.setToolTip('ステージ優先は同じモデルをまとめて使い、別モデルの同時常駐を避けます。')
+        runtime_form.addRow('キュー処理', queue_strategy)
+        batch_ram = QSpinBox()
+        batch_ram.setRange(128, 8192)
+        batch_ram.setSingleStep(128)
+        batch_ram.setSuffix(' MB')
+        batch_ram.setValue(self.batch_audio_ram_mb)
+        batch_ram.setToolTip('audio.cppはバッチ入力WAVをRAMへ展開するため、1バッチの入力ファイルサイズ合計をこの目安で分割します。')
+        runtime_form.addRow('audio.cpp batch RAM目安', batch_ram)
         layout.addLayout(runtime_form)
 
         advanced = QLabel('実行ファイルの上書き（空欄なら同梱版 / PATHから自動検出）')
@@ -662,8 +693,14 @@ class MainWindow(QMainWindow):
             self.runtime_defaults = {runtime: combo.currentData() for runtime, combo in backend_fields.items()}
             self.runtime_paths = {k: v.text().strip() for k, v in fields.items() if v.text().strip()}
             self.keep_model_sources = keep_sources.isChecked()
+            self.queue_strategy = queue_strategy.currentData() or 'stage'
+            self.batch_audio_ram_mb = batch_ram.value()
             self.preferences.setValue('threads', threads.value())
             self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
+        self.preferences.setValue('queue/strategy', self.queue_strategy)
+        self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
+            self.preferences.setValue('queue/strategy', self.queue_strategy)
+            self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
             self.save_preferences()
             self.update_summary()
 
