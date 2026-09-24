@@ -89,7 +89,7 @@ class Worker(base.Worker):
             try:
                 stages = [self.settings.asr, self.settings.diar, self.settings.align, self.settings.preprocess]
                 for model_id in dict.fromkeys(stage.model_id for stage in stages if stage):
-                    resolve_model(self.catalog[model_id], self.cancel, self.progress.emit, download=True)
+                    resolve_model(self.catalog[model_id], self.cancel, self.progress.emit, download=True, keep_source=self.keep_model_sources)
                 self.progress.emit('選択モデルの準備が完了しました。')
             except Exception as exc:
                 self.error.emit(str(exc))
@@ -191,7 +191,7 @@ class MainWindow(base.MainWindow):
             self.save_preferences()
             self.completed = 0
             self.progress.setRange(0, 0 if download else len(jobs))
-            self.worker = Worker(jobs, settings, self.catalog, download)
+            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources)
             self.worker.progress.connect(self.show_progress)
             self.worker.item.connect(self.item_changed)
             self.worker.error.connect(self.show_error)
