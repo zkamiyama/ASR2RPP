@@ -228,6 +228,8 @@ TEXT = {
         "processed": "処理済み",
         "output": "OUTPUT",
         "same_dir": "入力ファイルと同じ場所",
+        "location": "LOCATION",
+        "custom_dir": "指定フォルダー",
         "choose": "選択",
         "ready": "準備完了",
         "settings": "設定",
@@ -290,7 +292,9 @@ TEXT = {
         "original": "Original",
         "processed": "Processed",
         "output": "OUTPUT",
-        "same_dir": "Save next to each input",
+        "same_dir": "Same as input",
+        "location": "LOCATION",
+        "custom_dir": "Custom directory",
         "choose": "Browse",
         "ready": "Ready",
         "settings": "Settings",
@@ -1119,20 +1123,44 @@ class MainWindow(QMainWindow):
         self.output_title = QLabel()
         self.output_title.setObjectName("section")
         out_layout.addWidget(self.output_title)
-        self.same_directory = QCheckBox()
-        self.same_directory.setChecked(self.preferences.value("output/same", True, type=bool))
-        self.same_directory.toggled.connect(self.output_changed)
-        out_layout.addWidget(self.same_directory)
-        row = QHBoxLayout()
+
+        output_grid = QGridLayout()
+        output_grid.setContentsMargins(0, 0, 0, 0)
+        output_grid.setHorizontalSpacing(4)
+        output_grid.setVerticalSpacing(2)
+        output_grid.setColumnMinimumWidth(0, 54)
+        output_grid.setColumnStretch(1, 1)
+
+        self.output_location_label = QLabel()
+        self.output_location_label.setObjectName("muted")
+        self.output_location_label.setFixedWidth(54)
+        self.output_mode = QComboBox()
+        self.output_mode.setFixedHeight(20)
+        self.output_mode.addItem("Same as input", "same")
+        self.output_mode.addItem("Custom directory", "custom")
+        self.output_mode.setCurrentIndex(
+            0 if self.preferences.value("output/same", True, type=bool) else 1)
+        self.output_mode.currentIndexChanged.connect(self.output_changed)
+        output_grid.addWidget(self.output_location_label, 0, 0)
+        output_grid.addWidget(self.output_mode, 0, 1)
+
+        self.output_path_row = QWidget()
+        path_row = QHBoxLayout(self.output_path_row)
+        path_row.setContentsMargins(0, 0, 0, 0)
+        path_row.setSpacing(4)
         self.output_dir = QLineEdit(str(self.preferences.value("output/directory", "")))
+        self.output_dir.setFixedHeight(20)
         self.output_dir.textChanged.connect(self.update_state)
         self.output_browse = QToolButton()
         self.output_browse.setObjectName("iconButton")
         self.output_browse.setIcon(icon("folder_open"))
+        self.output_browse.setIconSize(QSize(13, 13))
+        self.output_browse.setFixedSize(20, 20)
         self.output_browse.clicked.connect(self.choose_output)
-        row.addWidget(self.output_dir, 1)
-        row.addWidget(self.output_browse)
-        out_layout.addLayout(row)
+        path_row.addWidget(self.output_dir, 1)
+        path_row.addWidget(self.output_browse)
+        output_grid.addWidget(self.output_path_row, 1, 1)
+        out_layout.addLayout(output_grid)
         inspector_layout.addWidget(output)
         inspector_layout.addStretch()
 
@@ -1264,7 +1292,7 @@ class MainWindow(QMainWindow):
         self.preferences.setValue("threads", self.threads)
         for runtime, value in self.runtime_defaults.items():
             self.preferences.setValue(f"runtime_default/{runtime}", value)
-        self.preferences.setValue("output/same", self.same_directory.isChecked())
+        self.preferences.setValue("output/same", self.output_mode.currentData() == "same")
         self.preferences.setValue("output/directory", self.output_dir.text().strip())
         for key, panel in (("preprocess", self.preprocess), ("asr", self.asr),
                            ("align", self.align), ("diar", self.diar)):
@@ -1286,7 +1314,15 @@ class MainWindow(QMainWindow):
         for panel in (self.preprocess, self.asr, self.align, self.diar):
             panel.apply_language(self.ui_lang)
         self.output_title.setText(tr["output"])
-        self.same_directory.setText(tr["same_dir"])
+        self.output_location_label.setText(tr["location"])
+        selected_output_mode = self.output_mode.currentData()
+        self.output_mode.blockSignals(True)
+        self.output_mode.clear()
+        self.output_mode.addItem(tr["same_dir"], "same")
+        self.output_mode.addItem(tr["custom_dir"], "custom")
+        idx = self.output_mode.findData(selected_output_mode)
+        self.output_mode.setCurrentIndex(max(0, idx))
+        self.output_mode.blockSignals(False)
         self.output_dir.setPlaceholderText(tr["select_output"])
         self.settings_button.setToolTip(tr["settings"])
         target = "English" if self.ui_lang == "ja" else "日本語"
@@ -1399,9 +1435,10 @@ class MainWindow(QMainWindow):
             self.output_dir.setText(directory)
 
     def output_changed(self):
-        enabled = not self.same_directory.isChecked()
-        self.output_dir.setEnabled(enabled)
-        self.output_browse.setEnabled(enabled)
+        custom = self.output_mode.currentData() == "custom"
+        self.output_path_row.setVisible(custom)
+        self.output_dir.setEnabled(custom)
+        self.output_browse.setEnabled(custom)
         self.update_state()
 
     def current_settings(self):
@@ -1410,7 +1447,7 @@ class MainWindow(QMainWindow):
             asr=self.asr.stage(self.runtime_paths, self.threads, self.runtime_defaults),
             diar=self.diar.stage(self.runtime_paths, self.threads, self.runtime_defaults),
             align=self.align.stage(self.runtime_paths, self.threads, self.runtime_defaults),
-            same_directory=self.same_directory.isChecked(),
+            same_directory=self.output_mode.currentData() == "same",
             output_directory=self.output_dir.text().strip(),
             ffmpeg=self.runtime_paths.get("ffmpeg", ""),
             clip_start=0.0,
@@ -1437,7 +1474,7 @@ class MainWindow(QMainWindow):
                 f"{self.tr('ready')}   {self.pipeline_text()}   "
                 f"W:{self.runtime_defaults['whisper_cpp'].upper()}  "
                 f"A:{self.runtime_defaults['audio_cpp'].upper()}")
-        valid_output = self.same_directory.isChecked() or bool(self.output_dir.text().strip())
+        valid_output = self.output_mode.currentData() == "same" or bool(self.output_dir.text().strip())
         can_go = valid_output and any(e["status"] == "waiting" for e in self.entries)
         self.run_button.setEnabled(True if self.worker else can_go)
         self.run_button.setProperty("running", bool(self.worker))
@@ -1450,9 +1487,10 @@ class MainWindow(QMainWindow):
         self.table.setEnabled(not busy)
         for panel in (self.preprocess, self.asr, self.align, self.diar):
             panel.setEnabled(not busy)
-        self.same_directory.setEnabled(not busy)
-        self.output_dir.setEnabled(not busy and not self.same_directory.isChecked())
-        self.output_browse.setEnabled(not busy and not self.same_directory.isChecked())
+        self.output_mode.setEnabled(not busy)
+        custom = self.output_mode.currentData() == "custom"
+        self.output_dir.setEnabled(not busy and custom)
+        self.output_browse.setEnabled(not busy and custom)
         self.settings_button.setEnabled(not busy)
         self.update_state()
 
