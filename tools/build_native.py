@@ -21,7 +21,7 @@ def run(*args, cwd=None):
     subprocess.run(list(map(str, args)), cwd=cwd, check=True)
 
 
-def build(name):
+def build(name, backend='cpu'):
     repo, revision, target = SOURCES[name]
     source = WORK / name
     source.mkdir(parents=True, exist_ok=True)
@@ -34,14 +34,18 @@ def build(name):
     # the optional server frontend (SSH URL), which a standalone CLI does not use.
     if name != 'audio_cpp':
         run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
-    output = source / 'build'
-    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF']
+    if backend not in {'cpu', 'vulkan'}:
+        raise ValueError(f'Unsupported packaged backend: {backend}')
+    output = source / ('build-' + backend)
+    vulkan = 'ON' if backend == 'vulkan' else 'OFF'
+    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF',
+             '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
     if name == 'audio_cpp':
         flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON',
                   '-DAUDIOCPP_MODEL_SET=custom',
                   '-DAUDIOCPP_MODELS=nemotron_asr,nemotron_3_diar,vibevoice_asr,qwen3_forced_aligner,roformer',
                   '-DENGINE_ENABLE_NATIVE_CPU=OFF',
-                  '-DENGINE_ENABLE_CUDA=OFF', '-DENGINE_ENABLE_VULKAN=OFF',
+                  '-DENGINE_ENABLE_CUDA=OFF', f'-DENGINE_ENABLE_VULKAN={vulkan}',
                   '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
                   '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
     else:
@@ -50,7 +54,7 @@ def build(name):
         flags += ['-A', 'x64']
     run('cmake', '-S', source, '-B', output, *flags)
     run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', '4')
-    destination = ENGINES / (name + '-cpu')
+    destination = ENGINES / (name + '-' + backend)
     destination.mkdir(parents=True, exist_ok=True)
     binary_name = target + ('.exe' if os.name == 'nt' else '')
     binaries = list(output.rglob(binary_name))
@@ -74,7 +78,7 @@ def build(name):
             shutil.copy2(source / filename, destination / filename)
     if name == 'audio_cpp' and (source / 'model_specs').exists():
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
-    metadata = {'repository': repo, 'commit': revision, 'backend': 'cpu', 'files': {}}
+    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {}}
     for file in destination.rglob('*'):
         if file.is_file():
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()
@@ -83,5 +87,6 @@ def build(name):
 
 
 if __name__ == '__main__':
-    for name in sys.argv[1:] or ['whisper_cpp', 'audio_cpp']:
-        build(name)
+    for spec in sys.argv[1:] or ['whisper_cpp:cpu', 'audio_cpp:cpu']:
+        name, separator, backend = spec.partition(':')
+        build(name, backend or 'cpu')
