@@ -221,6 +221,8 @@ def scalar(value) -> str:
 
 
 WHISPER_VALUE_OPTIONS = {
+    'processors': '-p',
+    'gpu_device': '-dev',
     'beam_size': '-bs',
     'best_of': '-bo',
     'audio_ctx': '-ac',
@@ -233,6 +235,17 @@ WHISPER_VALUE_OPTIONS = {
     'temperature': '-tp',
     'temperature_inc': '-tpi',
     'initial_prompt': '--prompt',
+    'suppress_regex': '--suppress-regex',
+    'grammar': '--grammar',
+    'grammar_rule': '--grammar-rule',
+    'grammar_penalty': '--grammar-penalty',
+    'vad_model': '-vm',
+    'vad_threshold': '-vt',
+    'vad_min_speech_duration_ms': '-vspd',
+    'vad_min_silence_duration_ms': '-vsd',
+    'vad_max_speech_duration_s': '-vmsd',
+    'vad_speech_pad_ms': '-vp',
+    'vad_samples_overlap': '-vo',
 }
 WHISPER_FLAG_OPTIONS = {
     'split_on_word': '-sow',
@@ -240,13 +253,23 @@ WHISPER_FLAG_OPTIONS = {
     'translate': '-tr',
     'suppress_nst': '-sns',
     'carry_initial_prompt': '--carry-initial-prompt',
+    'vad': '--vad',
 }
 
 
 def whisper_parameter_args(parameters: dict) -> list[str]:
     args = []
     for key, value in parameters.items():
-        if key in WHISPER_VALUE_OPTIONS:
+        if key == 'flash_attn':
+            if not isinstance(value, bool):
+                raise ValueError('Whisper flag flash_attn must be boolean')
+            args.append('-fa' if value else '-nfa')
+        elif key in WHISPER_VALUE_OPTIONS:
+            if isinstance(value, str) and not value:
+                continue
+            # UI uses zero as an explicit 'native unlimited default' sentinel.
+            if key == 'vad_max_speech_duration_s' and float(value) == 0.0:
+                continue
             args += [WHISPER_VALUE_OPTIONS[key], scalar(value)]
         elif key in WHISPER_FLAG_OPTIONS:
             if not isinstance(value, bool):
