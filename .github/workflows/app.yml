@@ -2,7 +2,7 @@ name: ASR2RPP application
 on:
   push:
     branches: [feat/queue-gui]
-    paths: ['asr2rpp/**', 'rpp_writer.py', 'models/**', 'tests/**', 'tools/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
+    paths: ['asr2rpp/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
 permissions:
