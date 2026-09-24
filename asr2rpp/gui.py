@@ -239,6 +239,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 720)
         self.setAcceptDrops(True)
         self.preferences = QSettings('ASR2RPP', 'ASR2RPP')
+        if not self.preferences.value('runtime_defaults_v1', False, type=bool):
+            for stage_key in ('asr', 'diar', 'align', 'preprocess'):
+                if str(self.preferences.value(stage_key + '/device', 'cpu')) == 'cpu':
+                    self.preferences.setValue(stage_key + '/device', 'default')
+            self.preferences.setValue('runtime_defaults_v1', True)
+            self.preferences.sync()
         try:
             self.runtime_paths = json.loads(self.preferences.value('runtime_paths', '{}'))
         except (ValueError, TypeError):
