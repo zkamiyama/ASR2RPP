@@ -6,13 +6,13 @@ CLIとPySide6 GUIは同じパイプラインを使います。モデル推論は
 ## Windowsプレビュー
 
 ZIPをすべて展開し、`ASR2RPP/ASR2RPP.exe`を起動します。exeだけを移動しないでください。
-署名のない開発プレビューです。CPU版のネイティブエンジンとFFmpegを同梱し、Pythonの手動導入は不要です。
+署名のない開発プレビューです。whisper.cpp / audio.cpp はCPU版とVulkan版を同梱し、FFmpegも含めるためPythonの手動導入は不要です。
 モデル重みは同梱しません。モデルの説明・配布条件を確認してから**選択モデルを取得**を押してください。
 まずWhisper Base / cpu、Diarization OFF、Forced Alignment OFFで短い素材を試してください。
 Baseは導入確認用で、認識精度を保証するモデル選定ではありません。
 
 1. ファイル追加・フォルダー直下からの追加・ドラッグ＆ドロップでキューへ登録。
-2. ASRモデルと実行先を選択。DiarizationとForced Alignmentは独立したチェックボックスでON/OFF。
+2. 右上の**⚙ 設定**でwhisper.cpp / audio.cppの既定実行先（CPU / Vulkan等）を選択。各ASR・Diarization・Forced Alignment欄では「設定に従う」が既定で、必要な処理だけ個別上書きできます。DiarizationとForced Alignmentは独立してON/OFFできます。
 3. `Same directory`がONなら各入力の隣へ保存。OFFなら`Output directory`を指定。
 4. **キューを実行**。１ファイルずつ処理し、失敗しても次のファイルへ進みます。
 5. 停止で現在の処理を終了。未処理は待機のまま保持。失敗・中断は再キューできます。
@@ -75,8 +75,9 @@ audio.cppは`runtime="audio_cpp"`、`family`、`task="asr"/"diar"/"align"`を指
 
 ## GPUと時刻の注意
 
-同梱版はCPUビルドです。Metal / Vulkan / CUDAは構造上選択でき、実行環境画面で対応ビルドを指定できますが、
-このプレビューのGPU実機検証・対応ビルドの同梱を意味しません。DirectMLプロバイダーは未実装です。
+Windows x64プレビューはwhisper.cpp / audio.cppのCPU版とVulkan版を別ディレクトリで同梱します。
+Vulkanを使用するにはVulkan対応GPUと正常なベンダードライバーが必要です。GitHub ActionsではVulkan版のビルドと起動可能性（--help）を確認しますが、GPU推論性能・演算の完全なVulkan配置まではGPUなしのHosted Runnerでは検証しません。
+Metal / CUDAは外部対応ビルドを設定できる構造です。DirectMLプロバイダーは未実装です。
 要求デバイスとエンジンログを記録しますが、実際の全演算の実行先監査は未実装です。
 CPUへの暗黙フォールバックを検出できないエンジンがあるため、性能比較時にはログ確認が必要です。
 
