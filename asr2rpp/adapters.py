@@ -292,6 +292,18 @@ def split_engine_parameters(model: Model, overrides: dict | None) -> tuple[dict,
     return request, session
 
 
+def validate_model_parameter_constraints(model: Model, request: dict, session: dict | None = None) -> None:
+    disabled = model.disabled_parameters
+    if not disabled:
+        return
+    keys = set(request)
+    keys.update('session.' + key for key in (session or {}))
+    blocked = sorted(keys & disabled)
+    if blocked:
+        raise ValueError(
+            f'{model.label}: disabled parameter(s) requested by model definition: ' + ', '.join(blocked))
+
+
 def audio_session_args(model: Model, session: dict) -> list[str]:
     args = []
     for key, value in session.items():
@@ -312,6 +324,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
     if not 1 <= threads <= 128:
         raise ValueError('Threads must be 1..128')
     parameters, session_parameters = split_engine_parameters(model, options.get('parameters', {}))
+    validate_model_parameter_constraints(model, parameters, session_parameters)
     if model.runtime == 'whisper_cpp':
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
