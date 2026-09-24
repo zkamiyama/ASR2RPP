@@ -125,6 +125,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     app.processEvents()
     assert window.ui_lang == "en"
     assert window.table.horizontalHeaderItem(0).text() == "Input"
+    assert window.table.item(0, 1).text() == "Queued"
     window.grab().save(str(reports / "gui-dcc-en.png"))
 
     dialog = PreferencesDialog(window)
