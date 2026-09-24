@@ -2,6 +2,7 @@
 from __future__ import annotations
 import copy
 import json
+import os
 from pathlib import Path
 import sys
 import threading
@@ -12,8 +13,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QGridLayout, QLabel, QPushButton, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
     QProgressBar, QPlainTextEdit, QScrollArea, QFrame, QSplitter, QDialog,
-    QDialogButtonBox, QFormLayout, QAbstractItemView)
-from .catalog import load_catalog, model_directory, data_root, resolve_model, Cancelled
+    QDialogButtonBox, QFormLayout, QAbstractItemView, QTabWidget)
+from .catalog import load_catalog, model_directory, data_root, weights_root, cache_root, resolve_model, Cancelled
 from .pipeline import Stage, Settings, MEDIA_EXTENSIONS, run_job
 from .adapters import executable as runtime_executable
 
@@ -23,6 +24,7 @@ QMainWindow, QDialog { background: #f3f5f8; }
 QFrame#card { background: white; border: 1px solid #dce2eb; border-radius: 8px; }
 QLabel#title { font-size: 25px; font-weight: 700; }
 QLabel#subtitle { color: #657287; }
+QLabel#hint { color: #6e7887; font-size: 12px; }
 QLabel#section { font-size: 15px; font-weight: 600; }
 QLabel#badge { font-size: 11px; font-weight: 700; padding: 3px 8px; background: #e8edf4; border-radius: 4px; }
 QPushButton { background: #fff; border: 1px solid #cbd4df; padding: 7px 12px; border-radius: 5px; }
@@ -45,6 +47,16 @@ QProgressBar { border: none; background: #e2e8ef; border-radius: 4px; min-height
 QProgressBar::chunk { background: #3674ad; border-radius: 4px; }
 QScrollArea { border: none; background: transparent; }
 '''
+
+
+def default_storage_hint(kind: str) -> str:
+    if sys.platform == 'win32':
+        return rf'%LOCALAPPDATA%\ASR2RPP\{kind}'
+    return str(data_root() / kind)
+
+
+def effective_storage_path(value: str, kind: str) -> Path:
+    return Path(value).expanduser() if value.strip() else data_root() / kind
 
 
 def card():
@@ -102,9 +114,13 @@ class StagePanel(QFrame):
         form.addWidget(self.language, 1, 3)
         if task == 'diar':
             self.language.setEnabled(False)
-        self.params = QPushButton('詳細パラメーター…')
+        self.params = QPushButton('詳細設定…')
         self.params.clicked.connect(self.edit_parameters)
         form.addWidget(self.params, 2, 0, 1, 4)
+        self.param_summary = QLabel()
+        self.param_summary.setObjectName('hint')
+        self.param_summary.setWordWrap(True)
+        form.addWidget(self.param_summary, 3, 0, 1, 4)
         layout.addWidget(self.body)
         self.note = QLabel()
         self.note.setWordWrap(True)
@@ -152,7 +168,26 @@ class StagePanel(QFrame):
         model = self.catalog.get(self.model.currentData())
         if model:
             self.language.setText(str(model.defaults.get('language', 'Japanese' if self.task == 'align' else 'ja')))
+        self.update_parameter_summary()
         self.changed.emit()
+
+    def update_parameter_summary(self):
+        model = self.catalog.get(self.model.currentData())
+        if not model:
+            self.param_summary.setText('')
+            return
+        if self.parameters:
+            values = ', '.join(f'{k}={v}' for k, v in sorted(self.parameters.items()))
+            self.param_summary.setText('上書き: ' + values)
+            return
+        defaults = {**model.defaults.get('request', {}), **model.defaults.get('session', {})}
+        if defaults:
+            values = ', '.join(f'{k}={v}' for k, v in sorted(defaults.items()))
+            self.param_summary.setText('モデル既定: ' + values)
+        elif model.runtime == 'whisper_cpp':
+            self.param_summary.setText('詳細設定: beam_size / temperature / no_speech_thold')
+        else:
+            self.param_summary.setText('詳細設定でモデル固有の request option を指定できます。')
 
     def edit_parameters(self):
         dialog = QDialog(self)
@@ -177,6 +212,7 @@ class StagePanel(QFrame):
                 if any(not isinstance(v, (str, bool, int, float)) for v in values.values()):
                     raise ValueError('値は文字列・数値・真偽値のみです。テーブルや配列は使えません。')
                 self.parameters = values
+                self.update_parameter_summary()
                 dialog.accept()
             except ValueError as exc:
                 error.setText(str(exc))
@@ -266,6 +302,9 @@ class MainWindow(QMainWindow):
             'whisper_cpp': str(self.preferences.value('runtime_default/whisper_cpp', 'cpu')),
             'audio_cpp': str(self.preferences.value('runtime_default/audio_cpp', 'cpu')),
         }
+        self.model_storage_dir = str(self.preferences.value('storage/model_dir', '')).strip()
+        self.temp_storage_dir = str(self.preferences.value('storage/temp_dir', '')).strip()
+        self.apply_storage_roots()
         self.keep_model_sources = self.preferences.value('models/keep_source_checkpoints', False, type=bool)
         self.queue_strategy = str(self.preferences.value('queue/strategy', 'stage'))
         if self.queue_strategy not in {'stage', 'file'}:
@@ -296,16 +335,10 @@ class MainWindow(QMainWindow):
         top.addStretch()
         self.runtime_button = QPushButton('⚙')
         self.runtime_button.setObjectName('gear')
-        self.runtime_button.setToolTip('設定 — CPU / Vulkanなどの実行環境')
+        self.runtime_button.setToolTip('設定 — 保存先 / キュー / CPU・Vulkan / 高度な設定')
         self.runtime_button.setAccessibleName('設定')
         self.runtime_button.clicked.connect(self.runtime_dialog)
         top.addWidget(self.runtime_button)
-        self.models_button = QPushButton('モデル定義を開く')
-        self.models_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(model_directory()))))
-        top.addWidget(self.models_button)
-        self.reload_button = QPushButton('再読込')
-        self.reload_button.clicked.connect(self.reload_catalog)
-        top.addWidget(self.reload_button)
         root.addLayout(top)
         splitter = QSplitter()
         root.addWidget(splitter, 1)
@@ -319,7 +352,7 @@ class MainWindow(QMainWindow):
         self.folder_button.clicked.connect(self.choose_folder)
         self.remove_button = QPushButton('選択を削除')
         self.remove_button.clicked.connect(self.remove_selected)
-        self.retry_button = QPushButton('失敗・中断を再キュー')
+        self.retry_button = QPushButton('失敗・中断を再試行')
         self.retry_button.clicked.connect(self.retry_failed)
         for button in (self.add_button, self.folder_button, self.remove_button, self.retry_button):
             toolbar.addWidget(button)
@@ -362,14 +395,14 @@ class MainWindow(QMainWindow):
         self.asr = StagePanel('ASR · 文字起こし', 'asr', False)
         self.diar = StagePanel('Diarization · 話者推定', 'diar', True)
         self.align = StagePanel('Forced Alignment · 時刻調整', 'align', True)
-        for panel in (self.asr, self.diar, self.align):
+        for panel in (self.asr, self.align, self.diar):
             rightlayout.addWidget(panel)
             panel.changed.connect(self.update_summary)
         output, out = card()
         heading = QLabel('出力先')
         heading.setObjectName('section')
         out.addWidget(heading)
-        self.same = QCheckBox('Same directory — 入力と同じフォルダー')
+        self.same = QCheckBox('入力と同じフォルダーに保存')
         self.same.setChecked(True)
         out.addWidget(self.same)
         directoryrow = QHBoxLayout()
@@ -388,7 +421,7 @@ class MainWindow(QMainWindow):
         self.output_dir.textChanged.connect(self.update_summary)
         rightlayout.addWidget(output)
         clip, cl = card()
-        self.clip_on = QCheckBox('検証用に時間範囲を限定する')
+        self.clip_on = QCheckBox('処理する時間範囲を限定')
         cl.addWidget(self.clip_on)
         self.clip_body = QWidget()
         cliprow = QHBoxLayout(self.clip_body)
@@ -397,7 +430,7 @@ class MainWindow(QMainWindow):
         self.clip_start.setRange(0, 864000)
         self.clip_start.setSuffix(' 秒から')
         self.clip_length = QDoubleSpinBox()
-        self.clip_length.setRange(0.1, 60)
+        self.clip_length.setRange(0.1, 864000)
         self.clip_length.setValue(55)
         self.clip_length.setSuffix(' 秒間')
         cliprow.addWidget(self.clip_start)
@@ -438,6 +471,20 @@ class MainWindow(QMainWindow):
         self.reload_catalog()
         self.restore_preferences()
         self.output_changed()
+
+    def apply_storage_roots(self):
+        if self.model_storage_dir:
+            os.environ['ASR2RPP_WEIGHTS_DIR'] = self.model_storage_dir
+        else:
+            os.environ.pop('ASR2RPP_WEIGHTS_DIR', None)
+        if self.temp_storage_dir:
+            os.environ['ASR2RPP_CACHE_DIR'] = self.temp_storage_dir
+        else:
+            os.environ.pop('ASR2RPP_CACHE_DIR', None)
+
+    def storage_path(self, kind: str) -> Path:
+        value = self.model_storage_dir if kind == 'weights' else self.temp_storage_dir
+        return effective_storage_path(value, kind)
 
     def reload_catalog(self):
         self.catalog, errors = load_catalog()
@@ -533,7 +580,7 @@ class MainWindow(QMainWindow):
 
     def set_busy(self, busy):
         for widget in [self.add_button, self.folder_button, self.remove_button, self.retry_button,
-                       self.runtime_button, self.models_button, self.reload_button, self.download_button,
+                       self.runtime_button, self.download_button,
                        self.asr, self.diar, self.align, self.same, self.clip_on, self.clip_body]:
             widget.setEnabled(not busy)
         self.output_dir.setEnabled(not busy and not self.same.isChecked())
@@ -605,27 +652,110 @@ class MainWindow(QMainWindow):
     def runtime_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle('設定')
-        dialog.resize(720, 560)
+        dialog.resize(760, 620)
         layout = QVBoxLayout(dialog)
-        note = QLabel('通常は各処理カードを「設定に従う」にして、ここでエンジンごとの既定実行先を選びます。\n'
-                      'Windows配布版には whisper.cpp / audio.cpp のCPU版とVulkan版を同梱します。'
-                      'Vulkan実行には対応GPUとドライバーが必要です。')
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        tabs = QTabWidget()
+        layout.addWidget(tabs, 1)
 
-        storage = QHBoxLayout()
-        storage_path = QLineEdit(str(data_root() / 'weights'))
-        storage_path.setReadOnly(True)
-        storage_path.setToolTip('ダウンロード済み・変換済みモデルの標準保存先')
-        open_storage = QPushButton('開く')
-        open_storage.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_root() / 'weights'))))
-        storage.addWidget(storage_path, 1)
-        storage.addWidget(open_storage)
+        general = QWidget()
+        general_layout = QVBoxLayout(general)
+        general_layout.setContentsMargins(14, 14, 14, 14)
+        storage_title = QLabel('保存先')
+        storage_title.setObjectName('section')
+        general_layout.addWidget(storage_title)
         storage_form = QFormLayout()
-        storage_form.addRow('モデル保存先', storage)
-        layout.addLayout(storage_form)
+        storage_fields = {}
 
+        def storage_row(kind, value):
+            row = QHBoxLayout()
+            edit = QLineEdit(value)
+            edit.setPlaceholderText('空欄 = ' + default_storage_hint(kind))
+            browse = QPushButton('選択…')
+            browse.setMaximumWidth(72)
+            def choose(checked=False, field=edit):
+                selected = QFileDialog.getExistingDirectory(dialog, '保存先を選択',
+                    field.text().strip() or str(effective_storage_path('', kind)))
+                if selected:
+                    field.setText(selected)
+            browse.clicked.connect(choose)
+            row.addWidget(edit, 1)
+            row.addWidget(browse)
+            return row, edit
+
+        model_row, model_storage = storage_row('weights', self.model_storage_dir)
+        temp_row, temp_storage = storage_row('cache', self.temp_storage_dir)
+        storage_fields['weights'] = model_storage
+        storage_fields['cache'] = temp_storage
+        storage_form.addRow('モデル重み', model_row)
+        storage_form.addRow('一時作業', temp_row)
+        general_layout.addLayout(storage_form)
+
+        storage_hint = QLabel()
+        storage_hint.setObjectName('hint')
+        storage_hint.setWordWrap(True)
+        def update_storage_hint():
+            model_effective = effective_storage_path(model_storage.text().strip(), 'weights')
+            temp_effective = effective_storage_path(temp_storage.text().strip(), 'cache')
+            storage_hint.setText(
+                '空欄時: モデル=' + default_storage_hint('weights') +
+                ' / 一時=' + default_storage_hint('cache') +
+                '\n実効: モデル=' + str(model_effective) + ' / 一時=' + str(temp_effective) +
+                '\n保存先を変更しても既存モデルは自動移動しません。必要なら新しい場所で「選択モデルを準備」を実行してください。')
+        model_storage.textChanged.connect(update_storage_hint)
+        temp_storage.textChanged.connect(update_storage_hint)
+        update_storage_hint()
+        general_layout.addWidget(storage_hint)
+
+        storage_buttons = QHBoxLayout()
+        open_weights = QPushButton('モデル保存先を開く')
+        open_weights.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(effective_storage_path(model_storage.text().strip(), 'weights')))))
+        open_defs = QPushButton('モデルTOMLを開く')
+        open_defs.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(model_directory()))))
+        reload_defs = QPushButton('モデル定義を再読込')
+        reload_defs.clicked.connect(self.reload_catalog)
+        storage_buttons.addWidget(open_weights)
+        storage_buttons.addWidget(open_defs)
+        storage_buttons.addWidget(reload_defs)
+        storage_buttons.addStretch()
+        general_layout.addLayout(storage_buttons)
+
+        keep_sources = QCheckBox('変換成功後も元チェックポイントを保持する')
+        keep_sources.setChecked(self.keep_model_sources)
+        keep_sources.setToolTip('通常はOFF推奨。変換失敗時の元チェックポイントはOFFでも再試行用に保持されます。')
+        general_layout.addWidget(keep_sources)
+
+        queue_title = QLabel('キューとメモリ')
+        queue_title.setObjectName('section')
+        general_layout.addWidget(queue_title)
+        queue_form = QFormLayout()
+        queue_strategy = QComboBox()
+        queue_strategy.addItem('ステージ優先 — SEP → ASR → Align → Diar（推奨）', 'stage')
+        queue_strategy.addItem('ファイル優先 — 1ファイルずつ完走', 'file')
+        queue_strategy.setCurrentIndex(max(0, queue_strategy.findData(self.queue_strategy)))
+        queue_strategy.setToolTip('ステージ優先は同じモデルをまとめて使い、別モデルの同時常駐を避けます。')
+        queue_form.addRow('処理順', queue_strategy)
+        batch_ram = QSpinBox()
+        batch_ram.setRange(128, 8192)
+        batch_ram.setSingleStep(128)
+        batch_ram.setSuffix(' MB')
+        batch_ram.setValue(self.batch_audio_ram_mb)
+        batch_ram.setToolTip('audio.cppへ一度に渡す入力WAVサイズの目安。低RAM環境では小さくします。')
+        queue_form.addRow('audio.cppバッチ上限', batch_ram)
+        threads = QSpinBox()
+        threads.setRange(1, 128)
+        threads.setValue(int(self.preferences.value('threads', 4)))
+        queue_form.addRow('CPU threads', threads)
+        general_layout.addLayout(queue_form)
+        general_layout.addStretch()
+        tabs.addTab(general, '一般')
+
+        runtime_tab = QWidget()
+        runtime_layout = QVBoxLayout(runtime_tab)
+        runtime_layout.setContentsMargins(14, 14, 14, 14)
+        note = QLabel('各処理カードは通常「設定に従う」で使います。Windows版はCPU/Vulkanを同梱します。')
+        note.setWordWrap(True)
+        runtime_layout.addWidget(note)
         runtime_form = QFormLayout()
         backend_fields = {}
         choices = [('CPU', 'cpu'), ('Vulkan GPU', 'vulkan'), ('Auto', 'auto'),
@@ -636,10 +766,9 @@ class MainWindow(QMainWindow):
                 combo.addItem(text, value)
             index = combo.findData(self.runtime_defaults.get(runtime, 'cpu'))
             combo.setCurrentIndex(max(0, index))
-            combo.setToolTip('CPU/VulkanはWindows配布版に同梱。CUDA/Metal等は対応実行ファイルを下で指定できます。')
             runtime_form.addRow(label, combo)
             status = QLabel()
-            status.setObjectName('subtitle')
+            status.setObjectName('hint')
             states = []
             for device, title in [('cpu', 'CPU'), ('vulkan', 'Vulkan')]:
                 try:
@@ -647,36 +776,19 @@ class MainWindow(QMainWindow):
                     states.append(f'{title}: 利用可能 ({path.name})')
                 except Exception:
                     states.append(f'{title}: 未検出')
-            status.setText('  /  '.join(states))
+            status.setText(' / '.join(states))
             status.setWordWrap(True)
             runtime_form.addRow('', status)
             backend_fields[runtime] = combo
-        threads = QSpinBox()
-        threads.setRange(1, 128)
-        threads.setValue(int(self.preferences.value('threads', 4)))
-        runtime_form.addRow('CPU threads', threads)
-        keep_sources = QCheckBox('変換成功後も元チェックポイントを保持する')
-        keep_sources.setChecked(self.keep_model_sources)
-        keep_sources.setToolTip('通常はOFF推奨。変換に成功したCKPT等の大きな元重みを残したい場合だけ有効にします。')
-        runtime_form.addRow('モデル保存', keep_sources)
-        queue_strategy = QComboBox()
-        queue_strategy.addItem('ステージ優先 — SEP→ASR→Align→Diar（推奨）', 'stage')
-        queue_strategy.addItem('ファイル優先 — 1ファイルずつ完走（互換）', 'file')
-        queue_strategy.setCurrentIndex(max(0, queue_strategy.findData(self.queue_strategy)))
-        queue_strategy.setToolTip('ステージ優先は同じモデルをまとめて使い、別モデルの同時常駐を避けます。')
-        runtime_form.addRow('キュー処理', queue_strategy)
-        batch_ram = QSpinBox()
-        batch_ram.setRange(128, 8192)
-        batch_ram.setSingleStep(128)
-        batch_ram.setSuffix(' MB')
-        batch_ram.setValue(self.batch_audio_ram_mb)
-        batch_ram.setToolTip('audio.cppはバッチ入力WAVをRAMへ展開するため、1バッチの入力ファイルサイズ合計をこの目安で分割します。')
-        runtime_form.addRow('audio.cpp batch RAM目安', batch_ram)
-        layout.addLayout(runtime_form)
+        runtime_layout.addLayout(runtime_form)
 
-        advanced = QLabel('実行ファイルの上書き（空欄なら同梱版 / PATHから自動検出）')
+        advanced = QLabel('実行ファイルの上書き')
         advanced.setObjectName('section')
-        layout.addWidget(advanced)
+        runtime_layout.addWidget(advanced)
+        advanced_note = QLabel('通常は空欄のままで同梱版を使用します。独自ビルドを使う場合だけ指定してください。')
+        advanced_note.setObjectName('hint')
+        advanced_note.setWordWrap(True)
+        runtime_layout.addWidget(advanced_note)
         form = QFormLayout()
         fields = {}
         keys = ['ffmpeg', 'whisper_cpp:cpu', 'whisper_cpp:vulkan', 'whisper_cpp:metal',
@@ -696,13 +808,22 @@ class MainWindow(QMainWindow):
             row.addWidget(button)
             form.addRow(key, row)
             fields[key] = edit
-        layout.addLayout(form)
+        runtime_layout.addLayout(form)
+        runtime_layout.addStretch()
+        tabs.addTab(runtime_tab, '実行環境')
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         if dialog.exec():
+            for edit in (model_storage, temp_storage):
+                value = edit.text().strip()
+                if value:
+                    Path(value).expanduser().mkdir(parents=True, exist_ok=True)
+            self.model_storage_dir = model_storage.text().strip()
+            self.temp_storage_dir = temp_storage.text().strip()
+            self.apply_storage_roots()
             self.runtime_defaults = {runtime: combo.currentData() for runtime, combo in backend_fields.items()}
             self.runtime_paths = {k: v.text().strip() for k, v in fields.items() if v.text().strip()}
             self.keep_model_sources = keep_sources.isChecked()
@@ -714,6 +835,8 @@ class MainWindow(QMainWindow):
 
     def save_preferences(self):
         self.preferences.setValue('runtime_paths', json.dumps(self.runtime_paths))
+        self.preferences.setValue('storage/model_dir', self.model_storage_dir)
+        self.preferences.setValue('storage/temp_dir', self.temp_storage_dir)
         self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
         self.preferences.setValue('queue/strategy', self.queue_strategy)
         self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
