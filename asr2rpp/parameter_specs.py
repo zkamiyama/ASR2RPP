@@ -132,8 +132,8 @@ WHISPER = [
          tip_ja="文字起こし結果を英語へ翻訳。"),
     dict(key="initial_prompt", type="string", default="",
          en="Initial prompt", ja="初期プロンプト",
-         tip_en="Initial prompt passed to whisper.cpp.",
-         tip_ja="whisper.cpp に渡す初期プロンプト。"),
+         tip_en="Initial prompt passed to whisper.cpp. Empty means no prompt.",
+         tip_ja="whisper.cpp に渡す初期プロンプト。空欄では使用しません。"),
     dict(key="carry_initial_prompt", type="bool", default=False,
          en="Carry initial prompt", ja="初期プロンプトを継続",
          tip_en="Prepend the initial prompt on subsequent decoding windows.",
@@ -252,9 +252,9 @@ def specs_for(model) -> list[dict]:
     else:
         specs = AUDIO.get(model.family, [])
     result = []
+    disabled = model.disabled_parameters
     for original in specs:
-        # The anime-whisper distributor explicitly warns against an initial prompt.
-        if model.id == "anime-whisper" and original["key"] in {"initial_prompt", "carry_initial_prompt"}:
+        if original["key"] in disabled:
             continue
         spec = dict(original)
         key = spec["key"]
