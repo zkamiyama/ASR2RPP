@@ -165,7 +165,7 @@ def test_gui_preprocessing_modes(tmp_path, monkeypatch):
     assert window.settings().preprocess.parameters['num_overlap'] == 2
     window.preprocess.overlap.setValue(3)
     assert window.settings().preprocess.parameters['num_overlap'] == 3
-    assert 'Overlap=3' in window.preprocess.param_summary.text()
+    assert window.preprocess.param_summary.text() == 'Overlap=3（モデル既定 2）'
     window.preprocess.original.setChecked(True)
     assert window.settings().reference_audio == 'original'
     window.diar.toggle.setChecked(False)
