@@ -686,21 +686,23 @@ class MainWindow(QMainWindow):
         temp_row, temp_storage = storage_row('cache', self.temp_storage_dir)
         storage_fields['weights'] = model_storage
         storage_fields['cache'] = temp_storage
-        storage_form.addRow('モデル重み', model_row)
-        storage_form.addRow('一時作業', temp_row)
+        storage_form.addRow('モデル保存先', model_row)
+        storage_form.addRow('一時ファイル先', temp_row)
         general_layout.addLayout(storage_form)
 
         storage_hint = QLabel()
         storage_hint.setObjectName('hint')
         storage_hint.setWordWrap(True)
         def update_storage_hint():
-            model_effective = effective_storage_path(model_storage.text().strip(), 'weights')
-            temp_effective = effective_storage_path(temp_storage.text().strip(), 'cache')
-            storage_hint.setText(
-                '空欄時: モデル=' + default_storage_hint('weights') +
-                ' / 一時=' + default_storage_hint('cache') +
-                '\n実効: モデル=' + str(model_effective) + ' / 一時=' + str(temp_effective) +
-                '\n保存先を変更しても既存モデルは自動移動しません。必要なら新しい場所で「選択モデルを準備」を実行してください。')
+            model_value = model_storage.text().strip()
+            temp_value = temp_storage.text().strip()
+            text = ('既定: モデル ' + default_storage_hint('weights') +
+                    ' / 一時ファイル ' + default_storage_hint('cache'))
+            if model_value or temp_value:
+                text += ('\n現在: モデル ' + str(effective_storage_path(model_value, 'weights')) +
+                         ' / 一時ファイル ' + str(effective_storage_path(temp_value, 'cache')))
+            text += '\n保存先変更時、既存モデルは自動移動しません。'
+            storage_hint.setText(text)
         model_storage.textChanged.connect(update_storage_hint)
         temp_storage.textChanged.connect(update_storage_hint)
         update_storage_hint()
@@ -708,8 +710,11 @@ class MainWindow(QMainWindow):
 
         storage_buttons = QHBoxLayout()
         open_weights = QPushButton('モデル保存先を開く')
-        open_weights.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl.fromLocalFile(str(effective_storage_path(model_storage.text().strip(), 'weights')))))
+        def open_model_storage():
+            path = effective_storage_path(model_storage.text().strip(), 'weights')
+            path.mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        open_weights.clicked.connect(open_model_storage)
         open_defs = QPushButton('モデルTOMLを開く')
         open_defs.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(model_directory()))))
         reload_defs = QPushButton('モデル定義を再読込')
@@ -813,6 +818,8 @@ class MainWindow(QMainWindow):
         tabs.addTab(runtime_tab, '実行環境')
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText('保存')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('キャンセル')
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
