@@ -1,2 +1,3 @@
 final-vulkan-gear-package-20260924
 2026-09-24 rebuild after validated torch-free big_beta7 auto-conversion
+2026-09-24 rebuild with PyInstaller 6.22.3 and validated big_beta7 converter
