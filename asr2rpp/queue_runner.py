@@ -23,7 +23,8 @@ from . import preprocessing as pre
 from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
 from .adapters import (
     Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
-    run_process, scalar,
+    run_process, scalar, whisper_parameter_args, split_engine_parameters,
+    audio_session_args,
 )
 
 
@@ -122,24 +123,19 @@ def _copy_log(log: Path, jobs, filename: str):
 
 
 def _stage_parameters(model, stage):
-    return {**model.defaults.get('request', {}), **(stage.parameters or {})}
+    request, _session = split_engine_parameters(model, stage.parameters or {})
+    return request
 
 
-def _session_args(model):
-    args = []
-    for key, value in model.defaults.get('session', {}).items():
-        args += ['--session-option', f'{key}={scalar(value)}']
-    return args
+def _session_args(model, stage):
+    _request, session = split_engine_parameters(model, stage.parameters or {})
+    return audio_session_args(model, session)
 
 
 def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
                    cancel, progress, item_callback):
     binary = executable(model.runtime, stage.device, stage.executable)
     parameters = _stage_parameters(model, stage)
-    allowed = {'beam_size': '-bs', 'temperature': '-tp', 'no_speech_thold': '-nth'}
-    for key in parameters:
-        if key not in allowed:
-            raise ValueError(f'Unsupported Whisper parameter: {key}')
     results = {}
     for chunk_no, chunk in enumerate(_chunks_for_command(jobs, lambda j: audio_paths[j.key]), 1):
         checkpoint(cancel)
@@ -151,8 +147,7 @@ def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
             argv.append('-ng')
         elif stage.device not in {'auto', 'vulkan', 'cuda', 'metal'}:
             raise ValueError('Unsupported Whisper device')
-        for key, value in parameters.items():
-            argv += [allowed[key], scalar(value)]
+        argv += whisper_parameter_args(parameters)
         for job in chunk:
             item_callback(job.index, 'ASR', '')
             argv += ['-f', str(audio_paths[job.key]), '-of', str(out / job.key)]
@@ -207,7 +202,7 @@ def _audio_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
             if not key.replace('_', '').replace('.', '').isalnum():
                 raise ValueError('Invalid audio.cpp request parameter')
             argv += ['--request-option', f'{key}={scalar(value)}']
-        argv += _session_args(model)
+        argv += _session_args(model, stage)
         log = chunk_root / 'engine.log'
         try:
             for job in chunk:
@@ -417,9 +412,10 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         '--mode', 'offline', '--batch-audio-dir', str(chunk_root / 'inputs'),
                         '--threads', str(stage.threads), '--out-dir', str(out),
                     ]
-                    session = {**model.defaults.get('session', {}), **(stage.parameters or {})}
-                    for key, value in session.items():
-                        argv += ['--session-option', f'{model.family}.{key}={scalar(value)}']
+                    request, session = split_engine_parameters(model, stage.parameters or {})
+                    for key, value in request.items():
+                        argv += ['--request-option', f'{key}={scalar(value)}']
+                    argv += audio_session_args(model, session)
                     log = chunk_root / 'engine.log'
                     try:
                         for job in chunk:
