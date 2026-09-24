@@ -28,6 +28,7 @@ QPushButton { background: #fff; border: 1px solid #cbd4df; padding: 7px 12px; bo
 QPushButton:hover { border-color: #4876ab; background: #edf4fc; }
 QPushButton#primary { background: #245b91; color: white; font-weight: 600; border-color: #245b91; }
 QPushButton#primary:hover { background: #1a4b7d; }
+QPushButton#gear { font-size: 20px; font-weight: 600; padding: 4px; min-width: 34px; max-width: 34px; min-height: 30px; max-height: 30px; }
 QPushButton#stop { color: #a43535; border-color: #cf9d9d; }
 QPushButton#primary:disabled, QPushButton#stop:disabled, QPushButton:disabled { color: #8993a1; background: #e9edf2; border-color: #dce2eb; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: white; border: 1px solid #cbd4df; border-radius: 4px; padding: 5px; min-height: 20px; }
@@ -88,8 +89,10 @@ class StagePanel(QFrame):
         form.addWidget(QLabel('モデル'), 0, 0)
         form.addWidget(self.model, 0, 1, 1, 3)
         self.device = QComboBox()
-        self.device.addItems(['cpu', 'vulkan', 'metal', 'cuda', 'auto'])
-        self.device.setToolTip('選んだデバイスに対応したネイティブ実行ファイルが必要です。GPUの実機確認とは別です。')
+        for label, value in [('設定に従う', 'default'), ('CPU', 'cpu'), ('Vulkan GPU', 'vulkan'),
+                             ('Metal GPU', 'metal'), ('CUDA GPU', 'cuda'), ('Auto', 'auto')]:
+            self.device.addItem(label, value)
+        self.device.setToolTip('通常は「設定に従う」。必要な処理だけ個別にCPU/GPUへ上書きできます。')
         form.addWidget(QLabel('実行先'), 1, 0)
         form.addWidget(self.device, 1, 1)
         self.language = QLineEdit('Japanese' if task == 'align' else 'ja')
@@ -108,7 +111,7 @@ class StagePanel(QFrame):
         layout.addWidget(self.note)
         self.toggle.toggled.connect(self.sync)
         self.model.currentIndexChanged.connect(self.model_changed)
-        self.device.currentTextChanged.connect(self.changed)
+        self.device.currentIndexChanged.connect(self.changed)
         self.sync()
 
     def enabled_stage(self):
@@ -181,12 +184,14 @@ class StagePanel(QFrame):
         layout.addWidget(buttons)
         dialog.exec()
 
-    def stage(self, runtime_paths, threads):
+    def stage(self, runtime_paths, threads, runtime_defaults=None):
         if not self.enabled_stage():
             return None
         model_id = self.model.currentData() or ''
         model = self.catalog.get(model_id)
-        device = self.device.currentText()
+        requested = self.device.currentData() or 'default'
+        runtime_defaults = runtime_defaults or {}
+        device = runtime_defaults.get(model.runtime, 'cpu') if model and requested == 'default' else requested
         key = f'{model.runtime}:{device}' if model else ''
         return Stage(model_id, device, runtime_paths.get(key, ''), self.language.text().strip(), threads, copy.deepcopy(self.parameters))
 
@@ -238,6 +243,13 @@ class MainWindow(QMainWindow):
             self.runtime_paths = json.loads(self.preferences.value('runtime_paths', '{}'))
         except (ValueError, TypeError):
             self.runtime_paths = {}
+        self.runtime_defaults = {
+            'whisper_cpp': str(self.preferences.value('runtime_default/whisper_cpp', 'cpu')),
+            'audio_cpp': str(self.preferences.value('runtime_default/audio_cpp', 'cpu')),
+        }
+        for runtime in self.runtime_defaults:
+            if self.runtime_defaults[runtime] not in {'cpu', 'vulkan', 'metal', 'cuda', 'auto'}:
+                self.runtime_defaults[runtime] = 'cpu'
         self.worker = None
         self.entries = []
         self.catalog = {}
@@ -257,7 +269,10 @@ class MainWindow(QMainWindow):
         titlebox.addWidget(subtitle)
         top.addLayout(titlebox)
         top.addStretch()
-        self.runtime_button = QPushButton('実行環境…')
+        self.runtime_button = QPushButton('⚙')
+        self.runtime_button.setObjectName('gear')
+        self.runtime_button.setToolTip('設定 — CPU / Vulkanなどの実行環境')
+        self.runtime_button.setAccessibleName('設定')
         self.runtime_button.clicked.connect(self.runtime_dialog)
         top.addWidget(self.runtime_button)
         self.models_button = QPushButton('モデル定義を開く')
@@ -476,8 +491,9 @@ class MainWindow(QMainWindow):
 
     def settings(self):
         threads = int(self.preferences.value('threads', 4))
-        return Settings(self.asr.stage(self.runtime_paths, threads), self.diar.stage(self.runtime_paths, threads),
-                        self.align.stage(self.runtime_paths, threads), self.same.isChecked(),
+        return Settings(self.asr.stage(self.runtime_paths, threads, self.runtime_defaults),
+                        self.diar.stage(self.runtime_paths, threads, self.runtime_defaults),
+                        self.align.stage(self.runtime_paths, threads, self.runtime_defaults), self.same.isChecked(),
                         self.output_dir.text().strip(), self.runtime_paths.get('ffmpeg', ''),
                         self.clip_start.value() if self.clip_on.isChecked() else 0,
                         self.clip_length.value() if self.clip_on.isChecked() else 0)
@@ -554,12 +570,36 @@ class MainWindow(QMainWindow):
 
     def runtime_dialog(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle('実行環境 — 空欄なら同梱エンジンを自動検出')
-        dialog.resize(700, 480)
+        dialog.setWindowTitle('設定')
+        dialog.resize(720, 560)
         layout = QVBoxLayout(dialog)
-        note = QLabel('モデル重みは「選択モデルを取得」で別途ダウンロードします。\nGPUを使う場合は対応ビルドを指定してください。CPUビルドではGPUを使用できません。')
+        note = QLabel('通常は各処理カードを「設定に従う」にして、ここでエンジンごとの既定実行先を選びます。\n'
+                      'Windows配布版にはCPU版とVulkan版を同梱します。Vulkanには対応GPUドライバーが必要です。')
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        runtime_form = QFormLayout()
+        backend_fields = {}
+        choices = [('CPU', 'cpu'), ('Vulkan GPU', 'vulkan'), ('Auto', 'auto'),
+                   ('CUDA GPU', 'cuda'), ('Metal GPU', 'metal')]
+        for runtime, label in [('whisper_cpp', 'whisper.cpp 既定'), ('audio_cpp', 'audio.cpp 既定')]:
+            combo = QComboBox()
+            for text, value in choices:
+                combo.addItem(text, value)
+            index = combo.findData(self.runtime_defaults.get(runtime, 'cpu'))
+            combo.setCurrentIndex(max(0, index))
+            combo.setToolTip('同梱されていない方式を選ぶ場合は下の実行ファイルを指定してください。')
+            runtime_form.addRow(label, combo)
+            backend_fields[runtime] = combo
+        threads = QSpinBox()
+        threads.setRange(1, 128)
+        threads.setValue(int(self.preferences.value('threads', 4)))
+        runtime_form.addRow('CPU threads', threads)
+        layout.addLayout(runtime_form)
+
+        advanced = QLabel('実行ファイルの上書き（空欄なら同梱版 / PATHから自動検出）')
+        advanced.setObjectName('section')
+        layout.addWidget(advanced)
         form = QFormLayout()
         fields = {}
         keys = ['ffmpeg', 'whisper_cpp:cpu', 'whisper_cpp:vulkan', 'whisper_cpp:metal',
@@ -567,7 +607,7 @@ class MainWindow(QMainWindow):
         for key in keys:
             row = QHBoxLayout()
             edit = QLineEdit(self.runtime_paths.get(key, ''))
-            edit.setPlaceholderText('同梱版 / PATHから自動検出')
+            edit.setPlaceholderText('自動検出')
             button = QPushButton('…')
             button.setMaximumWidth(40)
             def browse(checked=False, field=edit):
@@ -579,27 +619,28 @@ class MainWindow(QMainWindow):
             row.addWidget(button)
             form.addRow(key, row)
             fields[key] = edit
-        threads = QSpinBox()
-        threads.setRange(1, 128)
-        threads.setValue(int(self.preferences.value('threads', 4)))
-        form.addRow('CPU threads', threads)
         layout.addLayout(form)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         if dialog.exec():
+            self.runtime_defaults = {runtime: combo.currentData() for runtime, combo in backend_fields.items()}
             self.runtime_paths = {k: v.text().strip() for k, v in fields.items() if v.text().strip()}
             self.preferences.setValue('threads', threads.value())
             self.save_preferences()
+            self.update_summary()
 
     def save_preferences(self):
         self.preferences.setValue('runtime_paths', json.dumps(self.runtime_paths))
+        for runtime, device in self.runtime_defaults.items():
+            self.preferences.setValue('runtime_default/' + runtime, device)
         self.preferences.setValue('output', self.output_dir.text())
         self.preferences.setValue('same', self.same.isChecked())
         for key, panel in [('asr', self.asr), ('diar', self.diar), ('align', self.align)]:
             self.preferences.setValue(key + '/model', panel.model.currentData() or '')
-            self.preferences.setValue(key + '/device', panel.device.currentText())
+            self.preferences.setValue(key + '/device', panel.device.currentData() or 'default')
             self.preferences.setValue(key + '/enabled', panel.enabled_stage())
             self.preferences.setValue(key + '/language', panel.language.text())
             self.preferences.setValue(key + '/parameters', json.dumps(panel.parameters))
@@ -612,7 +653,11 @@ class MainWindow(QMainWindow):
             index = panel.model.findData(self.preferences.value(key + '/model', ''))
             if index >= 0:
                 panel.model.setCurrentIndex(index)
-            panel.device.setCurrentText(self.preferences.value(key + '/device', 'cpu'))
+            saved_device = str(self.preferences.value(key + '/device', 'default'))
+            device_index = panel.device.findData(saved_device)
+            if device_index < 0:
+                device_index = panel.device.findText(saved_device)
+            panel.device.setCurrentIndex(max(0, device_index))
             if panel.optional:
                 panel.toggle.setChecked(self.preferences.value(key + '/enabled', False, type=bool))
             panel.language.setText(self.preferences.value(key + '/language', panel.language.text()))
