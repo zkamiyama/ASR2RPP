@@ -510,8 +510,9 @@ class ParameterDialog(QDialog):
         result = {}
         known = {spec["key"] for spec in self.specs}
         # Preserve unknown options from hand-edited preferences/custom model definitions.
+        disabled = self.model.disabled_parameters
         for key, value in self.parameters.items():
-            if key not in known:
+            if key not in known and key not in disabled:
                 result[key] = value
         for key, (widget, spec) in self.controls.items():
             value = _param_value(widget, spec)
@@ -533,8 +534,8 @@ class StagePanel(QFrame):
         self.setObjectName("stage")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(9, 8, 9, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(8, 6, 8, 7)
+        root.setSpacing(4)
 
         head = QHBoxLayout()
         self.title = QLabel()
@@ -555,18 +556,24 @@ class StagePanel(QFrame):
         self.body = QWidget()
         grid = QGridLayout(self.body)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(5)
+        grid.setHorizontalSpacing(5)
+        grid.setVerticalSpacing(4)
+        grid.setColumnMinimumWidth(0, 58)
+        grid.setColumnMinimumWidth(2, 38)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
 
         self.model_label = QLabel()
         self.model_label.setObjectName("muted")
+        self.model_label.setFixedWidth(58)
         self.model = QComboBox()
         self.model.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.model.currentIndexChanged.connect(self._model_changed)
         self.params = QToolButton()
         self.params.setObjectName("iconButton")
         self.params.setIcon(icon("tune"))
-        self.params.setIconSize(QSize(17, 17))
+        self.params.setIconSize(QSize(16, 16))
+        self.params.setFixedSize(26, 26)
         self.params.clicked.connect(self.edit_parameters)
         grid.addWidget(self.model_label, 0, 0)
         grid.addWidget(self.model, 0, 1, 1, 3)
@@ -574,11 +581,17 @@ class StagePanel(QFrame):
 
         self.backend_label = QLabel()
         self.backend_label.setObjectName("muted")
+        self.backend_label.setFixedWidth(58)
         self.device = QComboBox()
+        self.device.setMinimumWidth(104)
         self.language_label = QLabel()
         self.language_label.setObjectName("muted")
+        self.language_label.setFixedWidth(38)
         self.language = QComboBox()
         self.language.setEditable(True)
+        self.language.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.language.setMinimumWidth(112)
+        self.language.setToolTip("Select a known language value or type a runtime-specific code.")
         for value in ("auto", "ja", "ja-JP", "en", "en-US", "Japanese", "English"):
             self.language.addItem(value, value)
         grid.addWidget(self.backend_label, 1, 0)
@@ -649,6 +662,8 @@ class StagePanel(QFrame):
     def _model_changed(self):
         model = self.catalog.get(self.model.currentData())
         if model:
+            allowed = {spec["key"] for spec in specs_for(model)}
+            self.parameters = {key: value for key, value in self.parameters.items() if key in allowed}
             default_language = str(model.defaults.get("language", "ja"))
             self.language.setCurrentText(default_language)
         self.changed.emit()
