@@ -1107,7 +1107,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setToolTip(tr["settings"])
         self.language_button.setToolTip(tr["ui_language"] + " (Ctrl+Shift+L)")
         self.language_button.setText("JA" if self.ui_lang == "ja" else "EN")
-        self.update_state()
+        self.render_queue()
 
     def toggle_language(self):
         self.ui_lang = "en" if self.ui_lang == "ja" else "ja"
