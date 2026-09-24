@@ -794,7 +794,7 @@ class PreferencesDialog(QDialog):
         for key in ("ffmpeg", "whisper_cpp:cpu", "whisper_cpp:vulkan",
                     "audio_cpp:cpu", "audio_cpp:vulkan"):
             line = QLineEdit(owner.runtime_paths.get(key, ""))
-            line.setPlaceholderText("Auto")
+            line.setPlaceholderText("Bundled / PATH")
             advanced_layout.addLayout(self._file_row(key, line))
             self.runtime_fields[key] = line
         advanced_layout.addStretch()
@@ -1245,7 +1245,7 @@ class MainWindow(QMainWindow):
         can_go = valid_output and any(e["status"] == "waiting" for e in self.entries)
         self.run_button.setEnabled(True if self.worker else can_go)
         self.run_button.setProperty("running", bool(self.worker))
-        self.run_button.setText("STOP" if self.worker else "GO")
+        self.run_button.setText("STOP" if self.worker else "GO!")
         self.run_button.setIcon(icon("stop" if self.worker else "play"))
         self.run_button.style().unpolish(self.run_button)
         self.run_button.style().polish(self.run_button)
