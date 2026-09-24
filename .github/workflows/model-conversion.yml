@@ -1,6 +1,9 @@
 name: Validate big_beta7 torch-free conversion
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/queue-gui]
+    paths: ['ci-big-beta7-trigger.txt']
 permissions:
   contents: read
 jobs:
