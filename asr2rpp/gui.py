@@ -202,10 +202,11 @@ class Worker(QThread):
     item = Signal(int, str, str)
     error = Signal(str)
 
-    def __init__(self, jobs, settings, catalog, download=False):
+    def __init__(self, jobs, settings, catalog, download=False, keep_model_sources=False):
         super().__init__()
         self.jobs, self.settings, self.catalog = jobs, copy.deepcopy(settings), catalog.copy()
         self.download = download
+        self.keep_model_sources = bool(keep_model_sources)
         self.cancel = threading.Event()
 
     def run(self):
@@ -213,7 +214,7 @@ class Worker(QThread):
             try:
                 ids = {s.model_id for s in [self.settings.asr, self.settings.diar, self.settings.align] if s}
                 for model_id in ids:
-                    resolve_model(self.catalog[model_id], self.cancel, self.progress.emit, download=True)
+                    resolve_model(self.catalog[model_id], self.cancel, self.progress.emit, download=True, keep_source=self.keep_model_sources)
                 self.progress.emit('選択モデルのダウンロードが完了しました。')
             except Exception as exc:
                 self.error.emit(str(exc))
@@ -254,6 +255,7 @@ class MainWindow(QMainWindow):
             'whisper_cpp': str(self.preferences.value('runtime_default/whisper_cpp', 'cpu')),
             'audio_cpp': str(self.preferences.value('runtime_default/audio_cpp', 'cpu')),
         }
+        self.keep_model_sources = self.preferences.value('models/keep_source_checkpoints', False, type=bool)
         for runtime in self.runtime_defaults:
             if self.runtime_defaults[runtime] not in {'cpu', 'vulkan', 'metal', 'cuda', 'auto'}:
                 self.runtime_defaults[runtime] = 'cpu'
@@ -538,7 +540,7 @@ class MainWindow(QMainWindow):
             self.save_preferences()
             self.completed = 0
             self.progress.setRange(0, 0 if download else len(jobs))
-            self.worker = Worker(jobs, settings, self.catalog, download)
+            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources)
             self.worker.progress.connect(self.show_progress)
             self.worker.item.connect(self.item_changed)
             self.worker.error.connect(self.show_error)
@@ -622,6 +624,10 @@ class MainWindow(QMainWindow):
         threads.setRange(1, 128)
         threads.setValue(int(self.preferences.value('threads', 4)))
         runtime_form.addRow('CPU threads', threads)
+        keep_sources = QCheckBox('変換成功後も元チェックポイントを保持する')
+        keep_sources.setChecked(self.keep_model_sources)
+        keep_sources.setToolTip('通常はOFF推奨。変換に成功したCKPT等の大きな元重みを残したい場合だけ有効にします。')
+        runtime_form.addRow('モデル保存', keep_sources)
         layout.addLayout(runtime_form)
 
         advanced = QLabel('実行ファイルの上書き（空欄なら同梱版 / PATHから自動検出）')
@@ -655,12 +661,15 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.runtime_defaults = {runtime: combo.currentData() for runtime, combo in backend_fields.items()}
             self.runtime_paths = {k: v.text().strip() for k, v in fields.items() if v.text().strip()}
+            self.keep_model_sources = keep_sources.isChecked()
             self.preferences.setValue('threads', threads.value())
+            self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
             self.save_preferences()
             self.update_summary()
 
     def save_preferences(self):
         self.preferences.setValue('runtime_paths', json.dumps(self.runtime_paths))
+        self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
         for runtime, device in self.runtime_defaults.items():
             self.preferences.setValue('runtime_default/' + runtime, device)
         self.preferences.setValue('output', self.output_dir.text())
