@@ -90,7 +90,7 @@ class Worker(base.Worker):
                 stages = [self.settings.asr, self.settings.diar, self.settings.align, self.settings.preprocess]
                 for model_id in dict.fromkeys(stage.model_id for stage in stages if stage):
                     resolve_model(self.catalog[model_id], self.cancel, self.progress.emit, download=True)
-                self.progress.emit('選択モデルの取得が完了しました。')
+                self.progress.emit('選択モデルの準備が完了しました。')
             except Exception as exc:
                 self.error.emit(str(exc))
             return
