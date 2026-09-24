@@ -15,7 +15,7 @@ import struct
 import tempfile
 import time
 from . import pipeline as core
-from .catalog import Model, checkpoint, digest, resolve_model
+from .catalog import Model, checkpoint, cache_root, digest, resolve_model
 from .adapters import executable, ffmpeg_path, run_process, Unit
 from rpp_writer import Source, Item, Track, Project, dumps
 
@@ -175,9 +175,13 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
                 'clip_start': settings.clip_start, 'source_unchanged': None}
     started = time.monotonic()
     core.json_write(report / 'manifest.json', manifest)
+    temp_path = None
     try:
-        with tempfile.TemporaryDirectory(prefix='.preprocess-', dir=report) as temporary:
+        cache_directory = cache_root()
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='preprocess-', dir=cache_directory) as temporary:
             work = Path(temporary)
+            temp_path = work
             progress('Preprocessing — separating vocals from background audio')
             vocals, metadata = separate(source, work / 'separation', settings, model, weights, cancel, progress, log_dir=report)
             manifest['preprocessing'] = metadata
@@ -220,5 +224,5 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
         raise
     finally:
         manifest['elapsed_seconds'] = time.monotonic() - started
-        manifest['temporary_preprocessed_audio_removed'] = not any(report.glob('.preprocess-*'))
+        manifest['temporary_preprocessed_audio_removed'] = (temp_path is None or not temp_path.exists())
         core.json_write(report / 'manifest.json', manifest)
