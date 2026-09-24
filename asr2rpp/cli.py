@@ -42,7 +42,7 @@ def main(argv=None):
     sub.add_parser('gui')
     args = parser.parse_args(argv)
     if args.command == 'gui':
-        from .gui_preprocessing import main as gui_main
+        from .gui_dcc import main as gui_main
         return gui_main()
     if args.command == 'doctor':
         failures = []
