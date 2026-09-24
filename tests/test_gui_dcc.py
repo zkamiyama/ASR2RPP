@@ -1,0 +1,105 @@
+import os
+from pathlib import Path
+
+import pytest
+
+from asr2rpp.adapters import whisper_parameter_args, audio_session_args
+from asr2rpp.catalog import Model
+from asr2rpp.parameter_specs import specs_for
+
+
+def test_native_parameter_mapping():
+    args = whisper_parameter_args({
+        "beam_size": 7,
+        "temperature": 0.2,
+        "split_on_word": True,
+        "initial_prompt": "REAPER",
+    })
+    assert args == ["-bs", "7", "-tp", "0.2", "-sow", "--prompt", "REAPER"]
+    model = Model("d", "audio_cpp", "diar", {"path": "x"},
+                  family="nemotron_3_diar")
+    session = audio_session_args(model, {"graph_arena_mb": 512, "weight_type": "native"})
+    assert session == [
+        "--session-option", "nemotron_3_diar.graph_arena_mb=512",
+        "--session-option", "nemotron_3_diar.weight_type=native",
+    ]
+
+
+def test_parameter_specs_surface_cpp_controls():
+    whisper = Model("w", "whisper_cpp", "asr", {"path": "x"})
+    keys = {x["key"] for x in specs_for(whisper)}
+    assert {"beam_size", "best_of", "temperature", "temperature_inc",
+            "no_speech_thold", "entropy_thold", "logprob_thold", "word_thold",
+            "audio_ctx", "max_context", "max_len", "split_on_word",
+            "no_fallback", "suppress_nst", "initial_prompt"} <= keys
+    diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
+    diar_keys = {x["key"] for x in specs_for(diar)}
+    assert {"speaker_threshold", "speaker_min_frames", "speaker_pad_frames",
+            "session.latency_profile", "session.graph_arena_mb",
+            "session.weight_context_mb", "session.weight_type"} <= diar_keys
+
+
+def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("ASR2RPP_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("ASR2RPP_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("ASR2RPP_CACHE_DIR", raising=False)
+
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from asr2rpp.gui_dcc import MainWindow, PreferencesDialog, STYLE
+
+    QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope,
+                      str(tmp_path / "settings"))
+    app = QApplication.instance() or QApplication([])
+    app.setStyle("Fusion")
+    app.setStyleSheet(STYLE)
+
+    window = MainWindow()
+    window.show()
+    app.processEvents()
+
+    assert window.windowTitle() == "ASR2RPP"
+    assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
+    assert window.run_button.text() == "GO"
+    assert not hasattr(window, "clip_start")
+    assert "#1b1f24" in STYLE
+    visible_buttons = [button.text() for button in window.findChildren(QPushButton)]
+    assert "キューを実行" not in visible_buttons
+    assert "選択モデルを準備" not in visible_buttons
+
+    # Queue has no permanent add toolbar; files are accepted directly.
+    sample = tmp_path / "meeting.wav"
+    sample.write_bytes(b"x")
+    window.add_paths([str(sample)])
+    assert len(window.entries) == 1
+    assert window.run_button.isEnabled()
+
+    # Runtime selectors are deliberately limited to Default / CPU / Vulkan.
+    for panel in (window.preprocess, window.asr, window.align, window.diar):
+        devices = [panel.device.itemData(i) for i in range(panel.device.count())]
+        assert devices == ["default", "cpu", "vulkan"]
+
+    reports = Path("reports")
+    reports.mkdir(exist_ok=True)
+    window.grab().save(str(reports / "gui-dcc-ja.png"))
+
+    window.toggle_language()
+    app.processEvents()
+    assert window.ui_lang == "en"
+    assert window.table.horizontalHeaderItem(0).text() == "Input"
+    window.grab().save(str(reports / "gui-dcc-en.png"))
+
+    dialog = PreferencesDialog(window)
+    dialog.show()
+    app.processEvents()
+    assert dialog.nav.count() == 3
+    assert dialog.model_dir.placeholderText()
+    assert dialog.temp_dir.placeholderText()
+    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == ["cpu", "vulkan"]
+    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == ["cpu", "vulkan"]
+    dialog.grab().save(str(reports / "settings-dcc.png"))
+    dialog.close()
+    window.close()
+    app.processEvents()
