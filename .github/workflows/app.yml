@@ -102,7 +102,7 @@ jobs:
       - run: |
           mkdir -p reports
           espeak-ng -v en-us -w reports/synthetic.wav 'This is a short test of the audio conversion application.'
-          python -m asr2rpp.cli run reports/synthetic.wav --asr-language en --output-dir reports/output
+          python -m asr2rpp.cli run reports/synthetic.wav --asr-device cpu --asr-language en --output-dir reports/output
           python -c "import pathlib; assert list(pathlib.Path('reports/output').glob('*.rpp'))"
       - name: Stage-major two-file native Whisper smoke
         shell: python
