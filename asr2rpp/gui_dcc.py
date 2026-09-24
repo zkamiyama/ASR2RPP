@@ -1171,7 +1171,9 @@ class MainWindow(QMainWindow):
         inspector_layout.addStretch()
 
         scroll = QScrollArea()
+        scroll.setObjectName("inspectorScroll")
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(inspector)
         splitter.addWidget(scroll)
         splitter.setSizes([840, 340])
