@@ -374,14 +374,10 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.cellDoubleClicked.connect(self.open_output)
         leftlayout.addWidget(self.table, 1)
-        explanation = QLabel('１入力 → １RPP  /  元メディアは非破壊参照  /  同名出力は連番で保護')
-        explanation.setObjectName('subtitle')
-        explanation.setWordWrap(True)
-        leftlayout.addWidget(explanation)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(500)
-        self.log.setMaximumHeight(160)
+        self.log.setMaximumHeight(120)
         self.log.setPlaceholderText('実行ログ：準備・ダウンロード・推論の進行とエラーを表示します。')
         leftlayout.addWidget(self.log)
         splitter.addWidget(left)
@@ -725,11 +721,6 @@ class MainWindow(QMainWindow):
         storage_buttons.addStretch()
         general_layout.addLayout(storage_buttons)
 
-        keep_sources = QCheckBox('変換成功後も元チェックポイントを保持する')
-        keep_sources.setChecked(self.keep_model_sources)
-        keep_sources.setToolTip('通常はOFF推奨。変換失敗時の元チェックポイントはOFFでも再試行用に保持されます。')
-        general_layout.addWidget(keep_sources)
-
         queue_title = QLabel('キューとメモリ')
         queue_title.setObjectName('section')
         general_layout.addWidget(queue_title)
@@ -787,13 +778,32 @@ class MainWindow(QMainWindow):
             backend_fields[runtime] = combo
         runtime_layout.addLayout(runtime_form)
 
-        advanced = QLabel('実行ファイルの上書き')
+        runtime_layout.addStretch()
+        tabs.addTab(runtime_tab, '実行環境')
+
+        advanced_tab = QWidget()
+        advanced_layout = QVBoxLayout(advanced_tab)
+        advanced_layout.setContentsMargins(14, 14, 14, 14)
+        advanced = QLabel('高度な設定')
         advanced.setObjectName('section')
-        runtime_layout.addWidget(advanced)
-        advanced_note = QLabel('通常は空欄のままで同梱版を使用します。独自ビルドを使う場合だけ指定してください。')
+        advanced_layout.addWidget(advanced)
+        advanced_note = QLabel(
+            '通常は変更不要です。元チェックポイントの保持や、独自ビルドの実行ファイルを使う場合だけ設定してください。')
         advanced_note.setObjectName('hint')
         advanced_note.setWordWrap(True)
-        runtime_layout.addWidget(advanced_note)
+        advanced_layout.addWidget(advanced_note)
+
+        keep_sources = QCheckBox('変換成功後も元チェックポイントを保持する')
+        keep_sources.setChecked(self.keep_model_sources)
+        keep_sources.setToolTip('OFFが標準。変換失敗時の元チェックポイントはOFFでも再試行用に保持されます。')
+        advanced_layout.addWidget(keep_sources)
+
+        executable_title = QLabel('実行ファイルの上書き')
+        executable_title.setObjectName('section')
+        advanced_layout.addWidget(executable_title)
+        executable_note = QLabel('空欄なら同梱版またはPATHから自動検出します。')
+        executable_note.setObjectName('hint')
+        advanced_layout.addWidget(executable_note)
         form = QFormLayout()
         fields = {}
         keys = ['ffmpeg', 'whisper_cpp:cpu', 'whisper_cpp:vulkan', 'whisper_cpp:metal',
@@ -813,9 +823,9 @@ class MainWindow(QMainWindow):
             row.addWidget(button)
             form.addRow(key, row)
             fields[key] = edit
-        runtime_layout.addLayout(form)
-        runtime_layout.addStretch()
-        tabs.addTab(runtime_tab, '実行環境')
+        advanced_layout.addLayout(form)
+        advanced_layout.addStretch()
+        tabs.addTab(advanced_tab, '詳細')
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('保存')
