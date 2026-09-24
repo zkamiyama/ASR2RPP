@@ -182,6 +182,11 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         filename = safe_relative(filename)
         destination = directory / filename
         destination.parent.mkdir(parents=True, exist_ok=True)
+        expected = model.source.get('sha256', {}).get(filename)
+        if destination.is_file() and expected and digest(destination) == expected:
+            state['files'][filename] = {'sha256': expected, 'size': destination.stat().st_size}
+            progress(f'{model.label}: verified cached {filename}')
+            continue
         partial = destination.with_name(destination.name + '.part')
         url = f'https://huggingface.co/{repository}/resolve/{revision}/{quote(filename, safe="/")}'
         try:
@@ -202,7 +207,6 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
                 if total and done != total:
                     raise OSError('Incomplete model download')
             sha = digest(partial)
-            expected = model.source.get('sha256', {}).get(filename)
             if expected and sha != expected:
                 raise ValueError('Model SHA-256 mismatch')
             if partial.stat().st_size < 1024:
