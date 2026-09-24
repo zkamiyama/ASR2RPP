@@ -126,6 +126,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.ui_lang == "en"
     assert window.table.horizontalHeaderItem(0).text() == "Input"
     assert window.table.item(0, 1).text() == "Queued"
+    assert "実験的変換版" not in window.asr.model.currentText()
+    assert window.preprocess.reference.itemText(0) == "Original"
     window.grab().save(str(reports / "gui-dcc-en.png"))
 
     dialog = PreferencesDialog(window)
