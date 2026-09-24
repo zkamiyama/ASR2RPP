@@ -37,7 +37,7 @@ from .adapters import executable as runtime_executable
 
 STYLE = r"""
 * {
-    font-size: 12px;
+    font-size: 11px;
     color: #d7dde6;
 }
 QMainWindow, QDialog, QWidget { background: #1b1f24; }
@@ -72,14 +72,14 @@ QTableWidget {
     selection-background-color: #334b68;
     selection-color: #ffffff;
 }
-QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #252c34; }
+QTableWidget::item { padding: 4px 6px; border-bottom: 1px solid #252c34; }
 QHeaderView::section {
     background: #20252b;
     color: #9fa9b6;
     border: none;
     border-right: 1px solid #2c333d;
     border-bottom: 1px solid #343c47;
-    padding: 7px 8px;
+    padding: 5px 6px;
     font-weight: 600;
 }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
@@ -88,10 +88,27 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     border: 1px solid #3a424d;
     border-radius: 2px;
     padding: 0 5px;
-    min-height: 24px;
-    max-height: 24px;
+    min-height: 22px;
+    max-height: 22px;
     selection-background-color: #3f6f9f;
 }
+
+QFrame#editablePreset {
+    background: #15191e;
+    border: 1px solid #3a424d;
+    border-radius: 2px;
+    min-height: 22px; max-height: 22px;
+}
+QFrame#editablePreset QLineEdit {
+    background: transparent; border: none; padding: 0 5px;
+    min-height: 20px; max-height: 20px;
+}
+QFrame#editablePreset QToolButton {
+    background: transparent; border: none; border-left: 1px solid #303842;
+    border-radius: 0; padding: 0; min-width: 20px; max-width: 20px;
+    min-height: 20px; max-height: 20px;
+}
+QFrame#editablePreset QToolButton:hover { background: #252b32; }
 QPlainTextEdit {
     background: #15191e;
     color: #dce2ea;
@@ -108,15 +125,15 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
 QComboBox::drop-down {
     border: none;
     border-left: 1px solid #303842;
-    width: 20px;
-    background: #1c2127;
+    width: 18px;
+    background: #15191e;
 }
 QComboBox QLineEdit, QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {
     background: transparent;
     border: none;
     padding: 0 3px;
-    min-height: 20px;
-    max-height: 20px;
+    min-height: 18px;
+    max-height: 18px;
 }
 QComboBox QAbstractItemView {
     background: #20252b;
@@ -130,22 +147,22 @@ QPushButton, QToolButton {
     border: 1px solid #3a424d;
     border-radius: 2px;
     padding: 0 7px;
-    min-height: 24px;
-    max-height: 24px;
+    min-height: 22px;
+    max-height: 22px;
 }
 QPushButton:hover, QToolButton:hover { background: #333b45; border-color: #53606e; }
 QPushButton:pressed, QToolButton:pressed { background: #20262d; }
 QPushButton:disabled, QToolButton:disabled { color: #626c78; background: #23282e; border-color: #2d343d; }
 QToolButton#stageToggle {
-    min-width: 38px; max-width: 38px; min-height: 20px; max-height: 20px;
+    min-width: 34px; max-width: 34px; min-height: 18px; max-height: 18px;
     padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
+QToolButton#iconButton { min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px; padding: 0; }
 QToolButton#footerIcon { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
-QToolButton#languageButton { min-width: 54px; max-width: 54px; min-height: 26px; max-height: 26px; padding: 0 5px; }
+QToolButton#languageButton { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
 QPushButton#runButton {
-    min-width: 90px; min-height: 26px; max-height: 26px; padding: 0 10px; font-weight: 800; letter-spacing: 1px;
+    min-width: 78px; max-width: 78px; min-height: 26px; max-height: 26px; padding: 0 8px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
 QPushButton#runButton:hover { background: #2b906a; }
@@ -153,7 +170,7 @@ QPushButton#runButton[running="true"] { background: #a84343; border-color: #ca5c
 QPushButton#runButton[running="true"]:hover { background: #ba4b4b; }
 QCheckBox { spacing: 7px; }
 QCheckBox::indicator {
-    width: 14px; height: 14px; border-radius: 2px;
+    width: 13px; height: 13px; border-radius: 2px;
     background: #15191e; border: 1px solid #596472;
 }
 QCheckBox::indicator:checked { background: #347fbd; border-color: #5597cd; }
@@ -174,7 +191,7 @@ QListWidget::item:selected { background: #29323c; color: #ffffff; border-left: 2
 QMenu {
     background: #20252b; color: #dce2ea; border: 1px solid #3a424d; padding: 4px;
 }
-QMenu::item { padding: 6px 28px 6px 26px; }
+QMenu::item { padding: 5px 26px 5px 24px; }
 QMenu::item:selected { background: #355c82; }
 QMenu::separator { height: 1px; background: #343c46; margin: 4px 7px; }
 """
@@ -408,6 +425,56 @@ class QueueTable(QTableWidget):
             painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, self.placeholder)
 
 
+
+class EditablePresetField(QFrame):
+    """Free text plus an explicit preset menu, avoiding ambiguous editable combos."""
+    currentTextChanged = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("editablePreset")
+        self._presets = []
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.edit = QLineEdit()
+        self.edit.textChanged.connect(self.currentTextChanged)
+        row.addWidget(self.edit, 1)
+        self.menu_button = QToolButton()
+        self.menu_button.setIcon(icon("arrow_drop_down"))
+        self.menu_button.setIconSize(QSize(14, 14))
+        self.menu_button.clicked.connect(self._show_menu)
+        row.addWidget(self.menu_button)
+        self.setFixedHeight(22)
+
+    def setPresets(self, values):
+        seen = set()
+        self._presets = []
+        for value in values:
+            value = str(value)
+            if value and value not in seen:
+                seen.add(value)
+                self._presets.append(value)
+
+    def _show_menu(self):
+        menu = QMenu(self)
+        for value in self._presets:
+            action = menu.addAction(value)
+            action.triggered.connect(lambda checked=False, v=value: self.setCurrentText(v))
+        if menu.actions():
+            menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+
+    def currentText(self):
+        return self.edit.text()
+
+    def setCurrentText(self, value):
+        self.edit.setText(str(value or ""))
+
+    def setToolTip(self, text):
+        super().setToolTip(text)
+        self.edit.setToolTip(text)
+        self.menu_button.setToolTip(text)
+
 def _param_value(widget, spec):
     kind = spec["type"]
     if kind == "bool":
@@ -536,8 +603,8 @@ class StagePanel(QFrame):
         self.setObjectName("stage")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 6, 8, 7)
-        root.setSpacing(4)
+        root.setContentsMargins(6, 4, 6, 5)
+        root.setSpacing(3)
 
         head = QHBoxLayout()
         self.title = QLabel()
@@ -559,24 +626,24 @@ class StagePanel(QFrame):
         self.body.setObjectName("stageBody")
         grid = QGridLayout(self.body)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(5)
-        grid.setVerticalSpacing(4)
-        grid.setColumnMinimumWidth(0, 58)
-        grid.setColumnMinimumWidth(2, 38)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(3)
+        grid.setColumnMinimumWidth(0, 50)
+        grid.setColumnMinimumWidth(2, 34)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(3, 1)
 
         self.model_label = QLabel()
         self.model_label.setObjectName("muted")
-        self.model_label.setFixedWidth(58)
+        self.model_label.setFixedWidth(50)
         self.model = QComboBox()
         self.model.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.model.currentIndexChanged.connect(self._model_changed)
         self.params = QToolButton()
         self.params.setObjectName("iconButton")
         self.params.setIcon(icon("tune"))
-        self.params.setIconSize(QSize(16, 16))
-        self.params.setFixedSize(24, 24)
+        self.params.setIconSize(QSize(14, 14))
+        self.params.setFixedSize(22, 22)
         self.params.clicked.connect(self.edit_parameters)
         grid.addWidget(self.model_label, 0, 0)
         grid.addWidget(self.model, 0, 1, 1, 3)
@@ -584,19 +651,17 @@ class StagePanel(QFrame):
 
         self.backend_label = QLabel()
         self.backend_label.setObjectName("muted")
-        self.backend_label.setFixedWidth(58)
+        self.backend_label.setFixedWidth(50)
         self.device = QComboBox()
-        self.device.setMinimumWidth(104)
+        self.device.setMinimumWidth(86)
+        self.device.setMaximumWidth(104)
         self.language_label = QLabel()
         self.language_label.setObjectName("muted")
-        self.language_label.setFixedWidth(38)
-        self.language = QComboBox()
-        self.language.setEditable(True)
-        self.language.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.language.setMinimumWidth(112)
-        self.language.setToolTip("Select a known language value or type a runtime-specific code.")
-        for value in ("auto", "ja", "ja-JP", "en", "en-US", "Japanese", "English"):
-            self.language.addItem(value, value)
+        self.language_label.setFixedWidth(34)
+        self.language = EditablePresetField()
+        self.language.setMinimumWidth(88)
+        self.language.setToolTip("Type a runtime language code, or use the arrow for common values.")
+        self.language.setPresets(("auto", "ja", "ja-JP", "en", "en-US", "Japanese", "English"))
         grid.addWidget(self.backend_label, 1, 0)
         grid.addWidget(self.device, 1, 1)
         grid.addWidget(self.language_label, 1, 2)
@@ -668,6 +733,10 @@ class StagePanel(QFrame):
             allowed = {spec["key"] for spec in specs_for(model)}
             self.parameters = {key: value for key, value in self.parameters.items() if key in allowed}
             default_language = str(model.defaults.get("language", "ja"))
+            presets = [default_language, "auto", "ja", "ja-JP", "en", "en-US"]
+            if model.family == "qwen3_forced_aligner":
+                presets += ["Japanese", "English"]
+            self.language.setPresets(presets)
             self.language.setCurrentText(default_language)
         self.changed.emit()
 
@@ -1089,24 +1158,24 @@ class MainWindow(QMainWindow):
         self.language_button.setObjectName("languageButton")
         self.language_button.setIcon(icon("language"))
         self.language_button.setIconSize(QSize(15, 15))
-        self.language_button.setFixedSize(56, 28)
-        self.language_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.language_button.setFixedSize(26, 26)
+        self.language_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.language_button.clicked.connect(self.toggle_language)
         status_layout.addWidget(self.language_button)
 
         self.settings_button = QToolButton()
         self.settings_button.setObjectName("footerIcon")
         self.settings_button.setIcon(icon("settings"))
-        self.settings_button.setIconSize(QSize(17, 17))
-        self.settings_button.setFixedSize(28, 28)
+        self.settings_button.setIconSize(QSize(16, 16))
+        self.settings_button.setFixedSize(26, 26)
         self.settings_button.clicked.connect(self.open_settings)
         status_layout.addWidget(self.settings_button)
 
         self.run_button = QPushButton()
         self.run_button.setObjectName("runButton")
         self.run_button.setIcon(icon("play"))
-        self.run_button.setIconSize(QSize(16, 16))
-        self.run_button.setFixedHeight(28)
+        self.run_button.setIconSize(QSize(14, 14))
+        self.run_button.setFixedSize(78, 26)
         self.run_button.clicked.connect(self.toggle_run)
         status_layout.addWidget(self.run_button)
         root.addWidget(status)
@@ -1215,8 +1284,9 @@ class MainWindow(QMainWindow):
         self.same_directory.setText(tr["same_dir"])
         self.output_dir.setPlaceholderText(tr["select_output"])
         self.settings_button.setToolTip(tr["settings"])
-        self.language_button.setToolTip(tr["ui_language"] + " (Ctrl+Shift+L)")
-        self.language_button.setText("JA" if self.ui_lang == "ja" else "EN")
+        target = "English" if self.ui_lang == "ja" else "日本語"
+        self.language_button.setToolTip(tr["ui_language"] + f" → {target} (Ctrl+Shift+L)")
+        self.language_button.setText("")
         self.render_queue()
 
     def toggle_language(self):
