@@ -65,6 +65,15 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.run_button.text() == "GO!"
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
+    # Disabled optional stages collapse to their header only.
+    assert not window.preprocess.body.isVisible()
+    assert not window.align.body.isVisible()
+    assert not window.diar.body.isVisible()
+    window.align.toggle.setChecked(True)
+    app.processEvents()
+    assert window.align.body.isVisible()
+    window.align.toggle.setChecked(False)
+    app.processEvents()
     visible_buttons = [button.text() for button in window.findChildren(QPushButton)]
     assert "キューを実行" not in visible_buttons
     assert "選択モデルを準備" not in visible_buttons
