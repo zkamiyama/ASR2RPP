@@ -142,10 +142,10 @@ QToolButton#stageToggle {
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
 QToolButton#iconButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
-QToolButton#footerIcon { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; }
-QToolButton#languageButton { min-width: 56px; max-width: 56px; min-height: 28px; max-height: 28px; padding: 0 5px; }
+QToolButton#footerIcon { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
+QToolButton#languageButton { min-width: 54px; max-width: 54px; min-height: 26px; max-height: 26px; padding: 0 5px; }
 QPushButton#runButton {
-    min-width: 92px; min-height: 28px; max-height: 28px; padding: 0 10px; font-weight: 800; letter-spacing: 1px;
+    min-width: 90px; min-height: 26px; max-height: 26px; padding: 0 10px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
 QPushButton#runButton:hover { background: #2b906a; }
