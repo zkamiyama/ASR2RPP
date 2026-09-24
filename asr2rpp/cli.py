@@ -52,7 +52,7 @@ def main(argv=None):
             failures.append('numpy: ' + str(exc))
         try:
             import safetensors
-            from safetensors import numpy as _safetensors_numpy
+            import safetensors.numpy as _safetensors_numpy
             print('safetensors', getattr(safetensors, '__version__', 'unknown'), 'OK')
         except Exception as exc:
             failures.append('safetensors: ' + str(exc))
@@ -60,6 +60,11 @@ def main(argv=None):
             from .catalog import assets_root
             from .model_conversion import find_audio_cpp_tool
             converter = find_audio_cpp_tool('audiocpp_gguf', assets_root())
+            import subprocess
+            probe = subprocess.run([str(converter), '--help'], stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=30)
+            if probe.returncode:
+                raise RuntimeError(f'converter exited {probe.returncode}')
             print('audiocpp_gguf', converter, 'OK')
         except Exception as exc:
             failures.append('audiocpp_gguf: ' + str(exc))
