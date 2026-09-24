@@ -56,6 +56,7 @@ QFrame#stage {
     border-radius: 4px;
 }
 QFrame#stage[disabledStage="true"] { background: #20252a; }
+QWidget#stageBody { background: transparent; }
 QLabel#section {
     color: #f0f3f7;
     font-size: 11px;
@@ -554,6 +555,7 @@ class StagePanel(QFrame):
         root.addLayout(head)
 
         self.body = QWidget()
+        self.body.setObjectName("stageBody")
         grid = QGridLayout(self.body)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(5)
@@ -1021,8 +1023,8 @@ class MainWindow(QMainWindow):
 
         inspector = QFrame()
         inspector.setObjectName("inspector")
-        inspector.setMinimumWidth(320)
-        inspector.setMaximumWidth(430)
+        inspector.setMinimumWidth(300)
+        inspector.setMaximumWidth(360)
         inspector_layout = QVBoxLayout(inspector)
         inspector_layout.setContentsMargins(8, 8, 8, 8)
         inspector_layout.setSpacing(7)
@@ -1064,7 +1066,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setWidget(inspector)
         splitter.addWidget(scroll)
-        splitter.setSizes([820, 360])
+        splitter.setSizes([840, 340])
         root.addWidget(splitter, 1)
 
         self.progress = QProgressBar()
