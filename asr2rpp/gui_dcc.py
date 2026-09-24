@@ -58,8 +58,9 @@ QFrame#stage {
 QFrame#stage[disabledStage="true"] { background: #20252a; }
 QWidget#stageBody { background: transparent; }
 QLabel#section {
-    color: #f0f3f7;
-    font-size: 11px;
+    color: #eef2f6;
+    background: transparent;
+    font-size: 10px;
     font-weight: 700;
 }
 QLabel#muted { color: #8993a0; }
@@ -83,30 +84,30 @@ QHeaderView::section {
     font-weight: 600;
 }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-    background: #15191e;
+    background: #181d22;
     color: #dce2ea;
     border: 1px solid #3a424d;
     border-radius: 2px;
-    padding: 0 5px;
-    min-height: 20px;
-    max-height: 20px;
+    padding: 0 4px;
+    min-height: 18px;
+    max-height: 18px;
     selection-background-color: #3f6f9f;
 }
 
 QFrame#editablePreset {
-    background: #15191e;
+    background: #181d22;
     border: 1px solid #3a424d;
     border-radius: 2px;
-    min-height: 20px; max-height: 20px;
+    min-height: 18px; max-height: 18px;
 }
 QFrame#editablePreset QLineEdit {
-    background: transparent; border: none; padding: 0 5px;
-    min-height: 20px; max-height: 20px;
+    background: transparent; border: none; padding: 0 4px;
+    min-height: 18px; max-height: 18px;
 }
 QFrame#editablePreset QToolButton {
-    background: transparent; border: none; border-left: 1px solid #303842;
-    border-radius: 0; padding: 0; min-width: 20px; max-width: 20px;
-    min-height: 20px; max-height: 20px;
+    background: #20262c; border: none; border-left: 1px solid #303842;
+    border-radius: 0; padding: 0; min-width: 18px; max-width: 18px;
+    min-height: 18px; max-height: 18px;
 }
 QFrame#editablePreset QToolButton:hover { background: #252b32; }
 QPlainTextEdit {
@@ -126,14 +127,14 @@ QComboBox::drop-down {
     border: none;
     border-left: 1px solid #303842;
     width: 18px;
-    background: #15191e;
+    background: #20262c;
 }
 QComboBox QLineEdit, QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {
     background: transparent;
     border: none;
     padding: 0 3px;
-    min-height: 18px;
-    max-height: 18px;
+    min-height: 16px;
+    max-height: 16px;
 }
 QComboBox QAbstractItemView {
     background: #20252b;
@@ -146,28 +147,30 @@ QPushButton, QToolButton {
     color: #dce2ea;
     border: 1px solid #3a424d;
     border-radius: 2px;
-    padding: 0 7px;
-    min-height: 20px;
-    max-height: 20px;
+    padding: 0 6px;
+    min-height: 18px;
+    max-height: 18px;
 }
 QPushButton:hover, QToolButton:hover { background: #333b45; border-color: #53606e; }
 QPushButton:pressed, QToolButton:pressed { background: #20262d; }
 QPushButton:disabled, QToolButton:disabled { color: #626c78; background: #23282e; border-color: #2d343d; }
 QToolButton#stageToggle {
-    min-width: 34px; max-width: 34px; min-height: 18px; max-height: 18px;
+    min-width: 30px; max-width: 30px; min-height: 16px; max-height: 16px;
     padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 20px; max-width: 20px; min-height: 20px; max-height: 20px; padding: 0; }
-QToolButton#footerIcon { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
-QToolButton#languageButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
-QPushButton#runButton {
-    min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px; padding: 0 8px; font-weight: 800; letter-spacing: 1px;
+QToolButton#iconButton { min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; padding: 0; }
+QToolButton#footerIcon, QToolButton#languageButton {
+    min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0;
+}
+QToolButton#runButton {
+    min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px;
+    padding: 0 7px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
-QPushButton#runButton:hover { background: #2b906a; }
-QPushButton#runButton[running="true"] { background: #a84343; border-color: #ca5c5c; }
-QPushButton#runButton[running="true"]:hover { background: #ba4b4b; }
+QToolButton#runButton:hover { background: #2b906a; }
+QToolButton#runButton[running="true"] { background: #a84343; border-color: #ca5c5c; }
+QToolButton#runButton[running="true"]:hover { background: #ba4b4b; }
 QCheckBox { spacing: 7px; }
 QCheckBox::indicator {
     width: 13px; height: 13px; border-radius: 2px;
