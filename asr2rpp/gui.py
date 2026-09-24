@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QDialogButtonBox, QFormLayout, QAbstractItemView)
 from .catalog import load_catalog, model_directory, resolve_model, Cancelled
 from .pipeline import Stage, Settings, MEDIA_EXTENSIONS, run_job
+from .adapters import executable as runtime_executable
 
 STYLE = '''
 QWidget { color: #243247; font-family: "Segoe UI", "Noto Sans CJK JP", sans-serif; font-size: 13px; }
@@ -587,7 +588,8 @@ class MainWindow(QMainWindow):
         dialog.resize(720, 560)
         layout = QVBoxLayout(dialog)
         note = QLabel('通常は各処理カードを「設定に従う」にして、ここでエンジンごとの既定実行先を選びます。\n'
-                      'Windows配布版にはCPU版とVulkan版を同梱します。Vulkanには対応GPUドライバーが必要です。')
+                      'Windows配布版には whisper.cpp / audio.cpp のCPU版とVulkan版を同梱します。'
+                      'Vulkan実行には対応GPUとドライバーが必要です。')
         note.setWordWrap(True)
         layout.addWidget(note)
 
@@ -601,8 +603,20 @@ class MainWindow(QMainWindow):
                 combo.addItem(text, value)
             index = combo.findData(self.runtime_defaults.get(runtime, 'cpu'))
             combo.setCurrentIndex(max(0, index))
-            combo.setToolTip('同梱されていない方式を選ぶ場合は下の実行ファイルを指定してください。')
+            combo.setToolTip('CPU/VulkanはWindows配布版に同梱。CUDA/Metal等は対応実行ファイルを下で指定できます。')
             runtime_form.addRow(label, combo)
+            status = QLabel()
+            status.setObjectName('subtitle')
+            states = []
+            for device, title in [('cpu', 'CPU'), ('vulkan', 'Vulkan')]:
+                try:
+                    path = runtime_executable(runtime, device, self.runtime_paths.get(f'{runtime}:{device}', ''))
+                    states.append(f'{title}: 利用可能 ({path.name})')
+                except Exception:
+                    states.append(f'{title}: 未検出')
+            status.setText('  /  '.join(states))
+            status.setWordWrap(True)
+            runtime_form.addRow('', status)
             backend_fields[runtime] = combo
         threads = QSpinBox()
         threads.setRange(1, 128)
