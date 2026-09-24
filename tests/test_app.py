@@ -9,7 +9,7 @@ import time
 import wave
 import pytest
 from rpp_writer import Source, Item, Track, Project, dumps
-from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative
+from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative, weights_root, cache_root
 from asr2rpp.adapters import Unit, Result, parse_whisper, parse_audio, run_process
 import asr2rpp.adapters as adapters
 from asr2rpp.pipeline import Settings, Stage, reserve_output, clean_bounds, group_units, export_rpp, run_job
@@ -29,6 +29,18 @@ def test_catalog_isolation(tmp_path):
     (tmp_path / 'bad.toml').write_text('invalid = [', encoding='utf-8')
     models, errors = load_catalog(tmp_path)
     assert list(models) == ['good'] and len(errors) == 1
+
+
+def test_configurable_model_and_temp_roots(tmp_path, monkeypatch):
+    monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
+    monkeypatch.delenv('ASR2RPP_WEIGHTS_DIR', raising=False)
+    monkeypatch.delenv('ASR2RPP_CACHE_DIR', raising=False)
+    assert weights_root() == tmp_path / 'home' / 'weights'
+    assert cache_root() == tmp_path / 'home' / 'cache'
+    monkeypatch.setenv('ASR2RPP_WEIGHTS_DIR', str(tmp_path / 'models-custom'))
+    monkeypatch.setenv('ASR2RPP_CACHE_DIR', str(tmp_path / 'temp-custom'))
+    assert weights_root() == tmp_path / 'models-custom'
+    assert cache_root() == tmp_path / 'temp-custom'
 
 
 @pytest.mark.parametrize('value', ['../secret', '/etc/passwd', 'C:\\file', 'a/../../b'])
@@ -155,7 +167,7 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QSettings
-    from asr2rpp.gui import MainWindow, STYLE
+    from asr2rpp.gui import MainWindow, STYLE, default_storage_hint
     app = QApplication.instance() or QApplication([])
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
@@ -181,6 +193,13 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     assert window.runtime_button.text() == '⚙'
     assert window.runtime_button.accessibleName() == '設定'
     assert window.asr.device.currentData() == 'default'
+    assert window.queue_strategy == 'stage'
+    assert window.model_storage_dir == '' and window.temp_storage_dir == ''
+    assert window.clip_length.maximum() >= 3600
+    assert window.asr.param_summary.text()
+    if sys.platform == 'win32':
+        assert '%LOCALAPPDATA%' in default_storage_hint('weights')
+        assert '%LOCALAPPDATA%' in default_storage_hint('cache')
     window.runtime_defaults['whisper_cpp'] = 'vulkan'
     assert window.asr.stage({}, 4, window.runtime_defaults).device == 'vulkan'
     window.update_summary()
@@ -202,6 +221,7 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     assert len(window.entries) == 3
     reports = Path('reports')
     reports.mkdir(exist_ok=True)
+    assert window.align.y() < window.diar.y()
     window.grab().save(str(reports / 'gui-options-off.png'))
     window.diar.toggle.setChecked(True)
     assert window.diar.body.isEnabled() and not window.align.body.isEnabled()
