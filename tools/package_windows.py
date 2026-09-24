@@ -80,7 +80,7 @@ process.wait(timeout=10)
     'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
 (package / 'version.json').write_text(json.dumps({'version': '0.1.0-preview', 'commit': commit,
-    'platform': 'windows-x64', 'native_backend': 'cpu', 'minimum_cpu': 'AVX2',
+    'platform': 'windows-x64', 'native_backends': ['cpu', 'vulkan'], 'minimum_cpu': 'AVX2',
     'model_weights_included': False}, indent=2), encoding='utf-8')
 archive = Path(shutil.make_archive(str(ROOT / 'dist/ASR2RPP-Windows-x64'), 'zip', ROOT / 'dist', 'ASR2RPP'))
 (archive.parent / 'SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n', encoding='utf-8')
