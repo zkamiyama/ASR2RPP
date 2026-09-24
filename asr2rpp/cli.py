@@ -37,11 +37,42 @@ def main(argv=None):
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
         run.add_argument('--' + stage + '-params', default='{}', help='JSON object of scalar request parameters')
+    sub.add_parser('doctor', help='verify packaged runtimes and model-converter dependencies')
     sub.add_parser('gui')
     args = parser.parse_args(argv)
     if args.command == 'gui':
         from .gui_preprocessing import main as gui_main
         return gui_main()
+    if args.command == 'doctor':
+        failures = []
+        try:
+            import numpy
+            print('numpy', numpy.__version__, 'OK')
+        except Exception as exc:
+            failures.append('numpy: ' + str(exc))
+        try:
+            import safetensors
+            from safetensors import numpy as _safetensors_numpy
+            print('safetensors', getattr(safetensors, '__version__', 'unknown'), 'OK')
+        except Exception as exc:
+            failures.append('safetensors: ' + str(exc))
+        try:
+            from .catalog import assets_root
+            from .model_conversion import find_audio_cpp_tool
+            converter = find_audio_cpp_tool('audiocpp_gguf', assets_root())
+            print('audiocpp_gguf', converter, 'OK')
+        except Exception as exc:
+            failures.append('audiocpp_gguf: ' + str(exc))
+        try:
+            from .adapters import executable
+            for runtime in ('whisper_cpp', 'audio_cpp'):
+                path = executable(runtime, 'cpu')
+                print(runtime + ':cpu', path, 'OK')
+        except Exception as exc:
+            failures.append('native runtime: ' + str(exc))
+        for failure in failures:
+            print('FAIL', failure, file=sys.stderr)
+        return 1 if failures else 0
     catalog, errors = load_catalog()
     for error in errors:
         print('Catalog warning:', error, file=sys.stderr)
