@@ -54,6 +54,8 @@ def build(name, backend='cpu'):
         flags += ['-A', 'x64']
     run('cmake', '-S', source, '-B', output, *flags)
     run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', '4')
+    if name == 'audio_cpp' and backend == 'cpu':
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', '4')
     destination = ENGINES / (name + '-' + backend)
     destination.mkdir(parents=True, exist_ok=True)
     binary_name = target + ('.exe' if os.name == 'nt' else '')
@@ -62,6 +64,12 @@ def build(name, backend='cpu'):
         raise RuntimeError('Missing built executable: ' + binary_name)
     binary = binaries[0]
     shutil.copy2(binary, destination / binary.name)
+    if name == 'audio_cpp' and backend == 'cpu':
+        converter_name = 'audiocpp_gguf' + ('.exe' if os.name == 'nt' else '')
+        converters = list(output.rglob(converter_name))
+        if not converters:
+            raise RuntimeError('Missing built executable: ' + converter_name)
+        shutil.copy2(converters[0], destination / converter_name)
     for suffix in ('*.dll', '*.so', '*.so.*', '*.dylib'):
         for library in output.rglob(suffix):
             shutil.copy2(library, destination / library.name)
