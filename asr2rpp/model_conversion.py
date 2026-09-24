@@ -280,7 +280,7 @@ def checkpoint_to_safetensors(checkpoint: Path, config_yaml: Path, output_dir: P
             'checkpoint': checkpoint.name, 'converter': 'ASR2RPP torch-free',
         })
         (output_dir / 'config.json').write_text(
-            json.dumps(config, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')
+            json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         return {'tensor_count_source': len(state), 'tensor_count_output': len(tensors),
                 'qkv_split_count': len(qkv), 'config': config,
                 'safetensors_size': safetensors.stat().st_size}
