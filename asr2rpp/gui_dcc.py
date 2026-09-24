@@ -97,7 +97,7 @@ QFrame#editablePreset {
     background: #15191e;
     border: 1px solid #3a424d;
     border-radius: 2px;
-    min-height: 22px; max-height: 22px;
+    min-height: 20px; max-height: 20px;
 }
 QFrame#editablePreset QLineEdit {
     background: transparent; border: none; padding: 0 5px;
