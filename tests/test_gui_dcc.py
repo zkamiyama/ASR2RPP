@@ -62,7 +62,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
 
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
-    assert window.run_button.text() == "GO"
+    assert window.run_button.text() == "GO!"
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
     visible_buttons = [button.text() for button in window.findChildren(QPushButton)]
