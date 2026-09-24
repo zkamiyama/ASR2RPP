@@ -3,3 +3,4 @@ final-vulkan-gear-package-20260924
 2026-09-24 rebuild with PyInstaller 6.22.3 and validated big_beta7 converter
 2026-09-24 storage settings and GUI review final build
 2026-09-24 build after storage-directory settings and GUI audit
+2026-09-24 final GUI storage/font audit build
