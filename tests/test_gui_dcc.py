@@ -10,12 +10,22 @@ from asr2rpp.parameter_specs import specs_for
 
 def test_native_parameter_mapping():
     args = whisper_parameter_args({
+        "processors": 2,
+        "gpu_device": 1,
         "beam_size": 7,
         "temperature": 0.2,
         "split_on_word": True,
+        "flash_attn": False,
+        "suppress_regex": r"\[.*?\]",
         "initial_prompt": "REAPER",
+        "vad": True,
+        "vad_threshold": 0.55,
     })
-    assert args == ["-bs", "7", "-tp", "0.2", "-sow", "--prompt", "REAPER"]
+    assert args == [
+        "-p", "2", "-dev", "1", "-bs", "7", "-tp", "0.2", "-sow",
+        "-nfa", "--suppress-regex", r"\[.*?\]", "--prompt", "REAPER",
+        "--vad", "-vt", "0.55",
+    ]
     model = Model("d", "audio_cpp", "diar", {"path": "x"},
                   family="nemotron_3_diar")
     session = audio_session_args(model, {"graph_arena_mb": 512, "weight_type": "native"})
@@ -31,8 +41,15 @@ def test_parameter_specs_surface_cpp_controls():
     assert {"beam_size", "best_of", "temperature", "temperature_inc",
             "no_speech_thold", "entropy_thold", "logprob_thold", "word_thold",
             "audio_ctx", "max_context", "max_len", "split_on_word",
-            "no_fallback", "suppress_nst", "initial_prompt"} <= keys
+            "no_fallback", "suppress_nst", "suppress_regex", "processors",
+            "gpu_device", "flash_attn", "grammar", "grammar_rule",
+            "grammar_penalty", "vad", "vad_model", "vad_threshold",
+            "initial_prompt"} <= keys
     diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
+    qwen = Model("q", "audio_cpp", "align", {"path": "x"}, family="qwen3_forced_aligner")
+    qwen_keys = {x["key"] for x in specs_for(qwen)}
+    assert "clamp_timestamps_to_audio" in qwen_keys
+    assert "session.weight_type" not in qwen_keys
     diar_keys = {x["key"] for x in specs_for(diar)}
     assert {"speaker_threshold", "speaker_min_frames", "speaker_pad_frames",
             "session.latency_profile", "session.graph_arena_mb",
@@ -65,6 +82,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.run_button.text() == "GO!"
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
+    assert "font-family" not in STYLE
     # Disabled optional stages collapse to their header only. Explicitly
     # switch them off because earlier GUI migration tests may persist settings.
     window.preprocess.toggle.setChecked(False)
