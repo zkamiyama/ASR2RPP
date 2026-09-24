@@ -429,12 +429,19 @@ class MainWindow(QMainWindow):
                                  else '指定先に各ファイルのRPPを保存します。空欄のまま実行できません。')
         self.update_summary()
 
+    def runtime_summary(self):
+        labels = {'cpu': 'CPU', 'vulkan': 'Vulkan', 'metal': 'Metal', 'cuda': 'CUDA', 'auto': 'Auto'}
+        whisper = labels.get(self.runtime_defaults.get('whisper_cpp', 'cpu'), self.runtime_defaults.get('whisper_cpp', 'cpu'))
+        audio = labels.get(self.runtime_defaults.get('audio_cpp', 'cpu'), self.runtime_defaults.get('audio_cpp', 'cpu'))
+        return f'  |  既定: whisper.cpp {whisper} / audio.cpp {audio}'
+
     def update_summary(self):
         if not hasattr(self, 'summary'):
             return
         if self.worker is None:
             self.summary.setText('ASR → ' + ('時刻調整 ON' if self.align.enabled_stage() else '時刻調整 OFF') +
-                                 ' → ' + ('話者推定 ON' if self.diar.enabled_stage() else '話者推定 OFF') + ' → RPP')
+                                 ' → ' + ('話者推定 ON' if self.diar.enabled_stage() else '話者推定 OFF') +
+                                 ' → RPP' + self.runtime_summary())
         valid_output = self.same.isChecked() or bool(self.output_dir.text().strip())
         self.start_button.setEnabled(self.worker is None and valid_output and any(e['status'] == '待機' for e in self.entries))
 
