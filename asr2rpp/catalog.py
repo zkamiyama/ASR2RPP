@@ -163,10 +163,16 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
     if state_file.exists():
         state = json.loads(state_file.read_text(encoding='utf-8'))
         entry = safe_relative(model.source.get('entry', model.source['files'][0]))
-        if ((directory / entry).is_file() and
+        installed_valid = ((directory / entry).is_file() and
                 all((info.get('retained', True) is False) or
                     ((directory / f).is_file() and (directory / f).stat().st_size == info['size'])
-                    for f, info in state['files'].items())):
+                    for f, info in state['files'].items()))
+        recipe = model.source.get('convert') or {}
+        checkpoint_name = str(recipe.get('checkpoint', ''))
+        restore_source = bool(
+            keep_source and checkpoint_name and
+            state.get('files', {}).get(checkpoint_name, {}).get('retained') is False)
+        if installed_valid and not restore_source:
             return directory / entry, state
     if not download:
         raise FileNotFoundError(f'{model.label}: model not installed. Use Download models / models install first.')
