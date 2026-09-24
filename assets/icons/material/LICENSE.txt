@@ -1,0 +1,5 @@
+Google Material Design Icons are licensed under the Apache License 2.0.
+Source: https://github.com/google/material-design-icons
+The SVG geometry is from the official Google repository; ASR2RPP changes only fill colors for its dark UI.
+
+Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
