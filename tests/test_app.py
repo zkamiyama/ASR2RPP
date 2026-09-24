@@ -11,6 +11,7 @@ import pytest
 from rpp_writer import Source, Item, Track, Project, dumps
 from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative
 from asr2rpp.adapters import Unit, Result, parse_whisper, parse_audio, run_process
+import asr2rpp.adapters as adapters
 from asr2rpp.pipeline import Settings, Stage, reserve_output, clean_bounds, group_units, export_rpp, run_job
 
 
@@ -122,6 +123,20 @@ def test_pipeline_options_disabled(tmp_path, monkeypatch):
     manifest = json.loads((tmp_path / 'sample.asr2rpp/manifest.json').read_text())
     assert manifest['source_unchanged'] is True
 
+
+
+def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypatch):
+    engines = tmp_path / 'engines'
+    suffix = '.exe' if sys.platform == 'win32' else ''
+    vulkan = engines / 'whisper_cpp-vulkan' / ('whisper-cli' + suffix)
+    cpu = engines / 'whisper_cpp-cpu' / ('whisper-cli' + suffix)
+    vulkan.parent.mkdir(parents=True)
+    cpu.parent.mkdir(parents=True)
+    vulkan.write_bytes(b'vulkan')
+    cpu.write_bytes(b'cpu')
+    monkeypatch.setattr(adapters, 'assets_root', lambda: tmp_path)
+    assert adapters.executable('whisper_cpp', 'auto') == vulkan
+    assert adapters.executable('whisper_cpp', 'cpu') == cpu
 
 def test_process_cancellation(tmp_path):
     cancel = threading.Event()
