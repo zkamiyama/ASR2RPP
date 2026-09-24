@@ -141,7 +141,7 @@ QToolButton#stageToggle {
     padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
+QToolButton#iconButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
 QToolButton#footerIcon { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; }
 QToolButton#languageButton { min-width: 56px; max-width: 56px; min-height: 28px; max-height: 28px; padding: 0 5px; }
 QPushButton#runButton {
@@ -575,7 +575,7 @@ class StagePanel(QFrame):
         self.params.setObjectName("iconButton")
         self.params.setIcon(icon("tune"))
         self.params.setIconSize(QSize(16, 16))
-        self.params.setFixedSize(26, 26)
+        self.params.setFixedSize(24, 24)
         self.params.clicked.connect(self.edit_parameters)
         grid.addWidget(self.model_label, 0, 0)
         grid.addWidget(self.model, 0, 1, 1, 3)
