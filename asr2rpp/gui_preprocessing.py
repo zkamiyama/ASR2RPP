@@ -174,7 +174,7 @@ class MainWindow(base.MainWindow):
             self.summary.setText(('背景音除去 ON → ' if enabled else '背景音除去 OFF → ') +
                                  'ASR → ' + ('時刻調整 ON' if self.align.enabled_stage() else '時刻調整 OFF') +
                                  ' → ' + ('話者推定 ON' if self.diar.enabled_stage() else '話者推定 OFF') +
-                                 '  |  RPP参照: ' + mode)
+                                 '  |  RPP参照: ' + mode + self.runtime_summary())
 
     def start_work(self, download=False):
         if self.worker:
