@@ -161,6 +161,11 @@ def test_gui_preprocessing_modes(tmp_path, monkeypatch):
     window.preprocess.toggle.setChecked(True)
     assert window.preprocess.reference_box.isEnabled()
     assert window.settings().reference_audio == 'processed'
+    assert window.preprocess.overlap.value() == 2
+    assert window.settings().preprocess.parameters['num_overlap'] == 2
+    window.preprocess.overlap.setValue(3)
+    assert window.settings().preprocess.parameters['num_overlap'] == 3
+    assert 'Overlap=3' in window.preprocess.param_summary.text()
     window.preprocess.original.setChecked(True)
     assert window.settings().reference_audio == 'original'
     window.diar.toggle.setChecked(False)
