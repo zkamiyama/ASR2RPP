@@ -45,6 +45,10 @@ def test_parameter_specs_surface_cpp_controls():
             "gpu_device", "flash_attn", "grammar", "grammar_rule",
             "grammar_penalty", "vad", "vad_model", "vad_threshold",
             "initial_prompt"} <= keys
+    anime = Model("anime-whisper", "whisper_cpp", "asr", {"path": "x"})
+    anime_keys = {x["key"] for x in specs_for(anime)}
+    assert "initial_prompt" not in anime_keys
+    assert "carry_initial_prompt" not in anime_keys
     diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
     qwen = Model("q", "audio_cpp", "align", {"path": "x"}, family="qwen3_forced_aligner")
     qwen_keys = {x["key"] for x in specs_for(qwen)}
