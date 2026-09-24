@@ -1,2 +1,3 @@
 validate 2026-09-24 torch-free big_beta7 conversion
 retry 2: syntax fixed; validate real checkpoint conversion
+retry 3: preserve OrderedDict checkpoint metadata
