@@ -36,6 +36,19 @@ def assets_root() -> Path:
     return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent.parent))
 
 
+def _configured_root(env_name: str, fallback: Path) -> Path:
+    value = os.getenv(env_name, '').strip()
+    return Path(value).expanduser() if value else fallback
+
+
+def weights_root() -> Path:
+    return _configured_root('ASR2RPP_WEIGHTS_DIR', data_root() / 'weights')
+
+
+def cache_root() -> Path:
+    return _configured_root('ASR2RPP_CACHE_DIR', data_root() / 'cache')
+
+
 def model_directory() -> Path:
     directory = data_root() / 'models'
     directory.mkdir(parents=True, exist_ok=True)
@@ -158,7 +171,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
             raise FileNotFoundError(f'Model file not found: {path}')
         return path, {'local_path': str(path), 'sha256': digest(path) if path.is_file() else None}
     identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
-    directory = data_root() / 'weights' / model.id / identity
+    directory = weights_root() / model.id / identity
     state_file = directory / 'installed.json'
     if state_file.exists():
         state = json.loads(state_file.read_text(encoding='utf-8'))
@@ -224,7 +237,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
             partial.unlink(missing_ok=True)
     if model.source.get('convert'):
         from .model_conversion import convert_model
-        converted, conversion = convert_model(model, directory, assets_root(), cancel, progress)
+        converted, conversion = convert_model(model, directory, assets_root(), cache_root(), cancel, progress)
         relative = str(converted.relative_to(directory)).replace('\\\\', '/')
         state['files'][relative] = {'sha256': digest(converted), 'size': converted.stat().st_size, 'retained': True}
         recipe = model.source['convert']
