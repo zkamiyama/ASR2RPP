@@ -39,6 +39,15 @@ run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', 
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
+required_native = [
+    package / 'engines/whisper_cpp-cpu/whisper-cli.exe',
+    package / 'engines/whisper_cpp-vulkan/whisper-cli.exe',
+    package / 'engines/audio_cpp-cpu/audiocpp_cli.exe',
+    package / 'engines/audio_cpp-vulkan/audiocpp_cli.exe',
+]
+missing_native = [str(path) for path in required_native if not path.is_file()]
+if missing_native:
+    raise RuntimeError('Missing packaged native runtime(s): ' + ', '.join(missing_native))
 ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
 ffmpeg_dir = package / 'engines/ffmpeg'
 ffmpeg_dir.mkdir(parents=True, exist_ok=True)
