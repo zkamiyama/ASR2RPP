@@ -83,6 +83,14 @@ def test_converted_source_checkpoint_is_removed_but_install_stays_valid(tmp_path
     assert second == path
     assert second_state['files']['big.ckpt']['retained'] is False
 
+    # Enabling the advanced retention setting later explicitly restores the
+    # source checkpoint instead of silently treating the old state as enough.
+    third, third_state = resolve_model(
+        model, threading.Event(), lambda _text: None, download=True, keep_source=True)
+    assert third == path
+    assert (directory / 'big.ckpt').is_file()
+    assert third_state['conversion']['source_checkpoint_retained'] is True
+
 
 def test_keep_source_retains_checkpoint(tmp_path, monkeypatch):
     checkpoint = b'checkpoint' * 256
