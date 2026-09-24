@@ -165,7 +165,7 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     pytest.importorskip('PySide6')
     os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
-    from PySide6.QtWidgets import QApplication, QDialog, QLineEdit
+    from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QTabWidget, QCheckBox
     from PySide6.QtCore import QSettings, QTimer
     from asr2rpp.gui import MainWindow, STYLE, default_storage_hint
     app = QApplication.instance() or QApplication([])
@@ -243,12 +243,18 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
         dialog = dialogs[-1]
         placeholders = [edit.placeholderText() for edit in dialog.findChildren(QLineEdit)]
         settings_state['placeholders'] = placeholders
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        settings_state['tabs'] = [tabs.tabText(i) for i in range(tabs.count())]
+        settings_state['checkboxes'] = [box.text() for box in dialog.findChildren(QCheckBox)]
         dialog.grab().save(str(reports / 'settings-dialog.png'))
         dialog.reject()
     QTimer.singleShot(0, capture_settings)
     window.runtime_dialog()
     assert any('weights' in text.lower() for text in settings_state['placeholders'])
     assert any('cache' in text.lower() for text in settings_state['placeholders'])
+    assert settings_state['tabs'] == ['一般', '実行環境', '詳細']
+    assert any('元チェックポイント' in text for text in settings_state['checkboxes'])
     if sys.platform == 'win32':
         assert sum('%LOCALAPPDATA%' in text for text in settings_state['placeholders']) >= 2
 
