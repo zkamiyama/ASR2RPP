@@ -20,7 +20,7 @@ import threading
 
 from . import pipeline as core
 from . import preprocessing as pre
-from .catalog import Cancelled, checkpoint, data_root, digest, resolve_model
+from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
 from .adapters import (
     Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
     run_process, scalar,
@@ -364,11 +364,11 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
         job.manifest['status'] = 'running'
         _write_manifest(job)
 
-    cache_root = data_root() / 'cache'
-    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_directory = cache_root()
+    cache_directory.mkdir(parents=True, exist_ok=True)
     completed = {}
     try:
-        with tempfile.TemporaryDirectory(prefix='queue-', dir=cache_root) as temporary:
+        with tempfile.TemporaryDirectory(prefix='queue-', dir=cache_directory) as temporary:
             root = Path(temporary)
 
             # 1. Source separation. The audio.cpp process exits before ASR starts,
