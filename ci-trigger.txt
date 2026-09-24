@@ -1,1 +1,2 @@
 final-vulkan-gear-package-20260924
+2026-09-24 rebuild after validated torch-free big_beta7 auto-conversion
