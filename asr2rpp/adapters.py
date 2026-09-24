@@ -39,8 +39,18 @@ def executable(runtime: str, device: str, custom: str = '') -> Path:
         return path
     name = {'whisper_cpp': 'whisper-cli', 'audio_cpp': 'audiocpp_cli'}[runtime]
     suffix = '.exe' if sys.platform == 'win32' else ''
+    if device == 'auto':
+        if sys.platform == 'win32':
+            devices = ['vulkan', 'cpu']
+        elif sys.platform == 'darwin':
+            devices = ['metal', 'cpu']
+        else:
+            devices = ['cuda', 'vulkan', 'cpu']
+    else:
+        devices = [device]
     for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
-        for directory in [root / f'{runtime}-{device}', root / runtime]:
+        directories = [root / f'{runtime}-{candidate}' for candidate in devices] + [root / runtime]
+        for directory in directories:
             if directory.exists():
                 matches = sorted(directory.rglob(name + suffix))
                 if matches:
