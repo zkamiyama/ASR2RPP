@@ -403,7 +403,7 @@ class MainWindow(QMainWindow):
         self.progress.setTextVisible(False)
         statusbox.addWidget(self.progress)
         footer.addLayout(statusbox, 1)
-        self.download_button = QPushButton('選択モデルを取得')
+        self.download_button = QPushButton('選択モデルを準備')
         self.download_button.clicked.connect(lambda: self.start_work(True))
         footer.addWidget(self.download_button)
         self.stop_button = QPushButton('停止')
