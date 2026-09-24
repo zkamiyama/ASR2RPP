@@ -179,6 +179,7 @@ QMenu::item:selected { background: #355c82; }
 QMenu::separator { height: 1px; background: #343c46; margin: 4px 7px; }
 """
 STYLE += '\nQComboBox::down-arrow { image: url("' + (assets_root() / "assets" / "icons" / "arrow_drop_down.svg").as_posix() + '"); width: 14px; height: 14px; }'
+STYLE += '\nQCheckBox::indicator:checked { image: url("' + (assets_root() / "assets" / "icons" / "check.svg").as_posix() + '"); }'
 
 
 TEXT = {
