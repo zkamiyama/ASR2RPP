@@ -13,7 +13,7 @@ python -m asr2rpp.cli run input.mp4 --preprocess mel-big-beta7 --rpp-audio origi
 python -m asr2rpp.cli run input.mp4 --preprocess mel-big-beta7 --rpp-audio processed --output-dir output
 ```
 
-These require the exact model to have been converted and installed, as below. `--rpp-audio processed` without `--preprocess` is an error, not a silent fallback. Omitting both leaves the existing non-preprocessed path unchanged. The separator parameters are audio.cpp **session** options, for example `--preprocess-params '{"num_overlap":2}'`.
+The bundled `mel-big-beta7.toml` downloads the pinned checkpoint/config and converts them automatically in the user's ASR2RPP data directory. The user does not need PyTorch or a manual conversion step. `--rpp-audio processed` without `--preprocess` is an error, not a silent fallback. Omitting both leaves the existing non-preprocessed path unchanged. The separator parameters are audio.cpp **session** options, for example `--preprocess-params '{"num_overlap":2}'`.
 
 ## Asset lifetime
 
@@ -33,6 +33,8 @@ Matching configuration: https://huggingface.co/pcunwa/Mel-Band-Roformer-big/blob
 
 Checkpoint SHA-256: `9d68b9a8689a3500c45d3418a7811934e557760db07285f483088a0965b0eb88`.
 
-The included TOML is a **conversion-required template**, not a ready-to-run model download. Set `source.path` to a verified audio.cpp SafeTensors/GGUF package converted from this exact checkpoint. No conversion has been completed or validated by this feature addition. A generic existing Mel-Band-RoFormer GGUF is not evidence of matching weights and is not silently substituted. Raw `.ckpt`/`.pt`/`.pth` paths are rejected with a conversion-required error.
+The model definition pins revision `1508d1ed7c54cb0017b2cbfaabdaf3ca87d2cf74` and verifies the checkpoint SHA-256 before conversion. Installation then uses a restricted, torch-free PyTorch-ZIP reader, NumPy/SafeTensors, and the bundled `audiocpp_gguf` from the same pinned audio.cpp runtime generation. Unknown pickle globals are rejected instead of executed.
 
-The asset-routing tests use an explicitly mocked separator and recognizer. They validate cleanup, persistent references, original-file integrity, time origins and GUI control state, not the neural model's separation quality. Private sample audio is not uploaded to public CI.
+Real-checkpoint validation on GitHub Actions ran with PyTorch absent and completed the entire path: 732 source tensors were reconstructed, 16 fused QKV tensors were split, 748 tensors were written to the intermediate SafeTensors package, then converted to F16 GGUF. The validated GGUF is 472,298,656 bytes with SHA-256 `2db0efd7daf0039a0e80472367cbe5119cdb8cf03ec6148dfe5fa3e23bdd0a25`. Both `audiocpp_gguf --inspect` and `audiocpp_cli --inspect --family mel_band_roformer` accepted the result. The ~944 MB SafeTensors intermediate is removed after a successful conversion; the original verified checkpoint is retained so a failed/reconfigured conversion can be retried without another download.
+
+A generic existing Mel-Band-RoFormer GGUF is never silently substituted for big_beta7. The asset-routing tests use an explicitly mocked separator and recognizer. They validate cleanup, persistent references, original-file integrity, time origins and GUI control state, not the neural model's separation quality. Private sample audio is not uploaded to public CI.
