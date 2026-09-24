@@ -696,17 +696,14 @@ class MainWindow(QMainWindow):
             self.queue_strategy = queue_strategy.currentData() or 'stage'
             self.batch_audio_ram_mb = batch_ram.value()
             self.preferences.setValue('threads', threads.value())
-            self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
-        self.preferences.setValue('queue/strategy', self.queue_strategy)
-        self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
-            self.preferences.setValue('queue/strategy', self.queue_strategy)
-            self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
             self.save_preferences()
             self.update_summary()
 
     def save_preferences(self):
         self.preferences.setValue('runtime_paths', json.dumps(self.runtime_paths))
         self.preferences.setValue('models/keep_source_checkpoints', self.keep_model_sources)
+        self.preferences.setValue('queue/strategy', self.queue_strategy)
+        self.preferences.setValue('queue/batch_audio_ram_mb', self.batch_audio_ram_mb)
         for runtime, device in self.runtime_defaults.items():
             self.preferences.setValue('runtime_default/' + runtime, device)
         self.preferences.setValue('output', self.output_dir.text())
