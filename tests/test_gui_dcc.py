@@ -116,14 +116,20 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
     assert window.run_button.text() == "GO!"
-    assert window.run_button.height() == window.settings_button.height() == window.language_button.height()
+    assert window.run_button.height() == window.settings_button.height() == window.language_button.height() == 26
+    assert window.language_button.text() == ""
     assert window.run_button.height() <= 30
     assert window.asr.params.height() == window.asr.model.height()
-    assert window.asr.language.isEditable()
-    assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height()
+    assert window.asr.language.edit.isReadOnly() is False
+    assert window.asr.language.menu_button.icon().isNull() is False
+    assert window.asr.model.isEditable() is False
+    assert window.asr.device.isEditable() is False
+    assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height() == 22
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
     assert "font-family" not in STYLE
+    assert "QComboBox::drop-down" in STYLE and "background: #15191e" in STYLE
+    assert "QFrame#editablePreset" in STYLE
     # Disabled optional stages collapse to their header only. Explicitly
     # switch them off because earlier GUI migration tests may persist settings.
     window.preprocess.toggle.setChecked(False)
