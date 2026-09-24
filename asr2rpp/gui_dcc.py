@@ -177,6 +177,7 @@ QMenu::item { padding: 6px 28px 6px 26px; }
 QMenu::item:selected { background: #355c82; }
 QMenu::separator { height: 1px; background: #343c46; margin: 4px 7px; }
 """
+STYLE += '\nQComboBox::down-arrow { image: url("' + (assets_root() / "assets" / "icons" / "arrow_drop_down.svg").as_posix() + '"); width: 14px; height: 14px; }'
 
 
 TEXT = {
@@ -310,8 +311,8 @@ TEXT = {
 
 MODEL_TEXT = {
     "anime-whisper": {
-        "ja": ("Anime Whisper · 実験的変換版", "GGML変換版。配布者から認識異常の注意あり。初期プロンプトは無効化します。"),
-        "en": ("Anime Whisper · Experimental", "Experimental GGML conversion; the distributor warns of possible recognition anomalies. Initial prompt is disabled."),
+        "ja": ("Anime Whisper · 実験的変換版", "GGML変換版。配布者から認識異常の注意があります。"),
+        "en": ("Anime Whisper · Experimental", "Experimental GGML conversion; the distributor warns of possible recognition anomalies."),
     },
     "mel-big-beta7": {
         "ja": ("Mel-Band RoFormer big beta7", "背景音除去。元CKPTをローカルで検証し、PyTorchなしでaudio.cpp F16 GGUFへ変換します。"),
