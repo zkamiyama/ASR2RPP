@@ -1167,6 +1167,12 @@ class MainWindow(QMainWindow):
                 panel.parameters = json.loads(self.preferences.value(f"{key}/parameters", "{}"))
             except Exception:
                 panel.parameters = {}
+            model = self.catalog.get(panel.model.currentData())
+            if model and model.disabled_parameters:
+                panel.parameters = {
+                    name: value for name, value in panel.parameters.items()
+                    if name not in model.disabled_parameters
+                }
         ref = str(self.preferences.value("preprocess/reference", "original"))
         idx = self.preprocess.reference.findData(ref)
         if idx >= 0:
