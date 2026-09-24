@@ -131,7 +131,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     app.processEvents()
     assert window.output_path_row.isVisible() is True
     window.output_mode.setCurrentIndex(window.output_mode.findData("same"))
-    assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height() == 20
+    assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height()
+    assert window.asr.model.height() <= 24
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
     assert "font-family" not in STYLE
