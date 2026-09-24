@@ -20,7 +20,7 @@ def run(*args, cwd=None):
 def copy_licenses(package):
     target = package / 'licenses'
     target.mkdir(exist_ok=True)
-    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'imageio-ffmpeg'):
+    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'imageio-ffmpeg', 'numpy', 'safetensors'):
         dist = distribution(name)
         for item in dist.files or []:
             if any(x in str(item).lower() for x in ('license', 'copying', 'notice')) and str(item).lower().endswith(('.txt', '.md', '.rst', 'license', 'copying')):
