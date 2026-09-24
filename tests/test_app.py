@@ -186,8 +186,17 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     window.update_summary()
     assert 'whisper.cpp Vulkan' in window.summary.text()
     window.runtime_defaults['whisper_cpp'] = 'cpu'
+    window.runtime_defaults['audio_cpp'] = 'vulkan'
     window.update_summary()
     assert 'whisper.cpp CPU' in window.summary.text()
+    assert 'audio.cpp Vulkan' in window.summary.text()
+    audio_models = [m for m in window.catalog.values() if m.runtime == 'audio_cpp']
+    if audio_models:
+        window.diar.toggle.setChecked(True)
+        audio_index = window.diar.model.findData(next((m.id for m in audio_models if m.task == 'diar'), ''))
+        if audio_index >= 0:
+            window.diar.model.setCurrentIndex(audio_index)
+            assert window.diar.stage({}, 4, window.runtime_defaults).device == 'vulkan'
     assert len(window.entries) == 3
     window.add_paths([str(tmp_path / 'interview.wav')])
     assert len(window.entries) == 3
