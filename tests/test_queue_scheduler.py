@@ -41,7 +41,7 @@ def test_converted_source_checkpoint_is_removed_but_install_stays_valid(tmp_path
 
     from asr2rpp import model_conversion
 
-    def fake_convert(model, directory, assets_root, cancel, progress):
+    def fake_convert(model, directory, assets_root, temp_root, cancel, progress):
         output = directory / 'converted.gguf'
         output.write_bytes(b'GGUF' + b'0' * 2048)
         return output, {'precision': 'f16'}
@@ -106,7 +106,7 @@ def test_keep_source_retains_checkpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, 'data_root', lambda: tmp_path / 'home')
     from asr2rpp import model_conversion
 
-    def fake_convert(model, directory, assets_root, cancel, progress):
+    def fake_convert(model, directory, assets_root, temp_root, cancel, progress):
         output = directory / 'converted.gguf'
         output.write_bytes(b'GGUF' + b'0' * 2048)
         return output, {}
