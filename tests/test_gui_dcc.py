@@ -49,6 +49,18 @@ def test_model_constraints_are_data_driven(tmp_path):
     assert models["derived"].disabled_parameters == frozenset({"initial_prompt"})
 
 
+def test_anime_whisper_prompt_constraint_is_declared_in_toml():
+    from pathlib import Path
+    from asr2rpp.catalog import load_catalog
+    models, errors = load_catalog(Path("models"))
+    assert not errors
+    anime = models["anime-whisper"]
+    assert anime.disabled_parameters == frozenset({"initial_prompt", "carry_initial_prompt"})
+    keys = {spec["key"] for spec in specs_for(anime)}
+    assert "initial_prompt" not in keys
+    assert "carry_initial_prompt" not in keys
+
+
 def test_parameter_specs_surface_cpp_controls():
     whisper = Model("w", "whisper_cpp", "asr", {"path": "x"})
     keys = {x["key"] for x in specs_for(whisper)}
@@ -67,6 +79,8 @@ def test_parameter_specs_surface_cpp_controls():
     assert "initial_prompt" not in constrained_keys
     assert "carry_initial_prompt" not in constrained_keys
     assert "initial_prompt" in keys  # Generic Whisper keeps an empty prompt control.
+    prompt = next(spec for spec in specs_for(whisper) if spec["key"] == "initial_prompt")
+    assert prompt["default"] == ""
     diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
     qwen = Model("q", "audio_cpp", "align", {"path": "x"}, family="qwen3_forced_aligner")
     qwen_keys = {x["key"] for x in specs_for(qwen)}
@@ -102,6 +116,12 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
     assert window.run_button.text() == "GO!"
+    assert window.run_button.height() == 28
+    assert window.settings_button.size().width() == 28 and window.settings_button.size().height() == 28
+    assert window.language_button.size().width() == 56 and window.language_button.size().height() == 28
+    assert window.asr.params.size().width() == 26 and window.asr.params.size().height() == 26
+    assert window.asr.language.isEditable()
+    assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height()
     assert not hasattr(window, "clip_start")
     assert "#1b1f24" in STYLE
     assert "font-family" not in STYLE
@@ -129,6 +149,14 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     window.add_paths([str(sample)])
     assert len(window.entries) == 1
     assert window.run_button.isEnabled()
+
+    # A model change drops saved values disabled by that model TOML.
+    anime_index = window.asr.model.findData("anime-whisper")
+    if anime_index >= 0:
+        window.asr.parameters = {"initial_prompt": "stale", "beam_size": 7}
+        window.asr.model.setCurrentIndex(anime_index)
+        assert "initial_prompt" not in window.asr.parameters
+        assert window.asr.parameters.get("beam_size") == 7
 
     # Runtime selectors are deliberately limited to Default / CPU / Vulkan.
     for panel in (window.preprocess, window.asr, window.align, window.diar):
