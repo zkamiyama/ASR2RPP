@@ -146,7 +146,7 @@ def digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def resolve_model(model: Model, cancel: threading.Event, progress, download: bool = False) -> tuple[Path, dict]:
+def resolve_model(model: Model, cancel: threading.Event, progress, download: bool = False, keep_source: bool = False) -> tuple[Path, dict]:
     """Cache identity includes the complete source definition; edits cannot reuse stale weights."""
     checkpoint(cancel)
     if 'path' in model.source:
@@ -164,7 +164,8 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         state = json.loads(state_file.read_text(encoding='utf-8'))
         entry = safe_relative(model.source.get('entry', model.source['files'][0]))
         if ((directory / entry).is_file() and
-                all((directory / f).is_file() and (directory / f).stat().st_size == info['size']
+                all((info.get('retained', True) is False) or
+                    ((directory / f).is_file() and (directory / f).stat().st_size == info['size'])
                     for f, info in state['files'].items())):
             return directory / entry, state
     if not download:
@@ -184,7 +185,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         destination.parent.mkdir(parents=True, exist_ok=True)
         expected = model.source.get('sha256', {}).get(filename)
         if destination.is_file() and expected and digest(destination) == expected:
-            state['files'][filename] = {'sha256': expected, 'size': destination.stat().st_size}
+            state['files'][filename] = {'sha256': expected, 'size': destination.stat().st_size, 'retained': True}
             progress(f'{model.label}: verified cached {filename}')
             continue
         partial = destination.with_name(destination.name + '.part')
@@ -212,14 +213,25 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
             if partial.stat().st_size < 1024:
                 raise ValueError('Downloaded file is unexpectedly small; check repository/file name')
             partial.replace(destination)
-            state['files'][filename] = {'sha256': sha, 'size': done}
+            state['files'][filename] = {'sha256': sha, 'size': done, 'retained': True}
         finally:
             partial.unlink(missing_ok=True)
     if model.source.get('convert'):
         from .model_conversion import convert_model
         converted, conversion = convert_model(model, directory, assets_root(), cancel, progress)
         relative = str(converted.relative_to(directory)).replace('\\\\', '/')
-        state['files'][relative] = {'sha256': digest(converted), 'size': converted.stat().st_size}
+        state['files'][relative] = {'sha256': digest(converted), 'size': converted.stat().st_size, 'retained': True}
+        recipe = model.source['convert']
+        checkpoint_name = safe_relative(str(recipe.get('checkpoint', '')))
+        source_checkpoint = directory / checkpoint_name
+        if checkpoint_name and source_checkpoint.is_file() and not keep_source:
+            source_checkpoint.unlink()
+            if checkpoint_name in state['files']:
+                state['files'][checkpoint_name]['retained'] = False
+                state['files'][checkpoint_name]['removed_after_conversion'] = True
+            conversion['source_checkpoint_retained'] = False
+        else:
+            conversion['source_checkpoint_retained'] = source_checkpoint.is_file()
         state['conversion'] = conversion
     state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
     entry = safe_relative(model.source.get('entry', model.source['files'][0]))
