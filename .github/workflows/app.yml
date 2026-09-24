@@ -50,7 +50,10 @@ jobs:
       - run: python -m pip install PySide6==6.8.3 pyinstaller==6.22.3 imageio-ffmpeg==0.6.0 pytest numpy safetensors
       - run: python -m pytest tests -v --junitxml=reports/windows-tests.xml
         env:
-          QT_QPA_PLATFORM: offscreen
+          # Use the native Windows QPA for screenshots. The offscreen plugin on
+          # GitHub's Windows runner renders text as tofu boxes, making the GUI
+          # artifacts unusable for visual review.
+          QT_QPA_PLATFORM: windows
       - uses: actions/cache@v4
         id: native
         with:
