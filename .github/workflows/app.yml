@@ -104,6 +104,41 @@ jobs:
           espeak-ng -v en-us -w reports/synthetic.wav 'This is a short test of the audio conversion application.'
           python -m asr2rpp.cli run reports/synthetic.wav --asr-language en --output-dir reports/output
           python -c "import pathlib; assert list(pathlib.Path('reports/output').glob('*.rpp'))"
+      - name: Stage-major two-file native Whisper smoke
+        shell: python
+        run: |
+          import threading
+          from pathlib import Path
+          import subprocess
+          from asr2rpp.catalog import load_catalog
+          from asr2rpp.pipeline import Stage
+          from asr2rpp.preprocessing import Settings
+          from asr2rpp.queue_runner import run_queue
+
+          reports = Path('reports')
+          a = reports / 'batch-a.wav'
+          b = reports / 'batch-b.wav'
+          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(a),
+                          'First file for one model load queue validation.'], check=True)
+          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(b),
+                          'Second file for one model load queue validation.'], check=True)
+          catalog, errors = load_catalog()
+          assert not errors, errors
+          settings = Settings(
+              asr=Stage('whisper-base', device='cpu', language='en', threads=2),
+              same_directory=False,
+              output_directory=str(reports / 'stage-output'),
+          )
+          events = []
+          outputs = run_queue(
+              [(0, str(a)), (1, str(b))],
+              settings, catalog, threading.Event(), print,
+              lambda index, status, detail: events.append((index, status, detail)),
+              256,
+          )
+          assert set(outputs) == {0, 1}, (outputs, events)
+          assert all(path.is_file() for path in outputs.values())
+          assert sum(1 for _i, status, _d in events if status == '完了') == 2
       - uses: actions/upload-artifact@v4
         with:
           name: linux-local-validation-kit-${{ github.run_id }}
