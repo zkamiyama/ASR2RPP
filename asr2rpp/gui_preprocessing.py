@@ -118,7 +118,11 @@ class MainWindow(base.MainWindow):
         index = self.preprocess.model.findData(self.preferences.value('preprocess/model', ''))
         if index >= 0:
             self.preprocess.model.setCurrentIndex(index)
-        self.preprocess.device.setCurrentText(self.preferences.value('preprocess/device', 'cpu'))
+        saved_device = str(self.preferences.value('preprocess/device', 'default'))
+        device_index = self.preprocess.device.findData(saved_device)
+        if device_index < 0:
+            device_index = self.preprocess.device.findText(saved_device)
+        self.preprocess.device.setCurrentIndex(max(0, device_index))
         try:
             self.preprocess.parameters = json.loads(self.preferences.value('preprocess/parameters', '{}'))
         except (TypeError, ValueError):
@@ -142,7 +146,8 @@ class MainWindow(base.MainWindow):
         settings = super().settings()
         if not hasattr(self, 'preprocess'):
             return Settings(**vars(settings))
-        stage = self.preprocess.stage(self.runtime_paths, int(self.preferences.value('threads', 4)))
+        stage = self.preprocess.stage(self.runtime_paths, int(self.preferences.value('threads', 4)),
+                                      self.runtime_defaults)
         return Settings(**vars(settings), preprocess=stage, reference_audio=self.preprocess.reference_mode())
 
     def save_preferences(self):
@@ -150,7 +155,7 @@ class MainWindow(base.MainWindow):
         if hasattr(self, 'preprocess'):
             panel = self.preprocess
             self.preferences.setValue('preprocess/model', panel.model.currentData() or '')
-            self.preferences.setValue('preprocess/device', panel.device.currentText())
+            self.preferences.setValue('preprocess/device', panel.device.currentData() or 'default')
             self.preferences.setValue('preprocess/enabled', panel.enabled_stage())
             self.preferences.setValue('preprocess/reference', 'processed' if panel.processed.isChecked() else 'original')
             self.preferences.setValue('preprocess/parameters', json.dumps(panel.parameters))
