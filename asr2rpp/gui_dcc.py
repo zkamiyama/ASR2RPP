@@ -550,6 +550,11 @@ class StagePanel(QFrame):
     def _sync_enabled(self):
         enabled = self.enabled_stage()
         self.body.setEnabled(enabled)
+        # Optional stages collapse to a single header row while disabled.
+        # This keeps the inspector dense like a DCC properties panel instead
+        # of reserving disabled-form space.
+        if self.optional:
+            self.body.setVisible(enabled)
         self.setProperty("disabledStage", not enabled)
         self.style().unpolish(self)
         self.style().polish(self)
