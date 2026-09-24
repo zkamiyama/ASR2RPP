@@ -10,3 +10,6 @@ repo = "https://huggingface.co/Aratako/anime-whisper-ggml"
 files = ["ggml-anime-whisper.bin"]
 [defaults]
 language = "ja"
+
+[constraints]
+disabled_parameters = ["initial_prompt", "carry_initial_prompt"]
