@@ -151,7 +151,9 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
 
     # A model change drops saved values disabled by that model TOML.
     anime_index = window.asr.model.findData("anime-whisper")
-    if anime_index >= 0:
+    whisper_index = window.asr.model.findData("whisper-base")
+    if anime_index >= 0 and whisper_index >= 0:
+        window.asr.model.setCurrentIndex(whisper_index)
         window.asr.parameters = {"initial_prompt": "stale", "beam_size": 7}
         window.asr.model.setCurrentIndex(anime_index)
         assert "initial_prompt" not in window.asr.parameters
