@@ -41,6 +41,7 @@ STYLE = r"""
     color: #d7dde6;
 }
 QMainWindow, QDialog, QWidget { background: #1b1f24; }
+QLabel, QCheckBox { background: transparent; }
 QToolTip {
     background: #111419;
     color: #e6ebf2;
@@ -80,13 +81,22 @@ QHeaderView::section {
     padding: 7px 8px;
     font-weight: 600;
 }
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     background: #15191e;
     color: #dce2ea;
     border: 1px solid #3a424d;
-    border-radius: 3px;
-    padding: 4px 6px;
-    min-height: 22px;
+    border-radius: 2px;
+    padding: 0 5px;
+    min-height: 24px;
+    max-height: 24px;
+    selection-background-color: #3f6f9f;
+}
+QPlainTextEdit {
+    background: #15191e;
+    color: #dce2ea;
+    border: 1px solid #3a424d;
+    border-radius: 2px;
+    padding: 5px;
     selection-background-color: #3f6f9f;
 }
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
@@ -94,7 +104,19 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
     background: #1b2026;
     border-color: #2a3139;
 }
-QComboBox::drop-down { border: none; width: 20px; }
+QComboBox::drop-down {
+    border: none;
+    border-left: 1px solid #303842;
+    width: 20px;
+    background: #1c2127;
+}
+QComboBox QLineEdit, QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0 3px;
+    min-height: 20px;
+    max-height: 20px;
+}
 QComboBox QAbstractItemView {
     background: #20252b;
     color: #dce2ea;
@@ -105,8 +127,10 @@ QPushButton, QToolButton {
     background: #2a3038;
     color: #dce2ea;
     border: 1px solid #3a424d;
-    border-radius: 3px;
-    padding: 4px 8px;
+    border-radius: 2px;
+    padding: 0 7px;
+    min-height: 24px;
+    max-height: 24px;
 }
 QPushButton:hover, QToolButton:hover { background: #333b45; border-color: #53606e; }
 QPushButton:pressed, QToolButton:pressed { background: #20262d; }
@@ -116,9 +140,11 @@ QToolButton#stageToggle {
     padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 28px; max-width: 28px; min-height: 26px; max-height: 26px; padding: 0; }
+QToolButton#iconButton { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
+QToolButton#footerIcon { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; }
+QToolButton#languageButton { min-width: 56px; max-width: 56px; min-height: 28px; max-height: 28px; padding: 0 5px; }
 QPushButton#runButton {
-    min-width: 92px; min-height: 28px; font-weight: 800; letter-spacing: 1px;
+    min-width: 92px; min-height: 28px; max-height: 28px; padding: 0 10px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
 QPushButton#runButton:hover { background: #2b906a; }
