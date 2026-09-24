@@ -175,8 +175,8 @@ TEXT = {
         "language": "LANG",
         "parameters": "パラメータ",
         "rpp_audio": "RPP AUDIO",
-        "original": "Original",
-        "processed": "Processed",
+        "original": "元メディア",
+        "processed": "処理済み",
         "output": "OUTPUT",
         "same_dir": "入力ファイルと同じ場所",
         "choose": "選択",
@@ -281,6 +281,44 @@ TEXT = {
         "no_params": "This model exposes no additional inference parameters.",
     },
 }
+
+MODEL_TEXT = {
+    "anime-whisper": {
+        "ja": ("Anime Whisper · 実験的変換版", "GGML変換版。配布者から認識異常の注意あり。初期プロンプトは無効化します。"),
+        "en": ("Anime Whisper · Experimental", "Experimental GGML conversion; the distributor warns of possible recognition anomalies. Initial prompt is disabled."),
+    },
+    "mel-big-beta7": {
+        "ja": ("Mel-Band RoFormer big beta7", "背景音除去。元CKPTをローカルで検証し、PyTorchなしでaudio.cpp F16 GGUFへ変換します。"),
+        "en": ("Mel-Band RoFormer big beta7", "Background removal. The exact source checkpoint is verified and converted locally to audio.cpp F16 GGUF without PyTorch."),
+    },
+    "nemotron-asr": {
+        "ja": ("Nemotron 3.5 ASR · Q8", "token emission frame由来の時刻。精密な境界にはForced Alignmentを併用できます。"),
+        "en": ("Nemotron 3.5 ASR · Q8", "Timing is derived from token emission frames. Forced Alignment can refine edit boundaries."),
+    },
+    "nemotron-diarization": {
+        "ja": ("Nemotron 3 Diarization · 8話者", "最大8話者の話者推定。音源分離は行いません。"),
+        "en": ("Nemotron 3 Diarization · 8 speakers", "Speaker diarization for up to eight speakers. It does not perform source separation."),
+    },
+    "qwen-forced-aligner": {
+        "ja": ("Qwen3 Forced Aligner · Q8", "認識テキストと対応音声を再整列します。"),
+        "en": ("Qwen3 Forced Aligner · Q8", "Re-aligns recognized transcript text to the corresponding audio."),
+    },
+    "vibevoice-asr": {
+        "ja": ("VibeVoice ASR · Q8 / 大容量", "長時間向けオフライン統合ASR。メモリ使用量が大きいモデルです。"),
+        "en": ("VibeVoice ASR · Q8 / Large", "Long-form offline integrated ASR with comparatively high memory usage."),
+    },
+    "whisper-base": {
+        "ja": ("Whisper Base · 軽量", "標準Whisper Base。軽量な既定モデル・動作確認向け。"),
+        "en": ("Whisper Base · Lightweight", "Standard Whisper Base, used as the lightweight default and smoke-test model."),
+    },
+}
+
+
+def model_text(model, lang: str) -> tuple[str, str]:
+    localized = MODEL_TEXT.get(model.id, {}).get(lang)
+    if localized:
+        return localized
+    return model.label, model.description or model.id
 
 
 def icon(name: str) -> QIcon:
@@ -568,9 +606,10 @@ class StagePanel(QFrame):
         self.model.clear()
         for model in catalog.values():
             if model.task == self.task:
-                self.model.addItem(model.label, model.id)
+                label, description = model_text(model, self.ui_lang)
+                self.model.addItem(label, model.id)
                 index = self.model.count() - 1
-                self.model.setItemData(index, model.description or model.id, Qt.ItemDataRole.ToolTipRole)
+                self.model.setItemData(index, description, Qt.ItemDataRole.ToolTipRole)
         if selected:
             index = self.model.findData(selected)
             if index >= 0:
@@ -595,6 +634,20 @@ class StagePanel(QFrame):
         self.backend_label.setText(tr["backend"])
         self.language_label.setText(tr["language"])
         self.reference_label.setText(tr["rpp_audio"])
+        selected_ref = self.reference.currentData()
+        self.reference.blockSignals(True)
+        self.reference.clear()
+        self.reference.addItem(tr["original"], "original")
+        self.reference.addItem(tr["processed"], "processed")
+        idx = self.reference.findData(selected_ref)
+        self.reference.setCurrentIndex(max(0, idx))
+        self.reference.blockSignals(False)
+        for i in range(self.model.count()):
+            model = self.catalog.get(self.model.itemData(i))
+            if model:
+                label, description = model_text(model, lang)
+                self.model.setItemText(i, label)
+                self.model.setItemData(i, description, Qt.ItemDataRole.ToolTipRole)
         self.params.setToolTip(tr["parameters"])
         selected = self.device.currentData()
         self.device.blockSignals(True)
