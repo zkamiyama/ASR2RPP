@@ -55,6 +55,64 @@ jobs:
           }
           Path('reports').mkdir(exist_ok=True)
           Path('reports/big-beta7-conversion.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+      - name: Real two-file audio.cpp separation batch smoke
+        shell: python
+        run: |
+          import json, math, os, struct, subprocess, time, wave
+          from pathlib import Path
+
+          home = Path(os.environ['ASR2RPP_HOME'])
+          ggufs = list((home / 'weights' / 'mel-big-beta7').glob('*/big_beta7-f16.gguf'))
+          assert len(ggufs) == 1, ggufs
+          model = ggufs[0]
+          cli = Path('engines/audio_cpp-cpu/audiocpp_cli')
+          assert cli.is_file(), cli
+          inputs = Path('reports/sep-batch-inputs')
+          outputs = Path('reports/sep-batch-outputs')
+          inputs.mkdir(parents=True, exist_ok=True)
+          outputs.mkdir(parents=True, exist_ok=True)
+
+          def write_test(path, frequency):
+              rate = 44100
+              frames = rate
+              with wave.open(str(path), 'wb') as wav:
+                  wav.setnchannels(2)
+                  wav.setsampwidth(2)
+                  wav.setframerate(rate)
+                  payload = bytearray()
+                  for n in range(frames):
+                      value = int(5000 * math.sin(2 * math.pi * frequency * n / rate))
+                      payload += struct.pack('<hh', value, value)
+                  wav.writeframes(payload)
+
+          write_test(inputs / 'batch_a.wav', 440.0)
+          write_test(inputs / 'batch_b.wav', 660.0)
+          started = time.monotonic()
+          command = [
+              str(cli), '--task', 'sep', '--family', 'mel_band_roformer',
+              '--model', str(model), '--backend', 'cpu', '--mode', 'offline',
+              '--batch-audio-dir', str(inputs), '--threads', '2',
+              '--out-dir', str(outputs),
+              '--session-option', 'mel_band_roformer.num_overlap=1',
+          ]
+          run = subprocess.run(command, text=True, capture_output=True, timeout=1800)
+          Path('reports/sep-batch.log').write_text(
+              run.stdout + '\\n--- STDERR ---\\n' + run.stderr, encoding='utf-8')
+          assert run.returncode == 0, run.stdout[-2000:] + run.stderr[-2000:]
+          for name in ('batch_a', 'batch_b'):
+              vocal = outputs / name / 'vocals.wav'
+              assert vocal.is_file() and vocal.stat().st_size > 44, vocal
+              with wave.open(str(vocal), 'rb') as wav:
+                  assert wav.getframerate() == 44100
+                  assert wav.getnchannels() == 2
+                  assert wav.getnframes() > 0
+          Path('reports/sep-batch-result.json').write_text(json.dumps({
+              'input_count': 2,
+              'output_count': 2,
+              'single_batch_session': True,
+              'backend': 'cpu',
+              'elapsed_seconds': time.monotonic() - started,
+          }, indent=2), encoding='utf-8')
       - if: always()
         uses: actions/upload-artifact@v4
         with:
