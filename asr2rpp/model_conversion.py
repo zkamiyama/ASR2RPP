@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import zipfile
 
 
@@ -348,7 +349,8 @@ def find_audio_cpp_tool(name: str, assets_root: Path) -> Path:
     raise ConversionError(f'{name} is not installed with ASR2RPP')
 
 
-def convert_model(model, directory: Path, assets_root: Path, cancel: threading.Event, progress) -> tuple[Path, dict]:
+def convert_model(model, directory: Path, assets_root: Path, temp_root: Path,
+                  cancel: threading.Event, progress) -> tuple[Path, dict]:
     recipe = model.source.get('convert')
     if not recipe:
         entry = model.source.get('entry', model.source['files'][0])
@@ -363,17 +365,25 @@ def convert_model(model, directory: Path, assets_root: Path, cancel: threading.E
         raise ConversionError('Mel-Band RoFormer conversion supports f16 or q8_0')
     if output.exists():
         return output, {'reused_converted_model': True}
-    # Peak disk use includes the original checkpoint, a near-F32-size
-    # SafeTensors intermediate, and the final 16/Q8 GGUF. Fail early.
-    minimum_free = checkpoint.stat().st_size * 2 + 256 * 1024 ** 2
-    free = shutil.disk_usage(directory).free
-    if free < minimum_free:
+    # Peak temporary use is dominated by the F32 SafeTensors intermediate.
+    temp_root = Path(temp_root).expanduser()
+    temp_root.mkdir(parents=True, exist_ok=True)
+    minimum_temp_free = checkpoint.stat().st_size * 2 + 256 * 1024 ** 2
+    if shutil.disk_usage(temp_root).free < minimum_temp_free:
         raise ConversionError(
-            f'Insufficient disk space for local conversion: need about {minimum_free / 1024**3:.1f} GiB free')
-    work = directory / '.conversion'
-    if work.exists():
-        shutil.rmtree(work)
-    work.mkdir(parents=True)
+            f'Insufficient temporary disk space: need about {minimum_temp_free / 1024**3:.1f} GiB free')
+    if shutil.disk_usage(directory).free < checkpoint.stat().st_size:
+        raise ConversionError('Insufficient model-storage space for converted GGUF')
+    keep_intermediate = bool(recipe.get('keep_intermediate', False))
+    temporary = None
+    if keep_intermediate:
+        work = directory / '.conversion'
+        if work.exists():
+            shutil.rmtree(work)
+        work.mkdir(parents=True)
+    else:
+        temporary = tempfile.TemporaryDirectory(prefix=f'convert-{model.id}-', dir=temp_root)
+        work = Path(temporary.name)
     try:
         info = checkpoint_to_safetensors(checkpoint, config_yaml, work, cancel, progress)
         converter = find_audio_cpp_tool('audiocpp_gguf', assets_root)
@@ -396,5 +406,5 @@ def convert_model(model, directory: Path, assets_root: Path, cancel: threading.E
         progress('背景音除去モデルの準備が完了しました。')
         return output, info
     finally:
-        if not bool(recipe.get('keep_intermediate', False)):
-            shutil.rmtree(work, ignore_errors=True)
+        if temporary is not None:
+            temporary.cleanup()
