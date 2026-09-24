@@ -219,6 +219,66 @@ def scalar(value) -> str:
     return str(value)
 
 
+
+WHISPER_VALUE_OPTIONS = {
+    'beam_size': '-bs',
+    'best_of': '-bo',
+    'audio_ctx': '-ac',
+    'max_context': '-mc',
+    'max_len': '-ml',
+    'word_thold': '-wt',
+    'entropy_thold': '-et',
+    'logprob_thold': '-lpt',
+    'no_speech_thold': '-nth',
+    'temperature': '-tp',
+    'temperature_inc': '-tpi',
+    'initial_prompt': '--prompt',
+}
+WHISPER_FLAG_OPTIONS = {
+    'split_on_word': '-sow',
+    'no_fallback': '-nf',
+    'translate': '-tr',
+    'suppress_nst': '-sns',
+    'carry_initial_prompt': '--carry-initial-prompt',
+}
+
+
+def whisper_parameter_args(parameters: dict) -> list[str]:
+    args = []
+    for key, value in parameters.items():
+        if key in WHISPER_VALUE_OPTIONS:
+            args += [WHISPER_VALUE_OPTIONS[key], scalar(value)]
+        elif key in WHISPER_FLAG_OPTIONS:
+            if not isinstance(value, bool):
+                raise ValueError(f'Whisper flag {key} must be boolean')
+            if value:
+                args.append(WHISPER_FLAG_OPTIONS[key])
+        else:
+            raise ValueError(f'Unsupported Whisper parameter: {key}')
+    return args
+
+
+def split_engine_parameters(model: Model, overrides: dict | None) -> tuple[dict, dict]:
+    request = dict(model.defaults.get('request', {}))
+    session = dict(model.defaults.get('session', {}))
+    for key, value in (overrides or {}).items():
+        if key.startswith('session.'):
+            session[key[len('session.'):]] = value
+        else:
+            request[key] = value
+    return request, session
+
+
+def audio_session_args(model: Model, session: dict) -> list[str]:
+    args = []
+    for key, value in session.items():
+        if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
+            raise ValueError('Invalid audio.cpp session parameter name')
+        option = key if '.' in key else f'{model.family}.{key}'
+        args += ['--session-option', f'{option}={scalar(value)}']
+    return args
+
+
 def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
           cancel: threading.Event, progress, transcript: str = '') -> Result:
     work.mkdir(parents=True, exist_ok=True)
@@ -228,7 +288,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
     threads = int(options.get('threads', 4))
     if not 1 <= threads <= 128:
         raise ValueError('Threads must be 1..128')
-    parameters = {**model.defaults.get('request', {}), **options.get('parameters', {})}
+    parameters, session_parameters = split_engine_parameters(model, options.get('parameters', {}))
     if model.runtime == 'whisper_cpp':
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
@@ -237,11 +297,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
             argv.append('-ng')
         elif device not in {'auto', 'vulkan', 'cuda', 'metal'}:
             raise ValueError('Unsupported Whisper device')
-        allowed = {'beam_size': '-bs', 'temperature': '-tp', 'no_speech_thold': '-nth'}
-        for key, value in parameters.items():
-            if key not in allowed:
-                raise ValueError(f'Unsupported Whisper parameter: {key}')
-            argv += [allowed[key], scalar(value)]
+        argv += whisper_parameter_args(parameters)
         run_process(argv, cancel, progress, work / 'engine.log')
         result = parse_whisper(json.loads(prefix.with_suffix('.json').read_text(encoding='utf-8-sig')))
     else:
@@ -263,8 +319,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
             if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
                 raise ValueError('Invalid parameter name')
             argv += ['--request-option', f'{key}={scalar(value)}']
-        for key, value in model.defaults.get('session', {}).items():
-            argv += ['--session-option', f'{key}={scalar(value)}']
+        argv += audio_session_args(model, session_parameters)
         run_process(argv, cancel, progress, work / 'engine.log')
         if not output.exists():
             raise ValueError('Engine did not produce timestamps. Use a supported timed model; no times were fabricated.')
