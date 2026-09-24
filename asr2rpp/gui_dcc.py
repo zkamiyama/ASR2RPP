@@ -189,7 +189,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QListWidget {
     background: #171b20; border: none; border-right: 1px solid #303741; outline: none;
 }
-QListWidget::item { padding: 10px 12px; color: #9ca6b2; }
+QListWidget::item { padding: 7px 9px; color: #9ca6b2; }
 QListWidget::item:selected { background: #29323c; color: #ffffff; border-left: 2px solid #4b91ca; }
 QMenu {
     background: #20252b; color: #dce2ea; border: 1px solid #3a424d; padding: 4px;
@@ -517,7 +517,7 @@ class ParameterDialog(QDialog):
         self.specs = specs_for(model)
         self.controls = {}
         self.setWindowTitle(f"{model.label} — {TEXT[ui_lang]['parameters']}")
-        self.resize(560, 560)
+        self.resize(520, 480)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
 
@@ -525,8 +525,10 @@ class ParameterDialog(QDialog):
         scroll.setWidgetResizable(True)
         body = QWidget()
         form = QFormLayout(body)
-        form.setContentsMargins(8, 8, 8, 8)
-        form.setSpacing(8)
+        form.setContentsMargins(6, 6, 6, 6)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(4)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         for spec in self.specs:
             current = self.parameters.get(spec["key"], spec.get("default"))
             kind = spec["type"]
@@ -878,14 +880,14 @@ class PreferencesDialog(QDialog):
         self.lang = owner.ui_lang
         tr = TEXT[self.lang]
         self.setWindowTitle(tr["settings"])
-        self.resize(760, 560)
+        self.resize(660, 440)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
 
         content = QHBoxLayout()
         content.setContentsMargins(0, 0, 0, 0)
         self.nav = QListWidget()
-        self.nav.setFixedWidth(138)
+        self.nav.setFixedWidth(112)
         for key in ("general", "runtime", "advanced"):
             self.nav.addItem(tr[key])
         content.addWidget(self.nav)
@@ -913,8 +915,10 @@ class PreferencesDialog(QDialog):
 
         general = QWidget()
         form = QFormLayout(general)
-        form.setContentsMargins(16, 16, 16, 16)
-        form.setSpacing(10)
+        form.setContentsMargins(10, 10, 10, 10)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(5)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         form.addRow(tr["model_dir"], self._path_row(self.model_dir))
         form.addRow(tr["temp_dir"], self._path_row(self.temp_dir))
         form.addRow(tr["queue_order"], self.queue_strategy)
@@ -931,8 +935,10 @@ class PreferencesDialog(QDialog):
             combo.setCurrentIndex(max(0, combo.findData(value)))
         runtime = QWidget()
         runtime_form = QFormLayout(runtime)
-        runtime_form.setContentsMargins(16, 16, 16, 16)
-        runtime_form.setSpacing(10)
+        runtime_form.setContentsMargins(10, 10, 10, 10)
+        runtime_form.setHorizontalSpacing(8)
+        runtime_form.setVerticalSpacing(5)
+        runtime_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         runtime_form.addRow(tr["whisper_backend"], self.whisper_backend)
         runtime_form.addRow(tr["audio_backend"], self.audio_backend)
         self.whisper_status = QLabel(self._runtime_status("whisper_cpp"))
@@ -945,8 +951,8 @@ class PreferencesDialog(QDialog):
 
         advanced = QWidget()
         advanced_layout = QVBoxLayout(advanced)
-        advanced_layout.setContentsMargins(16, 16, 16, 16)
-        advanced_layout.setSpacing(9)
+        advanced_layout.setContentsMargins(10, 10, 10, 10)
+        advanced_layout.setSpacing(5)
         prepare = QPushButton(icon("download"), tr["prepare_models"])
         prepare.clicked.connect(self._prepare)
         advanced_layout.addWidget(prepare)
