@@ -66,10 +66,19 @@ class PreprocessPanel(base.StagePanel):
             self.update_parameter_summary()
 
     def update_parameter_summary(self):
-        super().update_parameter_summary()
         model = self.catalog.get(self.model.currentData())
         if hasattr(self, 'overlap') and model and model.family == 'mel_band_roformer':
-            self.param_summary.setText(self.param_summary.text() + f'  /  Overlap={self.overlap.value()}')
+            default = int(model.defaults.get('session', {}).get('num_overlap', 2))
+            if self.overlap.value() == default:
+                text = f'Overlap={self.overlap.value()}（モデル既定）'
+            else:
+                text = f'Overlap={self.overlap.value()}（モデル既定 {default}）'
+            if self.parameters:
+                extras = ', '.join(f'{key}={value}' for key, value in sorted(self.parameters.items()))
+                text += ' / 追加: ' + extras
+            self.param_summary.setText(text)
+            return
+        super().update_parameter_summary()
 
     def stage(self, runtime_paths, threads, runtime_defaults=None):
         stage = super().stage(runtime_paths, threads, runtime_defaults)
