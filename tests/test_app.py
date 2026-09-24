@@ -160,6 +160,12 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     assert not window.output_dir.isEnabled()
     assert not window.output_browse.isEnabled()
     assert window.asr.body.isEnabled()
+    assert window.runtime_button.text() == '⚙'
+    assert window.runtime_button.accessibleName() == '設定'
+    assert window.asr.device.currentData() == 'default'
+    window.runtime_defaults['whisper_cpp'] = 'vulkan'
+    assert window.asr.stage({}, 4, window.runtime_defaults).device == 'vulkan'
+    window.runtime_defaults['whisper_cpp'] = 'cpu'
     assert len(window.entries) == 3
     window.add_paths([str(tmp_path / 'interview.wav')])
     assert len(window.entries) == 3
