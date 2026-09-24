@@ -19,7 +19,7 @@ from .pipeline import Stage, Settings, MEDIA_EXTENSIONS, run_job
 from .adapters import executable as runtime_executable
 
 STYLE = '''
-QWidget { color: #243247; font-family: "Segoe UI", "Noto Sans CJK JP", sans-serif; font-size: 13px; }
+QWidget { color: #243247; font-family: "Segoe UI", "Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP", sans-serif; font-size: 13px; }
 QMainWindow, QDialog { background: #f3f5f8; }
 QFrame#card { background: white; border: 1px solid #dce2eb; border-radius: 8px; }
 QLabel#title { font-size: 25px; font-weight: 700; }
