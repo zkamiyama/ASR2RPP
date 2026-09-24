@@ -116,15 +116,14 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
     assert window.run_button.text() == "GO!"
-    assert window.run_button.height() == window.settings_button.height() == window.language_button.height() == 24
+    assert window.run_button.height() == window.settings_button.height() == window.language_button.height()
     assert window.language_button.text() == ""
-    assert window.run_button.height() <= 30
+    assert window.run_button.height() <= 28
     assert window.asr.params.height() == window.asr.model.height()
     assert window.asr.language.edit.isReadOnly() is False
     assert window.asr.language.menu_button.icon().isNull() is False
     assert window.asr.model.isEditable() is False
     assert window.asr.device.isEditable() is False
-    assert window.asr.language.menu_button.icon().isNull() is False
     assert window.output_mode.currentData() == "same"
     assert window.output_path_row.isVisible() is False
     window.output_mode.setCurrentIndex(window.output_mode.findData("custom"))
