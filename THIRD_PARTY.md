@@ -7,7 +7,11 @@ The native engines are separate processes and can be replaced in the Runtime set
 
 - Python: Python Software Foundation License. https://www.python.org/downloads/source/
 - PySide6 / Qt 6.8.3 / Shiboken: Qt for Python and Qt library licenses, including LGPL v3. Only Qt Core, Gui and Widgets are required by the app. License files from installed distributions are retained in `licenses/`. Qt libraries remain dynamically loaded and replaceable; modification/debugging of LGPL components is not prohibited by this application. https://code.qt.io/cgit/pyside/pyside-setup.git/tag/?h=v6.8.3 and https://download.qt.io/archive/qt/6.8/6.8.3/
-- PyInstaller 6.12.0: GPL with bootloader exception; application code retains its own license. https://github.com/pyinstaller/pyinstaller/tree/v6.12.0
+- PyInstaller 6.22.3: GPL with bootloader exception; application code retains its own license. https://github.com/pyinstaller/pyinstaller/tree/v6.22.3
+
+## UI assets
+
+- Google Material Icons SVGs are used in the desktop UI. The included SVG files are color-adjusted derivatives of Google's official Material Design Icons and remain under Apache License 2.0. A full copy is in `assets/icons/LICENSE.txt`. Upstream: https://github.com/google/material-design-icons
 
 ## Native engines
 
