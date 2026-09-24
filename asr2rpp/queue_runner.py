@@ -24,7 +24,7 @@ from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
 from .adapters import (
     Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
     run_process, scalar, whisper_parameter_args, split_engine_parameters,
-    audio_session_args,
+    audio_session_args, validate_model_parameter_constraints,
 )
 
 
@@ -123,12 +123,14 @@ def _copy_log(log: Path, jobs, filename: str):
 
 
 def _stage_parameters(model, stage):
-    request, _session = split_engine_parameters(model, stage.parameters or {})
+    request, session = split_engine_parameters(model, stage.parameters or {})
+    validate_model_parameter_constraints(model, request, session)
     return request
 
 
 def _session_args(model, stage):
-    _request, session = split_engine_parameters(model, stage.parameters or {})
+    request, session = split_engine_parameters(model, stage.parameters or {})
+    validate_model_parameter_constraints(model, request, session)
     return audio_session_args(model, session)
 
 
