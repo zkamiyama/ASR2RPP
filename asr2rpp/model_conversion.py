@@ -359,6 +359,13 @@ def convert_model(model, directory: Path, assets_root: Path, cancel: threading.E
         raise ConversionError('Mel-Band RoFormer conversion supports f16 or q8_0')
     if output.exists():
         return output, {'reused_converted_model': True}
+    # Peak disk use includes the original checkpoint, a near-F32-size
+    # SafeTensors intermediate, and the final 16/Q8 GGUF. Fail early.
+    minimum_free = checkpoint.stat().st_size * 2 + 256 * 1024 ** 2
+    free = shutil.disk_usage(directory).free
+    if free < minimum_free:
+        raise ConversionError(
+            f'Insufficient disk space for local conversion: need about {minimum_free / 1024**3:.1f} GiB free')
     work = directory / '.conversion'
     if work.exists():
         shutil.rmtree(work)
