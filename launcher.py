@@ -1,4 +1,4 @@
-from asr2rpp.gui_preprocessing import main
+from asr2rpp.gui_dcc import main
 
 if __name__ == '__main__':
     raise SystemExit(main())
