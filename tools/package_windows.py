@@ -68,6 +68,7 @@ for file in package.rglob('*'):
         file.unlink()
 reports = ROOT / 'reports'
 reports.mkdir(exist_ok=True)
+run(package / 'asr2rpp-cli.exe', 'doctor')
 run(package / 'asr2rpp-cli.exe', 'models', 'list')
 run(package / 'asr2rpp-cli.exe', 'models', 'install', 'whisper-base')
 # A public upstream fixture, not the user's private media.
@@ -85,7 +86,7 @@ if process.poll() is not None:
 process.terminate()
 process.wait(timeout=10)
 (reports / 'frozen-smoke.json').write_text(json.dumps({
-    'cli_models_list': 'passed', 'cli_model_download': 'passed', 'cli_asr_to_rpp': 'passed',
+    'cli_doctor': 'passed', 'cli_models_list': 'passed', 'cli_model_download': 'passed', 'cli_asr_to_rpp': 'passed',
     'gui_startup_5s': 'passed', 'gui_interaction': 'tested from same source, not frozen',
     'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
