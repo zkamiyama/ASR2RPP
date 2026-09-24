@@ -33,7 +33,7 @@ def copy_licenses(package):
 
 os.environ['PYTHONUTF8'] = '1'
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
-    '--name', 'ASR2RPP', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy',
+    '--name', 'ASR2RPP', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'PySide6.QtSvg',
     '--add-data', 'models:models', '--add-data', 'assets:assets', 'launcher.py')
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--console',
     '--name', 'asr2rpp-cli', '--exclude-module', 'PySide6',
