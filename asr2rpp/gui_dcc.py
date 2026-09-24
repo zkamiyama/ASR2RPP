@@ -37,7 +37,6 @@ from .adapters import executable as runtime_executable
 
 STYLE = r"""
 * {
-    font-family: "Segoe UI", "Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP", sans-serif;
     font-size: 12px;
     color: #d7dde6;
 }
