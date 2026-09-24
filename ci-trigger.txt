@@ -9,3 +9,4 @@ final-vulkan-gear-package-20260924
 2026-09-24 final compact DCC build with collapsed disabled stages
 2026-09-24 retry compact DCC build with isolated saved-state test
 2026-09-24 final DCC dark UI + native cpp parameter audit
+2026-09-24 compact Maya-style inspector + TOML model constraints
