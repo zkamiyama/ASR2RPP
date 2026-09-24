@@ -380,7 +380,7 @@ def convert_model(model, directory: Path, assets_root: Path, cancel: threading.E
         temporary = output.with_name(output.name + '.part.gguf')
         temporary.unlink(missing_ok=True)
         progress(f'GGUF {precision.upper()}へ変換中…')
-        _run([str(converter), '--input', str(work / 'model.safetensors'),
+        _run([str(converter), '--input', 'weights=' + str(work / 'model.safetensors'),
               '--root', str(work), '--family', model.family,
               '--output', str(temporary), '--type', precision, '--overwrite'], cancel, progress)
         inspect = _run([str(converter), '--inspect', str(temporary)], cancel, lambda _text: None)
