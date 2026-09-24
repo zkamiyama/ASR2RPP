@@ -82,6 +82,22 @@ class Model:
                 raise ValueError('source.files must contain the runtime-ready weights')
             for name in files:
                 safe_relative(name)
+            if 'entry' in self.source:
+                safe_relative(str(self.source['entry']))
+            recipe = self.source.get('convert')
+            if recipe is not None:
+                if not isinstance(recipe, dict):
+                    raise ValueError('source.convert must be a TOML table')
+                if recipe.get('kind') != 'mel_band_roformer_ckpt_to_gguf':
+                    raise ValueError('unsupported source.convert.kind')
+                if self.runtime != 'audio_cpp' or self.family != 'mel_band_roformer':
+                    raise ValueError('Mel-Band conversion requires audio_cpp mel_band_roformer')
+                for key in ('checkpoint', 'config', 'output'):
+                    safe_relative(str(recipe.get(key, '')))
+                if recipe.get('checkpoint') not in files or recipe.get('config') not in files:
+                    raise ValueError('conversion checkpoint/config must be listed in source.files')
+                if recipe.get('precision', 'f16') not in {'f16', 'q8_0'}:
+                    raise ValueError('conversion precision must be f16 or q8_0')
         if self.defaults.get('request') and not isinstance(self.defaults['request'], dict):
             raise ValueError('defaults.request must be a TOML table')
 
@@ -146,10 +162,11 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
     state_file = directory / 'installed.json'
     if state_file.exists():
         state = json.loads(state_file.read_text(encoding='utf-8'))
-        if all((directory / f).is_file() and (directory / f).stat().st_size == info['size']
-               for f, info in state['files'].items()):
-            entry = model.source.get('entry', model.source['files'][0])
-            return directory / safe_relative(entry), state
+        entry = safe_relative(model.source.get('entry', model.source['files'][0]))
+        if ((directory / entry).is_file() and
+                all((directory / f).is_file() and (directory / f).stat().st_size == info['size']
+                    for f, info in state['files'].items())):
+            return directory / entry, state
     if not download:
         raise FileNotFoundError(f'{model.label}: model not installed. Use Download models / models install first.')
     directory.mkdir(parents=True, exist_ok=True)
@@ -194,6 +211,12 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
             state['files'][filename] = {'sha256': sha, 'size': done}
         finally:
             partial.unlink(missing_ok=True)
+    if model.source.get('convert'):
+        from .model_conversion import convert_model
+        converted, conversion = convert_model(model, directory, assets_root(), cancel, progress)
+        relative = str(converted.relative_to(directory)).replace('\\\\', '/')
+        state['files'][relative] = {'sha256': digest(converted), 'size': converted.stat().st_size}
+        state['conversion'] = conversion
     state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
     entry = safe_relative(model.source.get('entry', model.source['files'][0]))
     return directory / entry, state
