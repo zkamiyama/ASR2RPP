@@ -7,7 +7,7 @@ import sys
 import tomllib
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel,
-    QRadioButton, QButtonGroup, QDialog, QDialogButtonBox, QPlainTextEdit, QMessageBox)
+    QRadioButton, QButtonGroup, QDialog, QDialogButtonBox, QPlainTextEdit, QMessageBox, QSpinBox)
 from . import gui as base
 from .catalog import Cancelled, resolve_model
 from .preprocessing import Settings, run_job
@@ -21,6 +21,17 @@ class PreprocessPanel(base.StagePanel):
         form.itemAtPosition(1, 2).widget().hide()
         form.removeWidget(self.device)
         form.addWidget(self.device, 1, 1, 1, 3)
+        form.removeWidget(self.params)
+        form.removeWidget(self.param_summary)
+        self.overlap_label = QLabel('Overlap')
+        self.overlap = QSpinBox()
+        self.overlap.setRange(1, 8)
+        self.overlap.setValue(2)
+        self.overlap.setToolTip('大きいほど分離境界の安定性を上げやすい一方、処理時間とメモリ使用量が増えます。')
+        form.addWidget(self.overlap_label, 2, 0)
+        form.addWidget(self.overlap, 2, 1)
+        form.addWidget(self.params, 3, 0, 1, 4)
+        form.addWidget(self.param_summary, 4, 0, 1, 4)
         self.reference_box = QWidget()
         layout = QVBoxLayout(self.reference_box)
         layout.setContentsMargins(0, 4, 0, 0)
@@ -35,19 +46,47 @@ class PreprocessPanel(base.StagePanel):
         self.original.setChecked(True)
         layout.addWidget(self.original)
         layout.addWidget(self.processed)
-        form.addWidget(self.reference_box, 3, 0, 1, 4)
+        form.addWidget(self.reference_box, 5, 0, 1, 4)
         self.original.toggled.connect(self.sync)
         self.processed.toggled.connect(self.sync)
+        self.overlap.valueChanged.connect(self.update_parameter_summary)
         self.sync()
+
+    def model_changed(self):
+        super().model_changed()
+        if hasattr(self, 'overlap'):
+            model = self.catalog.get(self.model.currentData())
+            if model and model.family == 'mel_band_roformer':
+                self.overlap_label.show()
+                self.overlap.show()
+                self.overlap.setValue(int(model.defaults.get('session', {}).get('num_overlap', 2)))
+            else:
+                self.overlap_label.hide()
+                self.overlap.hide()
+            self.update_parameter_summary()
+
+    def update_parameter_summary(self):
+        super().update_parameter_summary()
+        if hasattr(self, 'overlap') and self.overlap.isVisible():
+            suffix = f'  /  Overlap={self.overlap.value()}'
+            if suffix.strip() not in self.param_summary.text():
+                self.param_summary.setText(self.param_summary.text() + suffix)
+
+    def stage(self, runtime_paths, threads, runtime_defaults=None):
+        stage = super().stage(runtime_paths, threads, runtime_defaults)
+        model = self.catalog.get(self.model.currentData())
+        if stage and model and model.family == 'mel_band_roformer':
+            stage.parameters['num_overlap'] = self.overlap.value()
+        return stage
 
     def sync(self):
         enabled = self.enabled_stage()
         self.body.setEnabled(enabled)
         self.badge.setText('ON · 実行する' if enabled else 'OFF · 実行しない')
         saved = hasattr(self, 'processed') and self.processed.isChecked()
-        self.note.setText('オフ：元メディアを推論・RPPの両方に使います。' if not enabled else
-                         ('RPPと同じフォルダーへ <RPP名>_vocals.wav として保存します。既存ファイルは上書きしません。' if saved else
-                          '推論にだけ前処理済み音声を使用します。RPPの再生音は元のままです。'))
+        self.note.setText('OFF：元メディアをそのまま使用。' if not enabled else
+                         ('処理済み音声を <RPP名>_vocals.wav として保存・参照。' if saved else
+                          '処理済み音声は推論だけに使用。RPPは元メディアを参照。'))
         self.changed.emit()
 
     def reference_mode(self):
@@ -58,7 +97,7 @@ class PreprocessPanel(base.StagePanel):
         dialog.setWindowTitle('背景音除去のパラメーター（TOML）')
         dialog.resize(500, 280)
         layout = QVBoxLayout(dialog)
-        hint = QLabel('audio.cpp の session-option を指定します。例：num_overlap = 2\n空欄ならモデルTOMLの既定値を使います。')
+        hint = QLabel('追加の audio.cpp session-option を指定します。Overlap は前画面で変更できます。')
         hint.setWordWrap(True)
         layout.addWidget(hint)
         editor = QPlainTextEdit()
@@ -73,7 +112,10 @@ class PreprocessPanel(base.StagePanel):
                 values = tomllib.loads(editor.toPlainText())
                 if any(not isinstance(v, (str, int, float, bool)) for v in values.values()):
                     raise ValueError('文字列・数値・真偽値のみ指定できます。')
+                if 'num_overlap' in values:
+                    self.overlap.setValue(int(values.pop('num_overlap')))
                 self.parameters = values
+                self.update_parameter_summary()
                 dialog.accept()
             except ValueError as exc:
                 error.setText(str(exc))
@@ -135,6 +177,7 @@ class MainWindow(base.MainWindow):
             self.preprocess.parameters = json.loads(self.preferences.value('preprocess/parameters', '{}'))
         except (TypeError, ValueError):
             self.preprocess.parameters = {}
+        self.preprocess.overlap.setValue(int(self.preferences.value('preprocess/overlap', self.preprocess.overlap.value())))
         self.preprocess.processed.setChecked(self.preferences.value('preprocess/reference', 'original') == 'processed')
         if not self.preprocess.processed.isChecked():
             self.preprocess.original.setChecked(True)
@@ -166,6 +209,7 @@ class MainWindow(base.MainWindow):
             self.preferences.setValue('preprocess/device', panel.device.currentData() or 'default')
             self.preferences.setValue('preprocess/enabled', panel.enabled_stage())
             self.preferences.setValue('preprocess/reference', 'processed' if panel.processed.isChecked() else 'original')
+            self.preferences.setValue('preprocess/overlap', panel.overlap.value())
             self.preferences.setValue('preprocess/parameters', json.dumps(panel.parameters))
             self.preferences.sync()
 
