@@ -870,6 +870,13 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(920, 600)
 
         self.preferences = QSettings("ASR2RPP", "ASR2RPP")
+        # The legacy preview defaulted native runtimes to CPU. The DCC UI changes the
+        # product default to Vulkan, so migrate once; later explicit CPU choices persist.
+        if not self.preferences.value("runtime_defaults_v2", False, type=bool):
+            self.preferences.setValue("runtime_default/whisper_cpp", "vulkan")
+            self.preferences.setValue("runtime_default/audio_cpp", "vulkan")
+            self.preferences.setValue("runtime_defaults_v2", True)
+            self.preferences.sync()
         self.ui_lang = str(self.preferences.value("ui/language", "ja"))
         if self.ui_lang not in TEXT:
             self.ui_lang = "ja"
