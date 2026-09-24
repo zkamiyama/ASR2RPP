@@ -93,7 +93,7 @@ def validate_duration(before: WaveInfo, after: WaveInfo):
 
 def separate(source: Path, work: Path, settings: Settings, model: Model, weights: Path, cancel, progress, log_dir: Path | None = None):
     if weights.suffix.lower() in {'.ckpt', '.pt', '.pth'}:
-        raise ValueError('This checkpoint must first be converted to the matching audio.cpp SafeTensors/GGUF package')
+        raise ValueError('Model installation did not finish; converted GGUF is unavailable')
     work.mkdir(parents=True, exist_ok=True)
     logs = log_dir or work
     logs.mkdir(parents=True, exist_ok=True)
