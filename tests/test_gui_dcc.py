@@ -119,7 +119,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.run_button.height() == 28
     assert window.settings_button.size().width() == 28 and window.settings_button.size().height() == 28
     assert window.language_button.size().width() == 56 and window.language_button.size().height() == 28
-    assert window.asr.params.size().width() == 26 and window.asr.params.size().height() == 26
+    assert window.asr.params.size().width() == 24 and window.asr.params.size().height() == 24
     assert window.asr.language.isEditable()
     assert window.asr.model.height() == window.asr.device.height() == window.asr.language.height()
     assert not hasattr(window, "clip_start")
