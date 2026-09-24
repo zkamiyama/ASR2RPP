@@ -253,6 +253,9 @@ def specs_for(model) -> list[dict]:
         specs = AUDIO.get(model.family, [])
     result = []
     for original in specs:
+        # The anime-whisper distributor explicitly warns against an initial prompt.
+        if model.id == "anime-whisper" and original["key"] in {"initial_prompt", "carry_initial_prompt"}:
+            continue
         spec = dict(original)
         key = spec["key"]
         if key.startswith("session."):
