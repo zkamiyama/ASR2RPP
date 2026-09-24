@@ -25,6 +25,11 @@ class ConversionError(RuntimeError):
     pass
 
 
+class StateDict(dict):
+    """OrderedDict-compatible state container with attribute metadata support."""
+    pass
+
+
 @dataclass(frozen=True)
 class TensorRef:
     storage_key: str
@@ -43,7 +48,7 @@ class RestrictedCheckpointUnpickler(pickle.Unpickler):
 
     def find_class(self, module, name):
         if module == 'collections' and name == 'OrderedDict':
-            return dict
+            return StateDict
         if module == 'torch' and name == 'FloatStorage':
             return type('FloatStorage', (), {'__name__': 'FloatStorage'})
         if module == 'torch._utils' and name == '_rebuild_tensor_v2':
