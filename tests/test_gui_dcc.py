@@ -101,7 +101,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
 
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication, QPushButton
-    from asr2rpp.gui_dcc import MainWindow, PreferencesDialog, STYLE
+    from asr2rpp.gui_dcc import MainWindow, ParameterDialog, PreferencesDialog, STYLE
 
     QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope,
                       str(tmp_path / "settings"))
@@ -158,6 +158,18 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
         window.asr.model.setCurrentIndex(anime_index)
         assert "initial_prompt" not in window.asr.parameters
         assert window.asr.parameters.get("beam_size") == 7
+
+    anime_model = window.catalog.get("anime-whisper")
+    whisper_model = window.catalog.get("whisper-base")
+    if anime_model and whisper_model:
+        anime_params = ParameterDialog(anime_model, {}, "ja", window)
+        assert "initial_prompt" not in anime_params.controls
+        assert "carry_initial_prompt" not in anime_params.controls
+        anime_params.close()
+        whisper_params = ParameterDialog(whisper_model, {}, "ja", window)
+        assert "initial_prompt" in whisper_params.controls
+        assert whisper_params.controls["initial_prompt"][0].text() == ""
+        whisper_params.close()
 
     # Runtime selectors are deliberately limited to Default / CPU / Vulkan.
     for panel in (window.preprocess, window.asr, window.align, window.diar):
