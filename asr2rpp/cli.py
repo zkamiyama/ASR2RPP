@@ -18,6 +18,7 @@ def main(argv=None):
     models = sub.add_parser('models', help='list/install TOML model definitions')
     models.add_argument('action', choices=['list', 'install'])
     models.add_argument('ids', nargs='*')
+    models.add_argument('--keep-source', action='store_true', help='keep original source checkpoints after a successful conversion')
     run = sub.add_parser('run', help='convert files sequentially to non-destructive RPP')
     run.add_argument('files', nargs='+', type=Path)
     run.add_argument('--asr', default='whisper-base')
@@ -92,7 +93,7 @@ def main(argv=None):
                 for model_id in args.ids:
                     if model_id not in catalog:
                         raise ValueError(f'Unknown model: {model_id}')
-                    resolve_model(catalog[model_id], cancel, progress, download=True)
+                    resolve_model(catalog[model_id], cancel, progress, download=True, keep_source=args.keep_source)
             return 0
         def stage(task):
             model_id = getattr(args, task)
