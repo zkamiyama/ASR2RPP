@@ -10,6 +10,7 @@ import math
 import os
 import threading
 import time
+import tempfile
 import wave
 from .catalog import Model, checkpoint, resolve_model, digest
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
@@ -206,6 +207,10 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     output, report = reserve_output(source, settings)
     started = time.monotonic()
     warnings, pcm_files = [], []
+    cache_directory = cache_root()
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    temporary = tempfile.TemporaryDirectory(prefix='job-', dir=cache_directory)
+    work = Path(temporary.name)
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
                 'models': provenance, 'status': 'running', 'reference_mode': 'non_destructive',
                 'audio_stream': '0:a:0', 'time_origin': 'FFmpeg normalized demuxed-media origin',
@@ -215,7 +220,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         pcm_by_rate = {}
         def pcm(rate):
             if rate not in pcm_by_rate:
-                file = report / f'inference_{rate}.wav'
+                file = work / f'inference_{rate}.wav'
                 pcm_files.append(file)
                 progress(f'Decode {rate} Hz (inference cache only)')
                 duration = decode(source, file, rate, settings, cancel, progress)
@@ -244,7 +249,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                     raise ValueError('Alignment needs <=55-second matched transcript/audio segments; this segment is too long. ASR-only remains available.')
                 begin = max(0, segment.start - 0.15)
                 length = min(duration, segment.end + 0.25) - begin
-                file = report / f'align_{index}.wav'
+                file = work / f'align_{index}.wav'
                 pcm_files.append(file)
                 decode(source, file, align_model.sample_rate, settings, cancel, progress,
                        settings.clip_start + begin, length)
@@ -280,4 +285,6 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     finally:
         for file in pcm_files:
             file.unlink(missing_ok=True)
+        temporary.cleanup()
+        manifest['temporary_cache_removed'] = not work.exists()
         json_write(report / 'manifest.json', manifest)
