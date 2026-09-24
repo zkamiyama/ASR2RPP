@@ -165,8 +165,8 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     pytest.importorskip('PySide6')
     os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
-    from PySide6.QtWidgets import QApplication
-    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication, QDialog, QLineEdit
+    from PySide6.QtCore import QSettings, QTimer
     from asr2rpp.gui import MainWindow, STYLE, default_storage_hint
     app = QApplication.instance() or QApplication([])
     app.setStyle('Fusion')
@@ -234,6 +234,24 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     assert window.align.body.isEnabled() and window.output_dir.isEnabled()
     app.processEvents()
     window.grab().save(str(reports / 'gui-options-on.png'))
+
+    settings_state = {}
+    def capture_settings():
+        dialogs = [w for w in app.topLevelWidgets()
+                   if isinstance(w, QDialog) and w.windowTitle() == '設定']
+        assert dialogs
+        dialog = dialogs[-1]
+        placeholders = [edit.placeholderText() for edit in dialog.findChildren(QLineEdit)]
+        settings_state['placeholders'] = placeholders
+        dialog.grab().save(str(reports / 'settings-dialog.png'))
+        dialog.reject()
+    QTimer.singleShot(0, capture_settings)
+    window.runtime_dialog()
+    assert any('weights' in text.lower() for text in settings_state['placeholders'])
+    assert any('cache' in text.lower() for text in settings_state['placeholders'])
+    if sys.platform == 'win32':
+        assert sum('%LOCALAPPDATA%' in text for text in settings_state['placeholders']) >= 2
+
     window.set_busy(True)
     assert not window.diar.isEnabled() and not window.start_button.isEnabled()
     window.set_busy(False)
