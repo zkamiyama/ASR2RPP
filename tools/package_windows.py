@@ -78,7 +78,7 @@ run(package / 'asr2rpp-cli.exe', 'models', 'install', 'whisper-base')
 fixture = ROOT / 'build/native/whisper_cpp/samples/jfk.wav'
 if not fixture.exists():
     raise RuntimeError('Missing public upstream speech fixture')
-run(package / 'asr2rpp-cli.exe', 'run', fixture, '--asr-language', 'en',
+run(package / 'asr2rpp-cli.exe', 'run', fixture, '--asr-device', 'cpu', '--asr-language', 'en',
     '--output-dir', reports / 'frozen-asr')
 if not list((reports / 'frozen-asr').glob('*.rpp')):
     raise RuntimeError('Frozen CLI did not produce an RPP')
