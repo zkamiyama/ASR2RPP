@@ -88,8 +88,8 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     border: 1px solid #3a424d;
     border-radius: 2px;
     padding: 0 5px;
-    min-height: 22px;
-    max-height: 22px;
+    min-height: 20px;
+    max-height: 20px;
     selection-background-color: #3f6f9f;
 }
 
@@ -147,8 +147,8 @@ QPushButton, QToolButton {
     border: 1px solid #3a424d;
     border-radius: 2px;
     padding: 0 7px;
-    min-height: 22px;
-    max-height: 22px;
+    min-height: 20px;
+    max-height: 20px;
 }
 QPushButton:hover, QToolButton:hover { background: #333b45; border-color: #53606e; }
 QPushButton:pressed, QToolButton:pressed { background: #20262d; }
@@ -158,11 +158,11 @@ QToolButton#stageToggle {
     padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
 }
 QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 22px; max-width: 22px; min-height: 22px; max-height: 22px; padding: 0; }
-QToolButton#footerIcon { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
-QToolButton#languageButton { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; padding: 0; }
+QToolButton#iconButton { min-width: 20px; max-width: 20px; min-height: 20px; max-height: 20px; padding: 0; }
+QToolButton#footerIcon { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
+QToolButton#languageButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0; }
 QPushButton#runButton {
-    min-width: 78px; max-width: 78px; min-height: 26px; max-height: 26px; padding: 0 8px; font-weight: 800; letter-spacing: 1px;
+    min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px; padding: 0 8px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
 QPushButton#runButton:hover { background: #2b906a; }
