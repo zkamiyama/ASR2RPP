@@ -110,6 +110,8 @@ jobs:
           import threading
           from pathlib import Path
           import subprocess
+          import sys
+          sys.path.insert(0, str(Path.cwd()))
           from asr2rpp.catalog import load_catalog
           from asr2rpp.pipeline import Stage
           from asr2rpp.preprocessing import Settings
