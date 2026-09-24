@@ -94,13 +94,14 @@ def test_parameter_specs_surface_cpp_controls():
 
 def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    if "QT_QPA_PLATFORM" not in os.environ:
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("ASR2RPP_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("ASR2RPP_WEIGHTS_DIR", raising=False)
     monkeypatch.delenv("ASR2RPP_CACHE_DIR", raising=False)
 
-    from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import QApplication, QPushButton
+    from PySide6.QtCore import Qt, QSettings
+    from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
     from asr2rpp.gui_dcc import MainWindow, ParameterDialog, PreferencesDialog, STYLE
 
     QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope,
@@ -137,6 +138,9 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert "font-family" not in STYLE
     assert "QComboBox::drop-down" in STYLE and "background: #15191e" in STYLE
     assert "QFrame#editablePreset" in STYLE
+    inspector_scroll = window.findChild(QScrollArea, "inspectorScroll")
+    assert inspector_scroll is not None
+    assert inspector_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     # Disabled optional stages collapse to their header only. Explicitly
     # switch them off because earlier GUI migration tests may persist settings.
     window.preprocess.toggle.setChecked(False)
