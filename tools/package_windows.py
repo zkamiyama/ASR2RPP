@@ -33,9 +33,12 @@ def copy_licenses(package):
 
 os.environ['PYTHONUTF8'] = '1'
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
-    '--name', 'ASR2RPP', '--add-data', 'models:models', 'launcher.py')
+    '--name', 'ASR2RPP', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy',
+    '--add-data', 'models:models', 'launcher.py')
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--console',
-    '--name', 'asr2rpp-cli', '--exclude-module', 'PySide6', '--add-data', 'models:models', 'cli_launcher.py')
+    '--name', 'asr2rpp-cli', '--exclude-module', 'PySide6',
+    '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy',
+    '--add-data', 'models:models', 'cli_launcher.py')
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
