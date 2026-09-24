@@ -180,7 +180,11 @@ def test_gui_states_and_screenshots(tmp_path, monkeypatch):
     assert window.asr.device.currentData() == 'default'
     window.runtime_defaults['whisper_cpp'] = 'vulkan'
     assert window.asr.stage({}, 4, window.runtime_defaults).device == 'vulkan'
+    window.update_summary()
+    assert 'whisper.cpp Vulkan' in window.summary.text()
     window.runtime_defaults['whisper_cpp'] = 'cpu'
+    window.update_summary()
+    assert 'whisper.cpp CPU' in window.summary.text()
     assert len(window.entries) == 3
     window.add_paths([str(tmp_path / 'interview.wav')])
     assert len(window.entries) == 3
