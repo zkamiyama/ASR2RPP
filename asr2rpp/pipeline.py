@@ -12,7 +12,7 @@ import threading
 import time
 import tempfile
 import wave
-from .catalog import Model, checkpoint, resolve_model, digest
+from .catalog import Model, checkpoint, cache_root, resolve_model, digest
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
 from .text_join import join_timed
 from rpp_writer import Source, Item, Track, Project, dumps
