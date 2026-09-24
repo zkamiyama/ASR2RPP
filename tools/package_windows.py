@@ -43,6 +43,7 @@ required_native = [
     package / 'engines/whisper_cpp-cpu/whisper-cli.exe',
     package / 'engines/whisper_cpp-vulkan/whisper-cli.exe',
     package / 'engines/audio_cpp-cpu/audiocpp_cli.exe',
+    package / 'engines/audio_cpp-cpu/audiocpp_gguf.exe',
     package / 'engines/audio_cpp-vulkan/audiocpp_cli.exe',
 ]
 missing_native = [str(path) for path in required_native if not path.is_file()]
