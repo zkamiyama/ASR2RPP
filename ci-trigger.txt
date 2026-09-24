@@ -5,3 +5,4 @@ final-vulkan-gear-package-20260924
 2026-09-24 build after storage-directory settings and GUI audit
 2026-09-24 final GUI storage/font audit build
 2026-09-24 final dark DCC GUI build with QtSvg icons
+2026-09-24 retry final DCC Windows build after Vulkan preference migration
