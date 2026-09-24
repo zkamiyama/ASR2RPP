@@ -94,6 +94,14 @@ class Worker(base.Worker):
             except Exception as exc:
                 self.error.emit(str(exc))
             return
+        if self.queue_strategy == 'stage' and len(self.jobs) > 1:
+            from .queue_runner import run_queue
+            try:
+                run_queue(self.jobs, self.settings, self.catalog, self.cancel, self.progress.emit,
+                          self.item.emit, self.batch_audio_ram_mb)
+            except Cancelled:
+                pass
+            return
         for index, path in self.jobs:
             if self.cancel.is_set():
                 break
@@ -191,7 +199,8 @@ class MainWindow(base.MainWindow):
             self.save_preferences()
             self.completed = 0
             self.progress.setRange(0, 0 if download else len(jobs))
-            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources)
+            self.worker = Worker(jobs, settings, self.catalog, download, self.keep_model_sources,
+                                 self.queue_strategy, self.batch_audio_ram_mb)
             self.worker.progress.connect(self.show_progress)
             self.worker.item.connect(self.item_changed)
             self.worker.error.connect(self.show_error)
