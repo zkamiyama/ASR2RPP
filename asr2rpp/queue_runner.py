@@ -279,7 +279,7 @@ def _align_batch(model, weights: Path, stage, requests: list[AlignRequest], root
                     raise ValueError(f'Aligner did not produce words for {req.job.source.name}')
                 raw = json.loads(path.read_text(encoding='utf-8-sig'))
                 results[req.key] = parse_audio(raw, 'align', model.family, model.sample_rate)
-            _copy_log(log, {req.job for req in chunk}, f'align-batch-{chunk_no}.log')
+            _copy_log(log, list({req.job.index: req.job for req in chunk}.values()), f'align-batch-{chunk_no}.log')
         except BaseException as exc:
             if cancel.is_set():
                 raise
