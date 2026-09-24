@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
     QProgressBar, QPlainTextEdit, QScrollArea, QFrame, QSplitter, QDialog,
     QDialogButtonBox, QFormLayout, QAbstractItemView)
-from .catalog import load_catalog, model_directory, resolve_model, Cancelled
+from .catalog import load_catalog, model_directory, data_root, resolve_model, Cancelled
 from .pipeline import Stage, Settings, MEDIA_EXTENSIONS, run_job
 from .adapters import executable as runtime_executable
 
@@ -612,6 +612,19 @@ class MainWindow(QMainWindow):
                       'Vulkan実行には対応GPUとドライバーが必要です。')
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        storage = QHBoxLayout()
+        storage_path = QLineEdit(str(data_root() / 'weights'))
+        storage_path.setReadOnly(True)
+        storage_path.setToolTip('ダウンロード済み・変換済みモデルの標準保存先')
+        open_storage = QPushButton('開く')
+        open_storage.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_root() / 'weights'))))
+        storage.addWidget(storage_path, 1)
+        storage.addWidget(open_storage)
+        storage_form = QFormLayout()
+        storage_form.addRow('モデル保存先', storage)
+        layout.addLayout(storage_form)
 
         runtime_form = QFormLayout()
         backend_fields = {}
