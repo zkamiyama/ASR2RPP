@@ -35,6 +35,20 @@ def test_native_parameter_mapping():
     ]
 
 
+def test_model_constraints_are_data_driven(tmp_path):
+    definition = tmp_path / "derived.toml"
+    definition.write_text(
+        'runtime="whisper_cpp"\ntask="asr"\n'
+        '[source]\npath="model.bin"\n'
+        '[constraints]\ndisabled_parameters=["initial_prompt"]\n',
+        encoding="utf-8",
+    )
+    from asr2rpp.catalog import load_catalog
+    models, errors = load_catalog(tmp_path)
+    assert not errors
+    assert models["derived"].disabled_parameters == frozenset({"initial_prompt"})
+
+
 def test_parameter_specs_surface_cpp_controls():
     whisper = Model("w", "whisper_cpp", "asr", {"path": "x"})
     keys = {x["key"] for x in specs_for(whisper)}
@@ -45,10 +59,14 @@ def test_parameter_specs_surface_cpp_controls():
             "gpu_device", "flash_attn", "grammar", "grammar_rule",
             "grammar_penalty", "vad", "vad_model", "vad_threshold",
             "initial_prompt"} <= keys
-    anime = Model("anime-whisper", "whisper_cpp", "asr", {"path": "x"})
-    anime_keys = {x["key"] for x in specs_for(anime)}
-    assert "initial_prompt" not in anime_keys
-    assert "carry_initial_prompt" not in anime_keys
+    constrained = Model(
+        "arbitrary-whisper-derivative", "whisper_cpp", "asr", {"path": "x"},
+        constraints={"disabled_parameters": ["initial_prompt", "carry_initial_prompt"]},
+    )
+    constrained_keys = {x["key"] for x in specs_for(constrained)}
+    assert "initial_prompt" not in constrained_keys
+    assert "carry_initial_prompt" not in constrained_keys
+    assert "initial_prompt" in keys  # Generic Whisper keeps an empty prompt control.
     diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
     qwen = Model("q", "audio_cpp", "align", {"path": "x"}, family="qwen3_forced_aligner")
     qwen_keys = {x["key"] for x in specs_for(qwen)}
