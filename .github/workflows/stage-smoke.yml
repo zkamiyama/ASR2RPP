@@ -8,7 +8,7 @@ on:
       build_run:
         description: Successful ASR2RPP application workflow run ID
         required: true
-        default: '35930086686'
+        default: '36088197884'
 permissions:
   contents: read
   actions: read
@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     env:
-      BUILD_RUN_ID: ${{ inputs.build_run || '35930086686' }}
+      BUILD_RUN_ID: ${{ inputs.build_run || '36088197884' }}
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
