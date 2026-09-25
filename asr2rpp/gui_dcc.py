@@ -166,7 +166,7 @@ QToolButton#footerIcon, QToolButton#languageButton {
 }
 QPushButton#runButton {
     min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px;
-    padding: 0 7px; font-weight: 800; letter-spacing: 1px;
+    padding: 0; text-align: center; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
 QPushButton#runButton:hover { background: #2b906a; }
@@ -1568,7 +1568,7 @@ class MainWindow(QMainWindow):
         can_go = valid_output and any(e["status"] == "waiting" for e in self.entries)
         self.run_button.setEnabled(True if self.worker else can_go)
         self.run_button.setProperty("running", bool(self.worker))
-        self.run_button.setText("STOP" if self.worker else "GO!")
+        self.run_button.setText("STOP" if self.worker else "GO")
         self.run_button.style().unpolish(self.run_button)
         self.run_button.style().polish(self.run_button)
 
@@ -1694,7 +1694,9 @@ class MainWindow(QMainWindow):
             return
         if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
             self.ffmpeg_worker.cancel.set()
-            self.ffmpeg_worker.wait(5000)
+            if not self.ffmpeg_worker.wait(5000):
+                event.ignore()
+                return
         self.save_preferences()
         event.accept()
 
