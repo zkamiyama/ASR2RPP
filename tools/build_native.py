@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / 'build' / 'native'
@@ -19,6 +20,26 @@ SOURCES = {
 def run(*args, cwd=None):
     print('+', *map(str, args), flush=True)
     subprocess.run(list(map(str, args)), cwd=cwd, check=True)
+
+
+def preserve_restored_samples(source: Path):
+    """Move CI-only cached fixtures aside before an initial source checkout.
+
+    Cache archives contain samples but not .git. An initial checkout would
+    otherwise fail on untracked samples/jfk.mp3. Never force checkout or remove
+    a developer's working files; this path requires both explicit CI switches.
+    """
+    if (os.getenv('GITHUB_ACTIONS') != 'true'
+            or os.getenv('ASR2RPP_REUSE_VERIFIED_NATIVE') != '1'
+            or (source / '.git').exists()):
+        return None
+    samples = source / 'samples'
+    if not samples.is_dir():
+        return None
+    backup = Path(tempfile.mkdtemp(prefix=source.name + '-restored-', dir=source.parent))
+    shutil.move(str(samples), str(backup / 'samples'))
+    print('Preserved restored CI fixtures:', backup, flush=True)
+    return backup
 
 
 def build(name, backend='cpu'):
@@ -53,6 +74,7 @@ def build(name, backend='cpu'):
             pass
     source = WORK / name
     source.mkdir(parents=True, exist_ok=True)
+    preserve_restored_samples(source)
     run('git', 'init', source)
     if subprocess.run(['git', 'remote', 'get-url', 'origin'], cwd=source, capture_output=True).returncode:
         run('git', 'remote', 'add', 'origin', 'https://github.com/' + repo, cwd=source)
@@ -124,7 +146,7 @@ def build(name, backend='cpu'):
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
     metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {}}
     for file in destination.rglob('*'):
-        if file.is_file():
+        if file.is_file() and file != destination / 'build-manifest.json':
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()
     (destination / 'build-manifest.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     run(destination / binary.name, '--help')
