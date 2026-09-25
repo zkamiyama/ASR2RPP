@@ -127,6 +127,15 @@ def clean_bounds(units: list[Unit], duration: float, warnings: list[str]) -> lis
     return sorted(result, key=lambda u: (u.start, u.end))
 
 
+def has_alignable_text(text: str) -> bool:
+    """True when text contains at least one Unicode letter or number.
+
+    Forced aligners cannot produce timestamps for punctuation/whitespace-only
+    fragments. Those fragments retain their ASR timing instead of being dropped.
+    """
+    return any(character.isalnum() for character in str(text or ""))
+
+
 def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
     """Merge finer units, never invent finer timestamps from a coarse segment."""
     grouped = []
@@ -261,6 +270,15 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             aligned = []
             for index, segment in enumerate(units):
                 checkpoint(cancel)
+                if not has_alignable_text(segment.text):
+                    warnings.append(
+                        f'{segment.start:.3f}: forced alignment skipped punctuation-only text; '
+                        'ASR interval retained')
+                    progress(
+                        f'Forced alignment — {index + 1}/{len(units)} '
+                        '(punctuation-only; ASR timing retained)')
+                    aligned.append(segment)
+                    continue
                 progress(f'Forced alignment — {index + 1}/{len(units)}')
                 if segment.end - segment.start > 55:
                     raise ValueError('Alignment needs <=55-second matched transcript/audio segments; this segment is too long. ASR-only remains available.')
