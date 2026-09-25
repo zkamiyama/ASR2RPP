@@ -4,7 +4,7 @@
 runtime = "audio_cpp"
 task = "sep"
 family = "mel_band_roformer"
-name = "Mel-Band RoFormer big beta7"
+name = "Mel-Band RoFormer big beta7 · F16"
 sample_rate = 44100
 description = "背景音除去用。元CKPTを安全なtorch-free readerで検証し、audio.cpp F16 GGUFへ自動変換します。"
 

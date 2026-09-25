@@ -3,7 +3,7 @@
 # Do NOT set an initial prompt for this model. Compare against original weights.
 runtime = "whisper_cpp"
 task = "asr"
-name = "Anime Whisper · 実験的変換版"
+name = "Anime Whisper"
 description = "GGML変換版は配布者による認識異常の注意あり。元モデルとの一致は未検証。初期プロンプト不使用。"
 [source]
 repo = "https://huggingface.co/Aratako/anime-whisper-ggml"

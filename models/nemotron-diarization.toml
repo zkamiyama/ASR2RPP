@@ -1,7 +1,7 @@
 runtime = "audio_cpp"
 task = "diar"
 family = "nemotron_3_diar"
-name = "Nemotron 3 Diarization · 8話者"
+name = "Nemotron 3 Diarization · BF16"
 description = "最大8話者。音源分離は行いません。audio.cpp 0.8.2以降の対応ビルドが必要です。"
 [source]
 repo = "https://huggingface.co/audio-cpp/Nemotron-3-Diarization-GGUF"
