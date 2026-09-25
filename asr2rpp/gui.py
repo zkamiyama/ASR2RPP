@@ -151,7 +151,7 @@ class StagePanel(QFrame):
         self.model.clear()
         for model in models.values():
             if model.task == self.task:
-                self.model.addItem(model.label, model.id)
+                self.model.addItem(model.id, model.id)
                 self.model.setItemData(self.model.count() - 1, model.description or model.id, Qt.ItemDataRole.ToolTipRole)
         index = self.model.findData(selected)
         if index >= 0:
