@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import threading
 import time
 import tempfile
@@ -217,6 +218,20 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 'source_unchanged': None}
     json_write(report / 'manifest.json', manifest)
     try:
+        def infer_persist(model, weights_path, audio_path, engine_dir, report_dir,
+                          options, transcript=''):
+            try:
+                return infer(
+                    model, weights_path, audio_path, engine_dir, options,
+                    cancel, progress, transcript)
+            finally:
+                # Native tools may not support Unicode output paths on Windows.
+                # Keep their working files in the ASCII-ish cache workspace and
+                # copy diagnostics/results into the user-facing report with Python.
+                if engine_dir.exists():
+                    report_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(engine_dir, report_dir, dirs_exist_ok=True)
+
         pcm_by_rate = {}
         def pcm(rate):
             if rate not in pcm_by_rate:
@@ -231,7 +246,9 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         asr_model = catalog[settings.asr.model_id]
         audio, duration = pcm(asr_model.sample_rate)
         progress('ASR — transcribing')
-        asr = infer(asr_model, weights['asr'], audio, report / 'asr', settings.asr.options(), cancel, progress)
+        asr = infer_persist(
+            asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
+            settings.asr.options())
         units = clean_bounds(asr.units, duration, warnings)
         if not units:
             raise ValueError('No timed speech was returned; raw engine output is retained')
@@ -253,8 +270,9 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 pcm_files.append(file)
                 decode(source, file, align_model.sample_rate, settings, cancel, progress,
                        settings.clip_start + begin, length)
-                result = infer(align_model, weights['align'], file, report / f'align_{index}',
-                               settings.align.options(), cancel, progress, segment.text)
+                result = infer_persist(
+                    align_model, weights['align'], file, work / f'align_{index}',
+                    report / f'align_{index}', settings.align.options(), segment.text)
                 if not result.units:
                     raise ValueError('Aligner returned no intervals')
                 local = clean_bounds(result.units, length, warnings)
@@ -264,7 +282,9 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             model = catalog[settings.diar.model_id]
             audio, _ = pcm(model.sample_rate)
             progress('Diarization — assigning speakers')
-            result = infer(model, weights['diar'], audio, report / 'diar', settings.diar.options(), cancel, progress)
+            result = infer_persist(
+                model, weights['diar'], audio, work / 'diar', report / 'diar',
+                settings.diar.options())
             units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
         units = group_units(units)
         if not units:
