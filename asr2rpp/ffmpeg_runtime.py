@@ -92,17 +92,25 @@ def _extract_windows_bin(archive: Path, destination: Path) -> Path:
     bin_dir.mkdir()
     with zipfile.ZipFile(archive) as package:
         members = []
+        documents = []
         for info in package.infolist():
             path = PurePosixPath(info.filename)
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError("Unsafe path in FFmpeg archive")
-            if info.is_dir() or len(path.parts) < 2 or path.parts[-2] != "bin":
+            if info.is_dir():
                 continue
-            members.append((info, path.name))
+            if len(path.parts) >= 2 and path.parts[-2] == "bin":
+                members.append((info, path.name))
+            elif path.name.lower() in {"license.txt", "readme.txt"}:
+                documents.append((info, path.name))
         if not any(name.lower() == "ffmpeg.exe" for _, name in members):
             raise ValueError("Downloaded FFmpeg archive has no bin/ffmpeg.exe")
         for info, name in members:
             target = bin_dir / name
+            with package.open(info) as source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+        for info, name in documents:
+            target = destination / name
             with package.open(info) as source, target.open("wb") as output:
                 shutil.copyfileobj(source, output)
     executable = bin_dir / "ffmpeg.exe"
