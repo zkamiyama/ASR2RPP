@@ -103,6 +103,43 @@ def test_nemotron_does_not_claim_word_intervals():
     assert result.units[0].method == 'emission_frame'
 
 
+def test_nemotron_infer_uses_streaming_session_and_keeps_timestamps(tmp_path, monkeypatch):
+    model = Model(
+        'nemotron-asr', 'audio_cpp', 'asr', {'path': 'unused.gguf'},
+        defaults={'language': 'ja-JP'}, family='nemotron_asr', sample_rate=16000,
+    )
+    weights = tmp_path / 'model.gguf'
+    audio = tmp_path / 'audio.wav'
+    weights.write_bytes(b'GGUF')
+    audio.write_bytes(b'WAV')
+    commands = []
+
+    monkeypatch.setattr(adapters, 'executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
+
+    def fake_run(argv, _cancel, _progress, _log, timeout=7200):
+        commands.append(list(argv))
+        out = Path(argv[argv.index('--words-out') + 1])
+        out.write_text(json.dumps({
+            'words': [{'start': 0.0, 'end': 0.32, 'word': 'テスト'}]
+        }, ensure_ascii=False), encoding='utf-8')
+
+    monkeypatch.setattr(adapters, 'run_process', fake_run)
+    result = adapters.infer(
+        model, weights, audio, tmp_path / 'work',
+        {'device': 'vulkan', 'language': 'ja-JP', 'threads': 4},
+        threading.Event(), lambda _text: None,
+    )
+
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[command.index('--mode') + 1] == 'streaming'
+    assert '--words-out' in command
+    assert '--batch-audio-dir' not in command
+    assert result.units[0].granularity == 'token'
+    assert result.units[0].start == 0.0
+    assert result.units[0].end == 0.32
+
+
 def test_bounds_preserve_raw():
     raw = [Unit(-1, 2, 'a'), Unit(3, 6, 'b'), Unit(4, 4, 'c')]
     warnings = []

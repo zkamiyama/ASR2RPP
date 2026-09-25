@@ -6,7 +6,8 @@ import threading
 
 from asr2rpp import catalog
 from asr2rpp.catalog import Model, resolve_model
-from asr2rpp.queue_runner import _chunks_by_size, _chunks_for_command
+from asr2rpp.pipeline import Stage
+from asr2rpp.queue_runner import _chunks_by_size, _chunks_for_command, _audio_batch, QueueJob
 
 
 class FakeResponse(io.BytesIO):
@@ -149,3 +150,56 @@ def test_whisper_command_chunking_caps_item_count(tmp_path):
     items = [Item(i) for i in range(7)]
     chunks = list(_chunks_for_command(items, lambda x: x.path, max_chars=99999, max_items=3))
     assert [len(chunk) for chunk in chunks] == [3, 3, 1]
+
+
+
+def test_nemotron_stage_major_asr_uses_streaming_per_file(tmp_path, monkeypatch):
+    from asr2rpp import queue_runner
+
+    model = Model(
+        id='nemotron-asr', runtime='audio_cpp', task='asr',
+        family='nemotron_asr', source={'path': 'unused.gguf'},
+        defaults={'language': 'ja-JP'}, sample_rate=16000,
+    )
+    weights = tmp_path / 'model.gguf'
+    weights.write_bytes(b'GGUF')
+    audio_paths = {}
+    jobs = []
+    for index in range(2):
+        audio = tmp_path / f'a{index}.wav'
+        audio.write_bytes(b'WAV' + bytes([index]))
+        audio_paths[f'q{index}'] = audio
+        report = tmp_path / f'report-{index}'
+        report.mkdir()
+        jobs.append(QueueJob(
+            index=index, key=f'q{index}', source=tmp_path / f'source-{index}.wav',
+            output=tmp_path / f'out-{index}.rpp', report=report,
+            source_sha256='x', manifest={},
+        ))
+
+    commands = []
+    monkeypatch.setattr(queue_runner, 'executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
+
+    def fake_run(argv, _cancel, _progress, log, timeout=7200):
+        commands.append(list(argv))
+        out = Path(argv[argv.index('--words-out') + 1])
+        out.write_text(json.dumps({
+            'words': [{'start': 0.0, 'end': 0.32, 'word': 'x'}]
+        }), encoding='utf-8')
+        Path(log).write_text('streaming ok', encoding='utf-8')
+
+    monkeypatch.setattr(queue_runner, 'run_process', fake_run)
+    statuses = []
+    result = _audio_batch(
+        model, weights, Stage('nemotron-asr', device='vulkan', language='ja-JP', threads=4),
+        jobs, audio_paths, tmp_path / 'batch', threading.Event(), lambda _text: None,
+        lambda i, status, detail: statuses.append((i, status, detail)),
+        task='asr', max_bytes=1024,
+    )
+
+    assert set(result) == {'q0', 'q1'}
+    assert len(commands) == 2
+    assert all(command[command.index('--mode') + 1] == 'streaming' for command in commands)
+    assert all('--batch-audio-dir' not in command for command in commands)
+    assert all('--words-out' in command for command in commands)
+    assert [status for _, status, _ in statuses] == ['ASR', 'ASR']
