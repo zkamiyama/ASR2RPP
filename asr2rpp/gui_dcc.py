@@ -529,7 +529,7 @@ class ParameterDialog(QDialog):
         self.ui_lang = ui_lang
         self.specs = specs_for(model)
         self.controls = {}
-        self.setWindowTitle(f"{model.label} — {TEXT[ui_lang]['parameters']}")
+        self.setWindowTitle(f"{model_text(model, ui_lang)[0]} — {TEXT[ui_lang]['parameters']}")
         self.resize(520, 480)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
