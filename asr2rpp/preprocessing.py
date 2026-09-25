@@ -5,19 +5,18 @@ The existing recognition pipeline stays Qt-free and reusable.
 """
 from __future__ import annotations
 from dataclasses import dataclass, asdict, replace
-from fractions import Fraction
 from pathlib import Path
 import copy
 import json
-import os
 import shutil
-import struct
 import tempfile
 import time
 from . import pipeline as core
 from .catalog import Model, checkpoint, cache_root, digest, resolve_model
-from .adapters import executable, ffmpeg_path, run_process, Unit
-from rpp_writer import Source, Item, Track, Project, dumps
+from .adapters import (executable, ffmpeg_path, run_process, Unit, split_engine_parameters,
+                       audio_session_args, validate_model_parameter_constraints, scalar)
+from .rpp_export import write_reference
+from .media import wave_info, validate_duration, full_reference_duration
 
 
 @dataclass
@@ -38,57 +37,6 @@ class Settings(core.Settings):
             if model is None or model.task != 'sep' or model.runtime != 'audio_cpp':
                 raise ValueError('Choose an audio.cpp separation model for preprocessing')
 
-
-@dataclass(frozen=True)
-class WaveInfo:
-    sample_rate: int
-    channels: int
-    frames: int
-    bits: int
-    format_tag: int
-
-
-def wave_info(path: Path) -> WaveInfo:
-    """Read PCM/IEEE-float WAV headers without converting the saved media."""
-    size = path.stat().st_size
-    with path.open('rb') as handle:
-        if handle.read(4) != b'RIFF':
-            raise ValueError('Expected RIFF WAV output; RF64 is not supported in this preview')
-        handle.read(4)
-        if handle.read(4) != b'WAVE':
-            raise ValueError('Expected WAVE format')
-        fmt = None
-        data_size = None
-        while handle.tell() + 8 <= size:
-            tag = handle.read(4)
-            length = struct.unpack('<I', handle.read(4))[0]
-            position = handle.tell()
-            if position + length > size:
-                raise ValueError('Truncated WAV chunk')
-            if tag == b'fmt ':
-                if length < 16:
-                    raise ValueError('Invalid WAV format chunk')
-                fmt = struct.unpack('<HHIIHH', handle.read(16))
-            elif tag == b'data':
-                data_size = length
-            handle.seek(position + length + (length & 1))
-            if fmt is not None and data_size is not None:
-                break
-        if fmt is None or data_size is None:
-            raise ValueError('WAV is missing format/data chunks')
-        encoding, channels, rate, _, block, bits = fmt
-        if encoding not in {1, 3, 65534} or min(channels, rate, block, bits) <= 0:
-            raise ValueError('Unsupported WAV encoding')
-        if data_size % block:
-            raise ValueError('WAV data is not frame-aligned')
-        return WaveInfo(rate, channels, data_size // block, bits, encoding)
-
-
-def validate_duration(before: WaveInfo, after: WaveInfo):
-    if before.sample_rate != after.sample_rate or before.channels != after.channels:
-        raise ValueError('Preprocessing changed sample rate/channels unexpectedly')
-    if abs(before.frames - after.frames) > 1:
-        raise ValueError('Preprocessing changed audio duration; refusing an unverified time mapping')
 
 
 def separate(source: Path, work: Path, settings: Settings, model: Model, weights: Path, cancel, progress, log_dir: Path | None = None):
@@ -117,12 +65,18 @@ def separate(source: Path, work: Path, settings: Settings, model: Model, weights
             '--family', model.family, '--model', str(weights), '--backend',
             'best' if stage.device == 'auto' else stage.device, '--threads', str(stage.threads),
             '--audio', str(mixture), '--out-dir', str(stems)]
-    session = {**model.defaults.get('session', {}), **(stage.parameters or {})}
-    for key, value in session.items():
-        if not isinstance(value, (str, int, float, bool)) or not key.replace('_', '').isalnum():
-            raise ValueError('Invalid preprocessing session parameter')
-        scalar = str(value).lower() if isinstance(value, bool) else str(value)
-        args += ['--session-option', f'{model.family}.{key}={scalar}']
+    parameters = dict(stage.parameters or {})
+    # Migrate legacy separation controls at the boundary; DCC uses session.*.
+    for key in ('num_overlap', 'weight_type'):
+        if key in parameters:
+            parameters.setdefault('session.' + key, parameters.pop(key))
+    request, session = split_engine_parameters(model, parameters)
+    validate_model_parameter_constraints(model, request, session)
+    for key, value in request.items():
+        if not key.replace('_', '').replace('.', '').isalnum():
+            raise ValueError('Invalid preprocessing request parameter')
+        args += ['--request-option', f'{key}={scalar(value)}']
+    args += audio_session_args(model, session)
     run_process(args, cancel, progress, logs / 'preprocess.log')
     # Never silently use instrumental.wav or another stem if the selected one is missing.
     vocals = stems / 'vocals.wav'
@@ -134,28 +88,6 @@ def separate(source: Path, work: Path, settings: Settings, model: Model, weights
                     'length_difference_samples': after.frames - before.frames,
                     'time_mapping': 'contiguous; no silence removal or time stretching',
                     'waveform_delay_calibrated': False}
-
-
-def write_reference(output: Path, reference: Path, units, timeline_origin: float,
-                    reference_origin: float, diar: bool, sample_rate: int = 48000):
-    """Project time and file time are deliberately separate, including for clips."""
-    try:
-        relative = os.path.relpath(reference, output.parent).replace('\\', '/')
-    except ValueError:
-        relative = str(reference).replace('\\', '/')
-    kind = {'.wav': 'WAVE', '.wave': 'WAVE', '.aif': 'WAVE', '.aiff': 'WAVE',
-            '.flac': 'FLAC', '.mp3': 'MP3', '.ogg': 'VORBIS'}.get(reference.suffix.lower(), 'VIDEO')
-    src, tracks = Source(relative, kind), {}
-    for unit in units:
-        position = Fraction(str(timeline_origin)) + Fraction(str(unit.start))
-        source_offset = position - Fraction(str(reference_origin))
-        key = (unit.speaker or 'UNKNOWN') if diar else 'Transcript'
-        item = Item(core.safe_label(unit.text), src, position, source_offset,
-                    Fraction(str(unit.end)) - Fraction(str(unit.start)))
-        tracks.setdefault(key, []).append(item)
-    project = Project(tuple(Track(core.safe_label(str(key)), tuple(items)) for key, items in tracks.items()), sample_rate)
-    with output.open('x', encoding='utf-8', newline='\n') as handle:
-        handle.write(dumps(project))
 
 
 def run_job(source, settings: Settings, catalog, cancel, progress):
@@ -213,8 +145,15 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
             manifest.update(reference_file=str(reference), reference_origin_seconds=origin,
                             timeline_origin_seconds=settings.clip_start,
                             preprocessing_for_inference=True)
+            # The processed reference is a complete WAV; the original reference
+            # may extend outside an explicitly selected inference clip.
+            reference_length = full_reference_duration(
+                reference, settings, wave_info(vocals).duration, work, cancel, progress)
             write_reference(output, reference, units, settings.clip_start, origin,
-                            settings.diar is not None, sample_rate)
+                            settings.diar is not None, sample_rate,
+                            reference_duration=reference_length)
+            manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
+                                          'duration_seconds': float(reference_length)}
             transcript.update(clip_start=settings.clip_start, reference_audio=settings.reference_audio)
             core.json_write(report / 'transcript.json', transcript)
             manifest.update(status='completed', output=str(output), source_unchanged=True)

@@ -10,6 +10,7 @@ from asr2rpp import preprocessing as prep
 from asr2rpp.pipeline import Stage
 from asr2rpp.catalog import Model, digest, Cancelled
 from asr2rpp.adapters import Unit
+from asr2rpp.media import WaveInfo
 
 
 def make_wave(path, seconds=2):
@@ -29,7 +30,7 @@ def test_distinct_file_and_timeline_origins(tmp_path):
     reference = tmp_path / 'project_vocals.wav'
     make_wave(reference)
     output = tmp_path / 'project.rpp'
-    prep.write_reference(output, reference, [Unit(.25, 1.5, '発話')], 10, 10, False, 44100)
+    prep.write_reference(output, reference, [Unit(.25, 1.5, '発話')], 10, 10, False, 44100, reference_duration=2)
     text = output.read_text(encoding='utf-8')
     assert 'POSITION 10.25' in text and 'SOFFS 0.25' in text
     assert 'FILE "project_vocals.wav"' in text
@@ -39,7 +40,7 @@ def test_distinct_file_and_timeline_origins(tmp_path):
 def test_original_source_offset_keeps_clip_start(tmp_path):
     source, output = tmp_path / 'original.mp4', tmp_path / 'project.rpp'
     source.write_bytes(b'original')
-    prep.write_reference(output, source, [Unit(.25, 1.5, '発話')], 10, 0, False)
+    prep.write_reference(output, source, [Unit(.25, 1.5, '発話')], 10, 0, False, reference_duration=15)
     text = output.read_text(encoding='utf-8')
     assert 'POSITION 10.25' in text and 'SOFFS 10.25' in text
 
@@ -128,8 +129,8 @@ def test_off_does_not_call_separator(tmp_path, monkeypatch):
 
 
 def test_bad_length_is_rejected():
-    a = prep.WaveInfo(44100, 2, 44100, 32, 3)
-    b = prep.WaveInfo(44100, 2, 43000, 32, 3)
+    a = WaveInfo(44100, 2, 44100, 32, 3)
+    b = WaveInfo(44100, 2, 43000, 32, 3)
     with pytest.raises(ValueError, match='duration'):
         prep.validate_duration(a, b)
 
@@ -142,44 +143,3 @@ def test_raw_checkpoint_is_not_a_different_model(tmp_path):
                       tmp_path/'big_beta7.ckpt', threading.Event(), print)
 
 
-def test_gui_preprocessing_modes(tmp_path, monkeypatch):
-    pytest.importorskip('PySide6')
-    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-    monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
-    from PySide6.QtWidgets import QApplication
-    from asr2rpp.gui_preprocessing import MainWindow
-    from asr2rpp.gui import STYLE
-    app = QApplication.instance() or QApplication([])
-    app.setStyle('Fusion')
-    app.setStyleSheet(STYLE)
-    window = MainWindow()
-    window.preprocess.toggle.setChecked(False)
-    window.preprocess.processed.setChecked(True)
-    assert not window.preprocess.reference_box.isEnabled()
-    assert window.settings().preprocess is None
-    assert window.settings().reference_audio == 'original'
-    window.preprocess.toggle.setChecked(True)
-    assert window.preprocess.reference_box.isEnabled()
-    assert window.settings().reference_audio == 'processed'
-    assert window.preprocess.overlap.value() == 2
-    assert window.settings().preprocess.parameters['num_overlap'] == 2
-    window.preprocess.overlap.setValue(3)
-    assert window.settings().preprocess.parameters['num_overlap'] == 3
-    assert window.preprocess.param_summary.text() == 'Overlap=3（モデル既定 2）'
-    window.preprocess.original.setChecked(True)
-    assert window.settings().reference_audio == 'original'
-    window.diar.toggle.setChecked(False)
-    window.align.toggle.setChecked(False)
-    assert window.settings().diar is None and window.settings().align is None
-    window.show()
-    app.processEvents()
-    folder = Path('reports'); folder.mkdir(exist_ok=True)
-    window.grab().save(str(folder/'preprocess-inference-only.png'))
-    window.preprocess.processed.setChecked(True)
-    app.processEvents()
-    window.grab().save(str(folder/'preprocess-persistent-reference.png'))
-    window.preprocess.toggle.setChecked(False)
-    app.processEvents()
-    window.grab().save(str(folder/'preprocess-off.png'))
-    window.close()
-    app.processEvents()

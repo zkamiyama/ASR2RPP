@@ -1,15 +1,10 @@
 name: Frozen Windows optional-stage checks
-# CPU runner: optional native stages are explicitly exercised with CPU backends.
 on:
-  push:
-    branches: [feat/queue-gui]
-    paths: ['.github/workflows/stage-smoke.yml']
   workflow_dispatch:
     inputs:
       build_run:
         description: Successful ASR2RPP application workflow run ID
         required: true
-        default: '36089443175'
 permissions:
   contents: read
   actions: read
@@ -18,34 +13,33 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     env:
-      BUILD_RUN_ID: ${{ inputs.build_run || '36089443175' }}
       PYTHONUTF8: '1'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Wait for the bounded native build
+      - name: Resolve the exact source of the successful build
+        id: build
         uses: actions/github-script@v7
+        env:
+          BUILD_RUN_ID: ${{ inputs.build_run }}
         with:
           script: |
             const run_id = Number(process.env.BUILD_RUN_ID);
             if (!Number.isSafeInteger(run_id)) throw new Error('Invalid run ID');
-            for (let i = 0; i < 60; ++i) {
-              const {data} = await github.rest.actions.getWorkflowRun({...context.repo, run_id});
-              if (data.status === 'completed') {
-                if (data.conclusion !== 'success') throw new Error('Build did not complete successfully');
-                return;
-              }
-              await new Promise(r => setTimeout(r, 15000));
+            const {data} = await github.rest.actions.getWorkflowRun({...context.repo, run_id});
+            if (data.status !== 'completed' || data.conclusion !== 'success') {
+              throw new Error('Select a completed, successful build');
             }
-            throw new Error('Build wait exceeded 15 minutes');
+            core.setOutput('sha', data.head_sha);
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.build.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
-          name: ASR2RPP-Windows-x64-${{ env.BUILD_RUN_ID }}
-          run-id: ${{ env.BUILD_RUN_ID }}
+          name: ASR2RPP-Windows-x64-${{ inputs.build_run }}
+          run-id: ${{ inputs.build_run }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: download
       - run: python tools/smoke_optional_stages.py

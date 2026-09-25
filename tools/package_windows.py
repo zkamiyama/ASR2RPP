@@ -95,4 +95,6 @@ commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=Tr
     'model_weights_included': False, 'ffmpeg_bundled': False,
     'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download'}, indent=2), encoding='utf-8')
 archive = Path(shutil.make_archive(str(ROOT / 'dist/ASR2RPP-Windows-x64'), 'zip', ROOT / 'dist', 'ASR2RPP'))
-(archive.parent / 'SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n', encoding='utf-8')
+with archive.open('rb') as handle:
+    archive_hash = hashlib.file_digest(handle, 'sha256').hexdigest()
+(archive.parent / 'SHA256SUMS.txt').write_text(archive_hash + '  ' + archive.name + '\n', encoding='utf-8')

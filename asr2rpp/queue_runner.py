@@ -5,7 +5,8 @@ SEP -> ASR -> forced alignment -> diarization -> RPP.
 
 Native model processes are never kept alive across different model families.
 whisper.cpp receives multiple files per process (one model context), while
-audio.cpp uses one offline batch session per RAM-bounded chunk, except Nemotron ASR,\nwhich uses its bounded native streaming session for long-form safety.
+audio.cpp uses one offline batch session per RAM-bounded chunk, except Nemotron ASR,
+which uses its bounded native streaming session for long-form safety.
 """
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ import threading
 
 from . import pipeline as core
 from . import preprocessing as pre
+from .alignment import infer_requests, chunks_by_size as _chunks_by_size
+from .media import slice_pcm
 from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
 from .adapters import (
     Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
@@ -70,19 +73,6 @@ def _fail(job: QueueJob, error, item_callback) -> None:
 
 def _active(jobs):
     return [job for job in jobs if not job.failed]
-
-
-def _chunks_by_size(items, path_of, max_bytes: int):
-    chunk, used = [], 0
-    for item in items:
-        size = max(1, path_of(item).stat().st_size)
-        if chunk and used + size > max_bytes:
-            yield chunk
-            chunk, used = [], 0
-        chunk.append(item)
-        used += size
-    if chunk:
-        yield chunk
 
 
 def _chunks_for_command(items, path_of, max_chars: int = 22000, max_items: int = 96):
@@ -290,51 +280,23 @@ class AlignRequest:
 
 def _align_batch(model, weights: Path, stage, requests: list[AlignRequest], root: Path,
                  cancel, progress, item_callback, max_bytes: int):
-    binary = executable(model.runtime, stage.device, stage.executable)
     results = {}
-    # audio.cpp materializes all request audio in a batch before inference.
-    chunks = list(_chunks_by_size(requests, lambda r: r.audio, max_bytes))
-    parameters = _stage_parameters(model, stage)
-    for chunk_no, chunk in enumerate(chunks, 1):
-        checkpoint(cancel)
-        chunk_root = root / f'chunk-{chunk_no}'
-        inputs = _link_inputs(chunk, lambda r: r.audio, chunk_root / 'inputs')
-        request_json = chunk_root / 'requests.json'
-        request_json.parent.mkdir(parents=True, exist_ok=True)
-        payload = {'requests': []}
-        for req in chunk:
-            payload['requests'].append({
-                'id': req.key,
-                'audio': str(Path('inputs') / f'{req.key}.wav').replace('\\', '/'),
-                'text': req.text,
-                'language': stage.language or model.defaults.get('language', 'ja'),
-                'options': parameters,
-            })
-            item_callback(req.job.index, 'Forced Align', '')
-        request_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-        out = chunk_root / 'out'
-        out.mkdir(exist_ok=True)
-        base = out / 'words.json'
-        argv = [str(binary), '--task', 'align', '--family', model.family, '--model', str(weights),
-                '--backend', 'best' if stage.device == 'auto' else stage.device,
-                '--mode', 'offline', '--request-sequence', str(request_json),
-                '--threads', str(stage.threads), '--words-out', str(base)]
-        argv += _session_args(model)
-        log = chunk_root / 'engine.log'
+    for chunk_no, chunk in enumerate(_chunks_by_size(requests, lambda r: r.audio, max_bytes), 1):
+        jobs = list({req.job.index: req.job for req in chunk}.values())
         try:
-            run_process(argv, cancel, progress, log)
-            for req in chunk:
-                path = out / f'words_{req.key}.json'
-                if not path.is_file():
-                    raise ValueError(f'Aligner did not produce words for {req.job.source.name}')
-                raw = json.loads(path.read_text(encoding='utf-8-sig'))
-                results[req.key] = parse_audio(raw, 'align', model.family, model.sample_rate)
-            _copy_log(log, list({req.job.index: req.job for req in chunk}.values()), f'align-batch-{chunk_no}.log')
-        except BaseException as exc:
+            for job in jobs:
+                item_callback(job.index, 'Forced Align', '')
+            results.update(infer_requests(
+                model, weights, stage, chunk, root / f'batch-{chunk_no}',
+                cancel, progress, max_bytes))
+        except Exception as exc:
             if cancel.is_set():
                 raise
-            for req in chunk:
-                _fail(req.job, exc, item_callback)
+            for job in jobs:
+                _fail(job, exc, item_callback)
+        finally:
+            for log in (root / f'batch-{chunk_no}').glob('chunk-*/engine.log'):
+                _copy_log(log, jobs, f'align-batch-{chunk_no}-{log.parent.name}.log')
     return results
 
 
@@ -548,10 +510,20 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                 requests = []
                 by_job = {job.key: [] for job in _active(jobs)}
                 for job in list(_active(jobs)):
-                    too_long = next((u for u in job.units if u.end - u.start > 55), None)
+                    too_long = next((u for u in job.units if core.has_alignable_text(u.text) and u.end - u.start > 55), None)
                     if too_long is not None:
                         _fail(job, ValueError(
                             'Alignment needs <=55-second matched transcript/audio segments; ASR-only remains available.'), item_callback)
+                        continue
+                    alignment_pcm = root / 'align-pcm' / f'{job.key}.wav'
+                    try:
+                        # Decode each file once, rather than starting FFmpeg and
+                        # reading a long video from the beginning for every phrase.
+                        _decode_for_model(job, alignment_pcm, model.sample_rate, settings, cancel, progress)
+                    except Exception as exc:
+                        if cancel.is_set():
+                            raise
+                        _fail(job, exc, item_callback)
                         continue
                     for n, segment in enumerate(job.units):
                         checkpoint(cancel)
@@ -570,13 +542,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         path = root / 'align-source' / f'{key}.wav'
                         path.parent.mkdir(parents=True, exist_ok=True)
                         try:
-                            if getattr(settings, 'preprocess', None) is not None:
-                                local = replace(settings, clip_start=0.0, clip_duration=0.0)
-                                core.decode(job.inference_source, path, model.sample_rate, local,
-                                            cancel, progress, begin, length)
-                            else:
-                                core.decode(job.source, path, model.sample_rate, settings,
-                                            cancel, progress, settings.clip_start + begin, length)
+                            length = slice_pcm(alignment_pcm, path, begin, length, cancel)
                             requests.append(AlignRequest(key, job, path, begin, length, segment.text))
                         except BaseException as exc:
                             if cancel.is_set():
@@ -611,6 +577,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     else:
                         job.units = aligned
                 shutil.rmtree(root / 'align-source', ignore_errors=True)
+                shutil.rmtree(root / 'align-pcm', ignore_errors=True)
 
             # 4. Diarization. It is intentionally after alignment so speaker
             # assignment can use the final/finer text intervals.
@@ -662,14 +629,22 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                             job.manifest['persistent_audio'] = str(reference)
                         else:
                             reference, origin, sample_rate = job.source, 0.0, 48000
+                        reference_length = core.full_reference_duration(
+                            reference, settings, job.duration, root, cancel, progress)
                         pre.write_reference(job.output, reference, job.units, settings.clip_start,
-                                            origin, diar_enabled, sample_rate)
+                                            origin, diar_enabled, sample_rate,
+                                            reference_duration=reference_length)
                         job.manifest.update(reference_file=str(reference),
                                             reference_origin_seconds=origin,
                                             timeline_origin_seconds=settings.clip_start,
                                             preprocessing_for_inference=True)
                     else:
-                        core.export_rpp(job.source, job.output, job.units, settings.clip_start, diar_enabled)
+                        reference_length = core.full_reference_duration(
+                            job.source, settings, job.duration, root, cancel, progress)
+                        core.export_rpp(job.source, job.output, job.units, settings.clip_start,
+                                        diar_enabled, reference_length)
+                    job.manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
+                                                       'duration_seconds': float(reference_length)}
                     core.json_write(job.report / 'transcript.json', {
                         'clip_start': settings.clip_start,
                         'duration': job.duration,

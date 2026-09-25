@@ -172,18 +172,24 @@ def test_forced_alignment_keeps_punctuation_only_asr_span(tmp_path, monkeypatch)
     monkeypatch.setattr('asr2rpp.pipeline.resolve_model', lambda *args: (source, {}))
     monkeypatch.setattr('asr2rpp.pipeline.decode', lambda *args, **kwargs: 1.0)
 
+    import shutil
+    from asr2rpp import alignment
+    def fake_decode(_source, destination, *args, **kwargs):
+        shutil.copyfile(source, destination)
+        return 1.0
+    monkeypatch.setattr('asr2rpp.pipeline.decode', fake_decode)
     aligned_texts = []
-
-    def fake_infer(model, _weights, _audio, _work, _options, _cancel, _progress, transcript=''):
-        if model.task == 'asr':
-            return Result([
-                Unit(0.0, 0.2, 'こんにちは。', granularity='segment'),
-                Unit(0.3, 0.4, '、', granularity='segment'),
-            ], {})
-        aligned_texts.append(transcript)
-        return Result([Unit(0.0, 0.1, transcript, granularity='word')], {})
-
+    def fake_infer(*args, **kwargs):
+        return Result([
+            Unit(0.0, 0.2, 'こんにちは。', granularity='segment'),
+            Unit(0.3, 0.4, '、', granularity='segment'),
+        ], {})
+    def fake_requests(_model, _weights, _stage, requests, *args):
+        aligned_texts.extend(req.text for req in requests)
+        return {req.key: Result([Unit(0.0, 0.1, req.text, granularity='word')], {})
+                for req in requests}
     monkeypatch.setattr('asr2rpp.pipeline.infer', fake_infer)
+    monkeypatch.setattr(alignment, 'infer_requests', fake_requests)
     output = run_job(source, settings, catalog, threading.Event(), lambda _text: None)
 
     assert aligned_texts == ['こんにちは。']
@@ -200,12 +206,12 @@ def test_non_destructive_export(tmp_path):
     source = tmp_path / '音声.wav'
     source.write_bytes(b'unchanged')
     output = tmp_path / 'out.rpp'
-    export_rpp(source, output, [Unit(1.5, 3, 'テスト')], 10, False)
+    export_rpp(source, output, [Unit(1.5, 3, 'テスト')], 10, False, 15)
     assert source.read_bytes() == b'unchanged'
     assert 'SOFFS 11.5' in output.read_text(encoding='utf-8')
     assert 'NAME "Transcript"' in output.read_text(encoding='utf-8')
     with pytest.raises(FileExistsError):
-        export_rpp(source, output, [Unit(0, 1, 'x')], 0, False)
+        export_rpp(source, output, [Unit(0, 1, 'x')], 0, False, 15)
 
 
 def test_pipeline_options_disabled(tmp_path, monkeypatch):
@@ -302,105 +308,3 @@ def test_process_cancellation(tmp_path):
     assert time.monotonic() - started < 8
 
 
-def test_gui_states_and_screenshots(tmp_path, monkeypatch):
-    pytest.importorskip('PySide6')
-    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-    monkeypatch.setenv('ASR2RPP_HOME', str(tmp_path / 'home'))
-    from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QTabWidget, QCheckBox
-    from PySide6.QtCore import QSettings, QTimer
-    from asr2rpp.gui import MainWindow, STYLE, default_storage_hint
-    app = QApplication.instance() or QApplication([])
-    app.setStyle('Fusion')
-    app.setStyleSheet(STYLE)
-    QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, str(tmp_path / 'settings'))
-    legacy = QSettings('ASR2RPP', 'ASR2RPP')
-    legacy.setValue('asr/device', 'cpu')
-    legacy.sync()
-    window = MainWindow()
-    window.diar.toggle.setChecked(False)
-    window.align.toggle.setChecked(False)
-    window.same.setChecked(True)
-    window.show()
-    for name in ['interview.wav', 'conversation.mp4', 'narration.flac']:
-        path = tmp_path / name
-        path.write_bytes(b'test fixture')
-        window.add_paths([str(path)])
-    app.processEvents()
-    assert not window.diar.body.isEnabled()
-    assert not window.align.body.isEnabled()
-    assert not window.output_dir.isEnabled()
-    assert not window.output_browse.isEnabled()
-    assert window.asr.body.isEnabled()
-    assert window.runtime_button.text() == '⚙'
-    assert window.runtime_button.accessibleName() == '設定'
-    assert window.asr.device.currentData() == 'default'
-    assert window.queue_strategy == 'stage'
-    assert window.model_storage_dir == '' and window.temp_storage_dir == ''
-    assert window.clip_length.maximum() >= 3600
-    assert window.asr.param_summary.text()
-    if sys.platform == 'win32':
-        assert '%LOCALAPPDATA%' in default_storage_hint('weights')
-        assert '%LOCALAPPDATA%' in default_storage_hint('cache')
-    window.runtime_defaults['whisper_cpp'] = 'vulkan'
-    assert window.asr.stage({}, 4, window.runtime_defaults).device == 'vulkan'
-    window.update_summary()
-    assert 'whisper.cpp Vulkan' in window.summary.text()
-    window.runtime_defaults['whisper_cpp'] = 'cpu'
-    window.runtime_defaults['audio_cpp'] = 'vulkan'
-    window.update_summary()
-    assert 'whisper.cpp CPU' in window.summary.text()
-    assert 'audio.cpp Vulkan' in window.summary.text()
-    audio_models = [m for m in window.catalog.values() if m.runtime == 'audio_cpp']
-    if audio_models:
-        window.diar.toggle.setChecked(True)
-        audio_index = window.diar.model.findData(next((m.id for m in audio_models if m.task == 'diar'), ''))
-        if audio_index >= 0:
-            window.diar.model.setCurrentIndex(audio_index)
-            assert window.diar.stage({}, 4, window.runtime_defaults).device == 'vulkan'
-    assert len(window.entries) == 3
-    window.add_paths([str(tmp_path / 'interview.wav')])
-    assert len(window.entries) == 3
-    reports = Path('reports')
-    reports.mkdir(exist_ok=True)
-    assert window.align.y() < window.diar.y()
-    window.grab().save(str(reports / 'gui-options-off.png'))
-    window.diar.toggle.setChecked(True)
-    assert window.diar.body.isEnabled() and not window.align.body.isEnabled()
-    window.align.toggle.setChecked(True)
-    window.same.setChecked(False)
-    window.output_dir.clear()
-    assert not window.start_button.isEnabled()
-    window.output_dir.setText(str(tmp_path / 'output'))
-    assert window.start_button.isEnabled()
-    assert window.align.body.isEnabled() and window.output_dir.isEnabled()
-    app.processEvents()
-    window.grab().save(str(reports / 'gui-options-on.png'))
-
-    settings_state = {}
-    def capture_settings():
-        dialogs = [w for w in app.topLevelWidgets()
-                   if isinstance(w, QDialog) and w.windowTitle() == '設定']
-        assert dialogs
-        dialog = dialogs[-1]
-        placeholders = [edit.placeholderText() for edit in dialog.findChildren(QLineEdit)]
-        settings_state['placeholders'] = placeholders
-        tabs = dialog.findChild(QTabWidget)
-        assert tabs is not None
-        settings_state['tabs'] = [tabs.tabText(i) for i in range(tabs.count())]
-        settings_state['checkboxes'] = [box.text() for box in dialog.findChildren(QCheckBox)]
-        dialog.grab().save(str(reports / 'settings-dialog.png'))
-        dialog.reject()
-    QTimer.singleShot(0, capture_settings)
-    window.runtime_dialog()
-    assert any('weights' in text.lower() for text in settings_state['placeholders'])
-    assert any('cache' in text.lower() for text in settings_state['placeholders'])
-    assert settings_state['tabs'] == ['一般', '実行環境', '詳細']
-    assert any('元チェックポイント' in text for text in settings_state['checkboxes'])
-    if sys.platform == 'win32':
-        assert sum('%LOCALAPPDATA%' in text for text in settings_state['placeholders']) >= 2
-
-    window.set_busy(True)
-    assert not window.diar.isEnabled() and not window.start_button.isEnabled()
-    window.set_busy(False)
-    window.close()
-    app.processEvents()

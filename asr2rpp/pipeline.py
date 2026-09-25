@@ -1,13 +1,11 @@
 """Qt-free pipeline; native audio is never split or modified for RPP export."""
 from __future__ import annotations
 from dataclasses import dataclass, asdict, replace
-from fractions import Fraction
 from pathlib import Path
 import copy
 import hashlib
 import json
 import math
-import os
 import shutil
 import threading
 import time
@@ -15,8 +13,10 @@ import tempfile
 import wave
 from .catalog import Model, checkpoint, cache_root, resolve_model, digest
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
-from .text_join import join_timed
-from rpp_writer import Source, Item, Track, Project, dumps
+from .transcript import clean_bounds, group_units, has_alignable_text, assign_speakers, safe_label
+from .rpp_export import write_reference
+from .media import full_reference_duration
+from .alignment import align_segments
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
                     '.m4a', '.aac', '.mp4', '.mkv', '.mov', '.webm', '.avi', '.wma'}
@@ -113,91 +113,11 @@ def decode(source: Path, destination: Path, rate: int, settings: Settings,
         return audio.getnframes() / audio.getframerate()
 
 
-def clean_bounds(units: list[Unit], duration: float, warnings: list[str]) -> list[Unit]:
-    result = []
-    for index, unit in enumerate(units):
-        if unit.end <= unit.start:
-            warnings.append(f'Invalid interval {index}; excluded from edit output')
-            continue
-        start, end = max(0.0, unit.start), min(duration, unit.end)
-        if start != unit.start or end != unit.end:
-            warnings.append(f'Interval {index} clipped to media duration for editing; raw unchanged')
-        if end > start:
-            result.append(replace(unit, start=start, end=end))
-    return sorted(result, key=lambda u: (u.start, u.end))
-
-
-def has_alignable_text(text: str) -> bool:
-    """True when text contains at least one Unicode letter or number.
-
-    Forced aligners cannot produce timestamps for punctuation/whitespace-only
-    fragments. Those fragments retain their ASR timing instead of being dropped.
-    """
-    return any(character.isalnum() for character in str(text or ""))
-
-
-def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
-    """Merge finer units, never invent finer timestamps from a coarse segment."""
-    grouped = []
-    for unit in units:
-        if not unit.text.strip():
-            continue
-        if (grouped and unit.granularity != 'segment' and
-                grouped[-1].speaker == unit.speaker and
-                unit.start - grouped[-1].end <= 0.65 and
-                unit.end - grouped[-1].start <= maximum and
-                not grouped[-1].text.rstrip().endswith(('。', '！', '？', '!', '?'))):
-            previous = grouped[-1]
-            previous.text = join_timed(previous.text, unit.text, unit.granularity)
-            previous.end = max(previous.end, unit.end)
-        else:
-            grouped.append(replace(unit, text=unit.text.replace('\u2581', ' ')))
-    return grouped
-
-
-def assign_speakers(units: list[Unit], turns: list[Unit], warnings: list[str]) -> list[Unit]:
-    assigned = []
-    for unit in units:
-        overlap = {}
-        for turn in turns:
-            amount = max(0.0, min(unit.end, turn.end) - max(unit.start, turn.start))
-            if amount and turn.speaker is not None:
-                overlap[turn.speaker] = overlap.get(turn.speaker, 0.0) + amount
-        speaker = max(overlap, key=overlap.get) if overlap else None
-        if not overlap or overlap[speaker] / (unit.end - unit.start) < 0.55:
-            speaker = 'UNKNOWN'
-            warnings.append(f'{unit.start:.3f}: speaker unresolved; no text was split by guessed timing')
-        elif len(overlap) > 1:
-            warnings.append(f'{unit.start:.3f}: multiple speaker candidates {list(overlap)}; largest overlap selected')
-        assigned.append(replace(unit, speaker=speaker))
-    return assigned
-
-
-def safe_label(text: str) -> str:
-    text = text.replace('\r', ' ').replace('\n', ' ').replace('\0', '')
-    if all(c in text for c in ('"', "'", '`')):
-        text = text.replace('`', 'ˋ')
-    return text or '(speech)'
-
-
-def export_rpp(source: Path, output: Path, units: list[Unit], offset: float, diar: bool):
-    try:
-        path = os.path.relpath(source, output.parent).replace('\\', '/')
-    except ValueError:
-        path = str(source).replace('\\', '/')
-    ext = source.suffix.lower()
-    kind = {'.wav': 'WAVE', '.wave': 'WAVE', '.aif': 'WAVE', '.aiff': 'WAVE',
-            '.mp3': 'MP3', '.flac': 'FLAC', '.ogg': 'VORBIS'}.get(ext, 'VIDEO')
-    ref = Source(path, kind)
-    tracks = {}
-    for unit in units:
-        key = (unit.speaker or 'UNKNOWN') if diar else 'Transcript'
-        start = Fraction(str(unit.start)) + Fraction(str(offset))
-        end = Fraction(str(unit.end)) + Fraction(str(offset))
-        tracks.setdefault(key, []).append(Item(safe_label(unit.text), ref, start, start, end - start))
-    project = Project(tuple(Track(safe_label(str(name)), tuple(items)) for name, items in tracks.items()))
-    with output.open('x', encoding='utf-8', newline='\n') as handle:
-        handle.write(dumps(project))
+def export_rpp(source: Path, output: Path, units: list[Unit], offset: float,
+               diar: bool, reference_duration):
+    """Use the same reference/timeline rules in all execution paths."""
+    write_reference(output, source, units, offset, 0.0, diar,
+                    reference_duration=reference_duration)
 
 
 def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel: threading.Event, progress) -> Path:
@@ -267,35 +187,17 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         units = [replace(u, speaker=None) for u in units]
         if settings.align is not None:
             align_model = catalog[settings.align.model_id]
-            aligned = []
-            for index, segment in enumerate(units):
-                checkpoint(cancel)
-                if not has_alignable_text(segment.text):
-                    warnings.append(
-                        f'{segment.start:.3f}: forced alignment skipped punctuation-only text; '
-                        'ASR interval retained')
-                    progress(
-                        f'Forced alignment — {index + 1}/{len(units)} '
-                        '(punctuation-only; ASR timing retained)')
-                    aligned.append(segment)
-                    continue
-                progress(f'Forced alignment — {index + 1}/{len(units)}')
-                if segment.end - segment.start > 55:
-                    raise ValueError('Alignment needs <=55-second matched transcript/audio segments; this segment is too long. ASR-only remains available.')
-                begin = max(0, segment.start - 0.15)
-                length = min(duration, segment.end + 0.25) - begin
-                file = work / f'align_{index}.wav'
-                pcm_files.append(file)
-                decode(source, file, align_model.sample_rate, settings, cancel, progress,
-                       settings.clip_start + begin, length)
-                result = infer_persist(
-                    align_model, weights['align'], file, work / f'align_{index}',
-                    report / f'align_{index}', settings.align.options(), segment.text)
-                if not result.units:
-                    raise ValueError('Aligner returned no intervals')
-                local = clean_bounds(result.units, length, warnings)
-                aligned += [replace(u, start=u.start + begin, end=u.end + begin) for u in local]
-            units = clean_bounds(aligned, duration, warnings)
+            alignment_pcm, _ = pcm(align_model.sample_rate)
+            engine_dir = work / 'alignment'
+            try:
+                units = align_segments(
+                    align_model, weights['align'], settings.align, units,
+                    alignment_pcm, duration, engine_dir, cancel, progress, warnings)
+            finally:
+                # Never copy temporary audio slices into the user's report.
+                if engine_dir.exists():
+                    shutil.copytree(engine_dir, report / 'align', dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns('*.wav'))
         if settings.diar is not None:
             model = catalog[settings.diar.model_id]
             audio, _ = pcm(model.sample_rate)
@@ -311,7 +213,12 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('RPP — writing non-destructive references')
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
                    'units': [asdict(u) for u in units], 'warnings': warnings})
-        export_rpp(source, output, units, settings.clip_start, settings.diar is not None)
+        reference_length = full_reference_duration(
+            source, settings, duration, work, cancel, progress)
+        export_rpp(source, output, units, settings.clip_start, settings.diar is not None,
+                   reference_length)
+        manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
+                                      'duration_seconds': float(reference_length)}
         manifest.update(status='completed', elapsed_seconds=time.monotonic() - started,
                         source_unchanged=(digest(source) == manifest['source_sha256']), warnings=warnings,
                         output=str(output))

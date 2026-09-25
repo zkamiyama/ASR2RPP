@@ -10,7 +10,9 @@ from urllib.request import urlopen
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
-archive = root / 'download/ASR2RPP-Windows-x64.zip'
+archive = root / 'dist/ASR2RPP-Windows-x64.zip'
+if not archive.is_file():
+    archive = root / 'download/ASR2RPP-Windows-x64.zip'
 with zipfile.ZipFile(archive) as z:
     z.extractall(root / 'stage-app')
 cli = root / 'stage-app/ASR2RPP/asr2rpp-cli.exe'
@@ -71,6 +73,16 @@ for name in ('asr-only', 'diar-only', 'align-only', 'both'):
                                   'align': data['settings']['align'] is not None}
         results[name]['rpp_count'] = len(list((reports / name).glob('*.rpp')))
         results[name]['source_unchanged'] = data.get('source_unchanged')
+        outputs = list((reports / name).glob('*.rpp'))
+        if results[name].get('returncode') == 0:
+            assert len(outputs) == 1
+            text = outputs[0].read_text(encoding='utf-8')
+            first = text.split('  <TRACK\n')[1]
+            assert first.startswith('    NAME "ORIGINAL"\n')
+            assert first.count('<ITEM') == 1 and 'MUTESOLO 1 0 0' in first
+            assert data['original_track']['duration_seconds'] > 8
+            results[name]['original_track'] = 'full reference, muted, first'
+
 (reports / 'summary.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
 print(json.dumps(results, indent=2))
 raise SystemExit(0 if all(v.get('returncode') == 0 for v in results.values()) else 1)

@@ -55,6 +55,7 @@ class Item:
 class Track:
     name: str
     items: tuple[Item, ...]
+    muted: bool = False
 
     def __post_init__(self):
         quote(self.name)
@@ -75,6 +76,8 @@ def dumps(project: Project) -> str:
              f'  SAMPLERATE {project.sample_rate}', '  TEMPO 120']
     for track in project.tracks:
         lines += ['  <TRACK', f'    NAME {quote(track.name)}']
+        if track.muted:
+            lines.append('    MUTESOLO 1 0 0')
         for item in track.items:
             lines += ['    <ITEM', f'      POSITION {seconds(item.position)}',
                       f'      LENGTH {seconds(item.length)}', '      LOOP 0',
