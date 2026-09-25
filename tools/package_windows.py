@@ -87,6 +87,7 @@ process.wait(timeout=10)
 (reports / 'frozen-smoke.json').write_text(json.dumps({
     'cli_doctor': 'passed', 'cli_models_list': 'passed', 'cli_model_download': 'passed', 'cli_asr_to_rpp': 'passed',
     'gui_startup_5s': 'passed', 'gui_interaction': 'tested from same source, not frozen',
+    'ffmpeg_bundled': False, 'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download',
     'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
 (package / 'version.json').write_text(json.dumps({'version': '0.1.0-preview', 'commit': commit,
