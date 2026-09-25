@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 from urllib.request import Request, urlopen
-import hashlib
 import json
 import os
 import shutil
@@ -12,7 +11,7 @@ import threading
 import uuid
 import zipfile
 
-from .catalog import Cancelled, cache_root, data_root
+from .catalog import Cancelled, cache_root, data_root, digest
 
 PROVIDER = "BtbN/FFmpeg-Builds"
 BASE_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
@@ -137,7 +136,7 @@ def ensure_ffmpeg(progress=None, cancel=None) -> Path:
             _download(f"{BASE_URL}/{CHECKSUM_ASSET}", checksum_file, progress, cancel)
             expected = _checksum_for(checksum_file.read_text(encoding="utf-8"), WINDOWS_ASSET)
             _download(f"{BASE_URL}/{WINDOWS_ASSET}", archive, progress, cancel)
-            actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+            actual = digest(archive)
             if actual != expected:
                 raise ValueError(f"FFmpeg SHA-256 mismatch: expected {expected}, got {actual}")
 
