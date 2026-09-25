@@ -13,7 +13,7 @@ import sys
 import threading
 import tomllib
 
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl, QSize, QLocale
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog,
@@ -50,6 +50,7 @@ QToolTip {
 }
 QSplitter::handle { background: #111419; width: 1px; }
 QFrame#inspector, QFrame#statusBar { background: #20252b; }
+QFrame#logPanel { background: #1b1f24; border-top: 1px solid #303741; }
 QFrame#stage {
     background: #242a31;
     border: 1px solid #313944;
@@ -163,14 +164,14 @@ QToolButton#iconButton { min-width: 18px; max-width: 18px; min-height: 18px; max
 QToolButton#footerIcon, QToolButton#languageButton {
     min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0;
 }
-QToolButton#runButton {
+QPushButton#runButton {
     min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px;
     padding: 0 7px; font-weight: 800; letter-spacing: 1px;
     color: #ffffff; background: #247f5d; border-color: #319b75;
 }
-QToolButton#runButton:hover { background: #2b906a; }
-QToolButton#runButton[running="true"] { background: #a84343; border-color: #ca5c5c; }
-QToolButton#runButton[running="true"]:hover { background: #ba4b4b; }
+QPushButton#runButton:hover { background: #2b906a; }
+QPushButton#runButton[running="true"] { background: #a84343; border-color: #ca5c5c; }
+QPushButton#runButton[running="true"]:hover { background: #ba4b4b; }
 QCheckBox { spacing: 7px; }
 QCheckBox::indicator {
     width: 13px; height: 13px; border-radius: 2px;
@@ -215,20 +216,20 @@ TEXT = {
         "retry": "失敗・中断を再試行",
         "open_output": "出力先を開く",
         "clear": "キューをクリア",
-        "sep": "BACKGROUND REMOVAL",
-        "asr": "ASR",
-        "align": "FORCED ALIGN",
-        "diar": "DIARIZATION",
-        "model": "MODEL",
-        "backend": "BACKEND",
-        "language": "LANG",
+        "sep": "背景音除去",
+        "asr": "音声認識",
+        "align": "強制アライメント",
+        "diar": "話者ダイアライゼーション",
+        "model": "モデル",
+        "backend": "実行環境",
+        "language": "言語",
         "parameters": "パラメータ",
-        "rpp_audio": "RPP AUDIO",
+        "rpp_audio": "RPP音声",
         "original": "元メディア",
         "processed": "処理済み",
-        "output": "OUTPUT",
+        "output": "出力",
         "same_dir": "入力ファイルと同じ場所",
-        "location": "LOCATION",
+        "location": "出力先",
         "custom_dir": "指定フォルダー",
         "choose": "選択",
         "ready": "準備完了",
@@ -243,7 +244,7 @@ TEXT = {
         "stage_major": "ステージ優先",
         "file_major": "ファイル優先",
         "batch_limit": "audio.cppバッチ上限",
-        "threads": "CPU threads",
+        "threads": "CPUスレッド",
         "whisper_backend": "whisper.cpp",
         "audio_backend": "audio.cpp",
         "keep_source": "変換成功後も元チェックポイントを保持",
@@ -256,7 +257,7 @@ TEXT = {
         "cancel": "キャンセル",
         "reset": "既定値へ戻す",
         "apply": "適用",
-        "default": "Default",
+        "default": "既定",
         "cpu": "CPU",
         "vulkan": "Vulkan",
         "waiting": "待機",
@@ -267,6 +268,9 @@ TEXT = {
         "preparing": "モデル準備中",
         "select_output": "出力先を選択",
         "no_params": "このモデルには追加の公開推論パラメータがありません。",
+        "run_log": "実行ログ",
+        "ffmpeg_auto": "自動取得 / PATH",
+        "bundled_path": "同梱 / PATH",
     },
     "en": {
         "queue_name": "Input",
@@ -332,37 +336,40 @@ TEXT = {
         "preparing": "Preparing models",
         "select_output": "Choose output directory",
         "no_params": "This model exposes no additional inference parameters.",
+        "run_log": "Run Log",
+        "ffmpeg_auto": "Auto-download / PATH",
+        "bundled_path": "Bundled / PATH",
     },
 }
 
 MODEL_TEXT = {
     "anime-whisper": {
-        "ja": ("Anime Whisper · 実験的変換版", "GGML変換版。配布者から認識異常の注意があります。"),
-        "en": ("Anime Whisper · Experimental", "Experimental GGML conversion; the distributor warns of possible recognition anomalies."),
+        "ja": ("Anime Whisper", "GGML変換版。配布者から認識異常の注意があります。"),
+        "en": ("Anime Whisper", "Experimental GGML conversion; the distributor warns of possible recognition anomalies."),
     },
     "mel-big-beta7": {
-        "ja": ("Mel-Band RoFormer big beta7", "背景音除去。元CKPTをローカルで検証し、PyTorchなしでaudio.cpp F16 GGUFへ変換します。"),
-        "en": ("Mel-Band RoFormer big beta7", "Background removal. The exact source checkpoint is verified and converted locally to audio.cpp F16 GGUF without PyTorch."),
+        "ja": ("Mel-Band RoFormer big beta7 · F16", "背景音除去。元CKPTをローカルで検証し、PyTorchなしでaudio.cpp F16 GGUFへ変換します。"),
+        "en": ("Mel-Band RoFormer big beta7 · F16", "Background removal. The exact source checkpoint is verified and converted locally to audio.cpp F16 GGUF without PyTorch."),
     },
     "nemotron-asr": {
         "ja": ("Nemotron 3.5 ASR · Q8", "token emission frame由来の時刻。精密な境界にはForced Alignmentを併用できます。"),
         "en": ("Nemotron 3.5 ASR · Q8", "Timing is derived from token emission frames. Forced Alignment can refine edit boundaries."),
     },
     "nemotron-diarization": {
-        "ja": ("Nemotron 3 Diarization · 8話者", "最大8話者の話者推定。音源分離は行いません。"),
-        "en": ("Nemotron 3 Diarization · 8 speakers", "Speaker diarization for up to eight speakers. It does not perform source separation."),
+        "ja": ("Nemotron 3 Diarization · BF16", "最大8話者の話者推定。音源分離は行いません。"),
+        "en": ("Nemotron 3 Diarization · BF16", "Speaker diarization for up to eight speakers. It does not perform source separation."),
     },
     "qwen-forced-aligner": {
         "ja": ("Qwen3 Forced Aligner · Q8", "認識テキストと対応音声を再整列します。"),
         "en": ("Qwen3 Forced Aligner · Q8", "Re-aligns recognized transcript text to the corresponding audio."),
     },
     "vibevoice-asr": {
-        "ja": ("VibeVoice ASR · Q8 / 大容量", "長時間向けオフライン統合ASR。メモリ使用量が大きいモデルです。"),
-        "en": ("VibeVoice ASR · Q8 / Large", "Long-form offline integrated ASR with comparatively high memory usage."),
+        "ja": ("VibeVoice ASR · Q8", "長時間向けオフライン統合ASR。メモリ使用量が大きいモデルです。"),
+        "en": ("VibeVoice ASR · Q8", "Long-form offline integrated ASR with comparatively high memory usage."),
     },
     "whisper-base": {
-        "ja": ("Whisper Base · 軽量", "標準Whisper Base。軽量な既定モデル・動作確認向け。"),
-        "en": ("Whisper Base · Lightweight", "Standard Whisper Base, used as the lightweight default and smoke-test model."),
+        "ja": ("Whisper Base", "標準Whisper Base。既定モデル・動作確認向け。"),
+        "en": ("Whisper Base", "Standard Whisper Base, used as the default and smoke-test model."),
     },
 }
 
@@ -376,6 +383,12 @@ def model_text(model, lang: str) -> tuple[str, str]:
 
 def icon(name: str) -> QIcon:
     return QIcon(str(assets_root() / "assets" / "icons" / f"{name}.svg"))
+
+
+def detect_ui_language(system_name: str | None = None) -> str:
+    """Use Japanese only for a Japanese host locale; otherwise default to English."""
+    name = system_name if system_name is not None else QLocale.system().name()
+    return "ja" if str(name).lower().replace("-", "_").startswith("ja") else "en"
 
 
 def default_storage_hint(kind: str) -> str:
@@ -637,13 +650,11 @@ class StagePanel(QFrame):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(4)
         grid.setVerticalSpacing(2)
-        grid.setColumnMinimumWidth(0, 54)
         grid.setColumnStretch(1, 1)
         grid.setColumnMinimumWidth(2, 20)
 
         self.model_label = QLabel()
         self.model_label.setObjectName("muted")
-        self.model_label.setFixedWidth(54)
         self.model = QComboBox()
         self.model.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.model.setFixedHeight(20)
@@ -660,7 +671,6 @@ class StagePanel(QFrame):
 
         self.backend_label = QLabel()
         self.backend_label.setObjectName("muted")
-        self.backend_label.setFixedWidth(54)
         self.device = QComboBox()
         self.device.setFixedHeight(20)
         grid.addWidget(self.backend_label, 1, 0)
@@ -668,7 +678,6 @@ class StagePanel(QFrame):
 
         self.language_label = QLabel()
         self.language_label.setObjectName("muted")
-        self.language_label.setFixedWidth(54)
         self.language = EditablePresetField()
         self.language.setToolTip("Free input. Use the arrow for common runtime language values.")
         self.language.setPresets(("auto", "ja", "ja-JP", "en", "en-US", "Japanese", "English"))
@@ -677,7 +686,6 @@ class StagePanel(QFrame):
 
         self.reference_label = QLabel()
         self.reference_label.setObjectName("muted")
-        self.reference_label.setFixedWidth(54)
         self.reference = QComboBox()
         self.reference.setFixedHeight(20)
         self.reference.addItem("Original", "original")
@@ -979,7 +987,7 @@ class PreferencesDialog(QDialog):
         for key in ("ffmpeg", "whisper_cpp:cpu", "whisper_cpp:vulkan",
                     "audio_cpp:cpu", "audio_cpp:vulkan"):
             line = QLineEdit(owner.runtime_paths.get(key, ""))
-            line.setPlaceholderText("Bundled / PATH")
+            line.setPlaceholderText(tr["ffmpeg_auto"] if key == "ffmpeg" else tr["bundled_path"])
             advanced_layout.addLayout(self._file_row(key, line))
             self.runtime_fields[key] = line
         advanced_layout.addStretch()
@@ -1062,9 +1070,10 @@ class MainWindow(QMainWindow):
             self.preferences.setValue("runtime_default/audio_cpp", "vulkan")
             self.preferences.setValue("runtime_defaults_v2", True)
             self.preferences.sync()
-        self.ui_lang = str(self.preferences.value("ui/language", "ja"))
+        saved_language = self.preferences.value("ui/language", None)
+        self.ui_lang = str(saved_language) if saved_language else detect_ui_language()
         if self.ui_lang not in TEXT:
-            self.ui_lang = "ja"
+            self.ui_lang = detect_ui_language()
         self.runtime_defaults = {
             "whisper_cpp": str(self.preferences.value("runtime_default/whisper_cpp", "vulkan")),
             "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", "vulkan")),
@@ -1106,6 +1115,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.table)
 
         inspector = QFrame()
+        self.inspector = inspector
         inspector.setObjectName("inspector")
         inspector.setMinimumWidth(300)
         inspector.setMaximumWidth(360)
@@ -1134,12 +1144,10 @@ class MainWindow(QMainWindow):
         output_grid.setContentsMargins(0, 0, 0, 0)
         output_grid.setHorizontalSpacing(4)
         output_grid.setVerticalSpacing(2)
-        output_grid.setColumnMinimumWidth(0, 54)
         output_grid.setColumnStretch(1, 1)
 
         self.output_location_label = QLabel()
         self.output_location_label.setObjectName("muted")
-        self.output_location_label.setFixedWidth(54)
         self.output_mode = QComboBox()
         self.output_mode.setFixedHeight(20)
         self.output_mode.addItem("Same as input", "same")
@@ -1176,8 +1184,24 @@ class MainWindow(QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(inspector)
         splitter.addWidget(scroll)
-        splitter.setSizes([840, 340])
+        splitter.setSizes([800, 380])
         root.addWidget(splitter, 1)
+
+        self.log_panel = QFrame()
+        self.log_panel.setObjectName("logPanel")
+        log_layout = QVBoxLayout(self.log_panel)
+        log_layout.setContentsMargins(8, 4, 8, 5)
+        log_layout.setSpacing(3)
+        self.log_title = QLabel()
+        self.log_title.setObjectName("section")
+        log_layout.addWidget(self.log_title)
+        self.run_log = QPlainTextEdit()
+        self.run_log.setReadOnly(True)
+        self.run_log.setMaximumBlockCount(2000)
+        self.run_log.setMinimumHeight(72)
+        self.run_log.setMaximumHeight(112)
+        log_layout.addWidget(self.run_log)
+        root.addWidget(self.log_panel)
 
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
@@ -1211,11 +1235,8 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self.open_settings)
         status_layout.addWidget(self.settings_button)
 
-        self.run_button = QToolButton()
+        self.run_button = QPushButton()
         self.run_button.setObjectName("runButton")
-        self.run_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.run_button.setIcon(icon("play"))
-        self.run_button.setIconSize(QSize(14, 14))
         self.run_button.setFixedSize(78, 24)
         self.run_button.clicked.connect(self.toggle_run)
         status_layout.addWidget(self.run_button)
@@ -1332,11 +1353,33 @@ class MainWindow(QMainWindow):
         self.output_mode.setCurrentIndex(max(0, idx))
         self.output_mode.blockSignals(False)
         self.output_dir.setPlaceholderText(tr["select_output"])
+        self.log_title.setText(tr["run_log"])
+        self._sync_inspector_label_widths()
         self.settings_button.setToolTip(tr["settings"])
         target = "English" if self.ui_lang == "ja" else "日本語"
         self.language_button.setToolTip(tr["ui_language"] + f" → {target} (Ctrl+Shift+L)")
         self.language_button.setText("")
         self.render_queue()
+
+    def _sync_inspector_label_widths(self):
+        labels = [
+            self.preprocess.model_label, self.preprocess.backend_label,
+            self.preprocess.language_label, self.preprocess.reference_label,
+            self.asr.model_label, self.asr.backend_label, self.asr.language_label,
+            self.align.model_label, self.align.backend_label, self.align.language_label,
+            self.diar.model_label, self.diar.backend_label,
+            self.output_location_label,
+        ]
+        width = max(label.fontMetrics().horizontalAdvance(label.text()) for label in labels) + 8
+        for label in labels:
+            label.setFixedWidth(width)
+
+    def append_log(self, value):
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not text:
+            return
+        for line in text.split("\n"):
+            self.run_log.appendPlainText(line)
 
     def toggle_language(self):
         self.ui_lang = "en" if self.ui_lang == "ja" else "ja"
@@ -1468,12 +1511,12 @@ class MainWindow(QMainWindow):
     def pipeline_text(self):
         stages = []
         if self.preprocess.enabled_stage():
-            stages.append("SEP")
-        stages.append("ASR")
+            stages.append(self.tr("sep"))
+        stages.append(self.tr("asr"))
         if self.align.enabled_stage():
-            stages.append("ALIGN")
+            stages.append(self.tr("align"))
         if self.diar.enabled_stage():
-            stages.append("DIAR")
+            stages.append(self.tr("diar"))
         return " > ".join(stages)
 
     def update_state(self):
@@ -1487,7 +1530,6 @@ class MainWindow(QMainWindow):
         self.run_button.setEnabled(True if self.worker else can_go)
         self.run_button.setProperty("running", bool(self.worker))
         self.run_button.setText("STOP" if self.worker else "GO!")
-        self.run_button.setIcon(icon("stop" if self.worker else "play"))
         self.run_button.style().unpolish(self.run_button)
         self.run_button.style().polish(self.run_button)
 
@@ -1526,6 +1568,7 @@ class MainWindow(QMainWindow):
             self.completed = 0
             self.progress.setRange(0, 0 if prepare_only else max(1, len(jobs)))
             self.progress.setValue(0)
+            self.append_log("— " + (self.tr("preparing") if prepare_only else self.pipeline_text()) + " —")
             self.worker = Worker(
                 jobs, settings, self.catalog, prepare_only, self.keep_model_sources,
                 self.queue_strategy, self.batch_audio_ram_mb)
@@ -1541,10 +1584,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "ASR2RPP", str(exc))
 
     def show_progress(self, value):
-        self.status_label.setText(value[:180])
+        self.append_log(value)
+        self.status_label.setText(str(value)[:180])
 
     def show_error(self, value):
-        self.status_label.setText(value[:180])
+        self.append_log("[ERROR] " + str(value))
+        self.status_label.setText(str(value)[:180])
 
     def item_changed(self, index, status, detail):
         mapping = {
@@ -1555,6 +1600,8 @@ class MainWindow(QMainWindow):
         }
         canonical = mapping.get(status, status if status in {"running", "done", "failed", "stopped"} else "running")
         self.entries[index].update(status=canonical, output=detail if canonical in {"done", "failed"} else "")
+        if detail and canonical in {"failed", "stopped"}:
+            self.append_log(detail)
         if canonical in {"done", "failed", "stopped"}:
             self.completed += 1
             self.progress.setValue(self.completed)
