@@ -375,36 +375,48 @@ def convert_model(model, directory: Path, assets_root: Path, temp_root: Path,
     if shutil.disk_usage(directory).free < checkpoint.stat().st_size:
         raise ConversionError('Insufficient model-storage space for converted GGUF')
     keep_intermediate = bool(recipe.get('keep_intermediate', False))
-    temporary = None
+    temp_directory = None
     if keep_intermediate:
         work = directory / '.conversion'
         if work.exists():
             shutil.rmtree(work)
         work.mkdir(parents=True)
     else:
-        temporary = tempfile.TemporaryDirectory(prefix=f'convert-{model.id}-', dir=temp_root)
-        work = Path(temporary.name)
+        # Keep the TemporaryDirectory object alive for the whole native conversion.
+        # Losing the last reference would immediately remove model.safetensors on
+        # CPython/Windows before audiocpp_gguf has a chance to open it.
+        temp_directory = tempfile.TemporaryDirectory(
+            prefix=f'convert-{model.id}-', dir=temp_root)
+        work = Path(temp_directory.name)
+
+    partial_output = output.with_name(output.name + '.part.gguf')
+    partial_output.unlink(missing_ok=True)
     try:
         info = checkpoint_to_safetensors(checkpoint, config_yaml, work, cancel, progress)
+        safetensors = work / 'model.safetensors'
+        if not safetensors.is_file():
+            raise ConversionError(
+                f'SafeTensors intermediate disappeared before GGUF conversion: {safetensors}')
         converter = find_audio_cpp_tool('audiocpp_gguf', assets_root)
-        temporary = output.with_name(output.name + '.part.gguf')
-        temporary.unlink(missing_ok=True)
         progress(f'GGUF {precision.upper()}へ変換中…')
-        _run([str(converter), '--input', 'weights=' + str(work / 'model.safetensors'),
+        _run([str(converter), '--input', 'weights=' + str(safetensors),
               '--root', str(work), '--family', model.family,
-              '--output', str(temporary), '--type', precision, '--overwrite'], cancel, progress)
-        inspect = _run([str(converter), '--inspect', str(temporary)], cancel, lambda _text: None)
+              '--output', str(partial_output), '--type', precision, '--overwrite'],
+             cancel, progress)
+        inspect = _run([str(converter), '--inspect', str(partial_output)],
+                       cancel, lambda _text: None)
         if 'mel_band_roformer' not in inspect:
             raise ConversionError('GGUF inspection did not confirm mel_band_roformer family')
         cli = find_audio_cpp_tool('audiocpp_cli', assets_root)
         cli_inspect = _run([str(cli), '--inspect', '--family', model.family,
-                            '--model', str(temporary)], cancel, lambda _text: None)
-        temporary.replace(output)
+                            '--model', str(partial_output)], cancel, lambda _text: None)
+        partial_output.replace(output)
         info.update({'precision': precision, 'output_size': output.stat().st_size,
                      'converter': str(converter), 'gguf_inspect': inspect[-4000:],
                      'runtime_inspect': cli_inspect[-4000:]})
         progress('背景音除去モデルの準備が完了しました。')
         return output, info
     finally:
-        if temporary is not None:
-            temporary.cleanup()
+        partial_output.unlink(missing_ok=True)
+        if temp_directory is not None:
+            temp_directory.cleanup()
