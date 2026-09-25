@@ -164,6 +164,17 @@ def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypa
     assert adapters.executable('whisper_cpp', 'auto') == vulkan
     assert adapters.executable('whisper_cpp', 'cpu') == cpu
 
+def test_run_process_serializes_path_arguments_as_strings(tmp_path):
+    log = tmp_path / 'command.log'
+    run_process(
+        [Path(sys.executable), '-c', 'print("path-argv-ok")'],
+        threading.Event(), lambda _text: None, log,
+    )
+    first = json.loads(log.read_text(encoding='utf-8').splitlines()[0])
+    assert first['command'][0] == sys.executable
+    assert all(isinstance(value, str) for value in first['command'])
+
+
 def test_process_cancellation(tmp_path):
     cancel = threading.Event()
     timer = threading.Timer(0.3, cancel.set)
