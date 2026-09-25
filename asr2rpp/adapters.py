@@ -110,6 +110,10 @@ def process_environment(binary: Path) -> dict:
 def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                 timeout: float = 7200) -> None:
     checkpoint(cancel)
+    # Normalize at the subprocess boundary. pathlib.Path is accepted by Popen but
+    # is not JSON serializable; command provenance must never fail before launch.
+    argv = [os.fspath(value) if isinstance(value, os.PathLike) else str(value)
+            for value in argv]
     env = process_environment(Path(argv[0]))
     log.parent.mkdir(parents=True, exist_ok=True)
     kwargs = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
