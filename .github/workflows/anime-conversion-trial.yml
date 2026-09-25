@@ -1,0 +1,58 @@
+name: Torch-free Anime Whisper conversion trial
+on:
+  push:
+    branches: [validation/anime-whisper-conversion]
+    paths: ['experiments/anime-whisper/**', '.github/workflows/anime-conversion-trial.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --only-binary=:all: numpy==2.3.5 safetensors==0.7.0
+      - name: Require a torch-free environment
+        run: python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('transformers') is None"
+      - name: Converter regression tests
+        working-directory: experiments/anime-whisper
+        run: python -m unittest -v test_converter
+  convert:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --only-binary=:all: numpy==2.3.5 safetensors==0.7.0
+      - name: Build the same pinned whisper.cpp as the application (CPU)
+        run: python tools/build_native.py whisper_cpp:cpu
+      - name: Convert original weights, compare existing GGML, run real native inference
+        run: python experiments/anime-whisper/validate_trial.py --whisper-cli engines/whisper_cpp-cpu/whisper-cli
+      - if: always()
+        run: |
+          mkdir -p reports/anime-trial
+          sha256sum experiments/anime-whisper/*.py > reports/anime-trial/scripts.sha256
+          python -m pip freeze > reports/anime-trial/packages.txt
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anime-conversion-trial-${{ github.run_id }}
+          path: reports/anime-trial/
+          retention-days: 7
