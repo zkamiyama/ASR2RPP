@@ -9,7 +9,7 @@ import time
 import wave
 import pytest
 from rpp_writer import Source, Item, Track, Project, dumps
-from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative, weights_root, cache_root
+from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative, weights_root, cache_root, resolve_model
 from asr2rpp.adapters import Unit, Result, parse_whisper, parse_audio, run_process
 import asr2rpp.adapters as adapters
 from asr2rpp.pipeline import Settings, Stage, reserve_output, clean_bounds, group_units, export_rpp, run_job
@@ -54,6 +54,20 @@ def test_all_templates():
     assert not errors
     assert len(models) >= 6
     assert {m.task for m in models.values()} == {'asr', 'diar', 'align', 'sep'}
+
+
+def test_runtime_messages_use_stable_model_id_not_editable_name(tmp_path, monkeypatch):
+    monkeypatch.setenv('ASR2RPP_WEIGHTS_DIR', str(tmp_path / 'weights'))
+    model = Model(
+        'anime-whisper', 'whisper_cpp', 'asr',
+        {'repo': 'owner/repo', 'files': ['model.bin']},
+        name='Anime Whisper · 実験的変換版',
+    )
+    with pytest.raises(FileNotFoundError) as caught:
+        resolve_model(model, threading.Event(), lambda _text: None, download=False)
+    message = str(caught.value)
+    assert 'anime-whisper' in message
+    assert '実験的変換版' not in message
 
 
 def test_output_collision_and_same_directory(tmp_path):

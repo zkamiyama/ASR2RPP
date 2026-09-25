@@ -101,6 +101,20 @@ def test_ui_language_follows_host_locale_by_default():
     assert detect_ui_language("de_DE") == "en"
 
 
+def test_builtin_display_name_ignores_stale_editable_toml_name():
+    pytest.importorskip("PySide6")
+    from asr2rpp.gui_dcc import model_text
+    stale = Model(
+        "anime-whisper", "whisper_cpp", "asr", {"path": "model.bin"},
+        name="Anime Whisper · 実験的変換版",
+        description="old user copy",
+    )
+    ja, _ = model_text(stale, "ja")
+    en, _ = model_text(stale, "en")
+    assert ja == "Anime Whisper"
+    assert en == "Anime Whisper"
+
+
 def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
     if "QT_QPA_PLATFORM" not in os.environ:
