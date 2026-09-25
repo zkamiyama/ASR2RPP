@@ -201,11 +201,11 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         if installed_valid and not restore_source:
             return directory / entry, state
     if not download:
-        raise FileNotFoundError(f'{model.label}: model not installed. Use Download models / models install first.')
+        raise FileNotFoundError(f'{model.id}: model not installed. Use Download models / models install first.')
     directory.mkdir(parents=True, exist_ok=True)
     repository = repo_id(model.source['repo'])
     revision = str(model.source.get('revision', 'main'))
-    progress(f'Resolving {model.label}')
+    progress(f'Resolving {model.id}')
     api = f'https://huggingface.co/api/models/{repository}/revision/{quote(revision, safe="")}'
     with urlopen(Request(api, headers={'User-Agent': 'ASR2RPP/0.1'}), timeout=30) as response:
         revision = json.load(response)['sha']
@@ -218,7 +218,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         expected = model.source.get('sha256', {}).get(filename)
         if destination.is_file() and expected and digest(destination) == expected:
             state['files'][filename] = {'sha256': expected, 'size': destination.stat().st_size, 'retained': True}
-            progress(f'{model.label}: verified cached {filename}')
+            progress(f'{model.id}: verified cached {filename}')
             continue
         partial = destination.with_name(destination.name + '.part')
         url = f'https://huggingface.co/{repository}/resolve/{revision}/{quote(filename, safe="/")}'
@@ -235,7 +235,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
                         done += len(block)
                         bucket = done // (16 * 1024 ** 2)
                         if bucket != notified:
-                            progress(f'{model.label}: {done / 1024**2:.0f} / {total / 1024**2:.0f} MiB')
+                            progress(f'{model.id}: {done / 1024**2:.0f} / {total / 1024**2:.0f} MiB')
                             notified = bucket
                 if total and done != total:
                     raise OSError('Incomplete model download')
