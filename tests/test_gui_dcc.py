@@ -92,6 +92,15 @@ def test_parameter_specs_surface_cpp_controls():
             "session.weight_context_mb", "session.weight_type"} <= diar_keys
 
 
+def test_ui_language_follows_host_locale_by_default():
+    pytest.importorskip("PySide6")
+    from asr2rpp.gui_dcc import detect_ui_language
+    assert detect_ui_language("ja_JP") == "ja"
+    assert detect_ui_language("ja-JP") == "ja"
+    assert detect_ui_language("en_US") == "en"
+    assert detect_ui_language("de_DE") == "en"
+
+
 def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     pytest.importorskip("PySide6")
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -109,6 +118,9 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
+    saved = QSettings("ASR2RPP", "ASR2RPP")
+    saved.setValue("ui/language", "ja")
+    saved.sync()
 
     window = MainWindow()
     window.show()
@@ -117,6 +129,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
     assert window.run_button.text() == "GO!"
+    assert isinstance(window.run_button, QPushButton)
+    assert window.run_button.icon().isNull()
     assert window.run_button.height() == window.settings_button.height() == window.language_button.height()
     assert window.language_button.text() == ""
     assert window.run_button.height() <= 28
@@ -138,6 +152,24 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert "font-family" not in STYLE
     assert "QComboBox::drop-down" in STYLE and "background: #15191e" in STYLE
     assert "QFrame#editablePreset" in STYLE
+    assert window.preprocess.title.text() == "背景音除去"
+    assert window.asr.title.text() == "音声認識"
+    assert window.asr.model_label.text() == "モデル"
+    assert window.asr.backend_label.text() == "実行環境"
+    assert window.asr.language_label.text() == "言語"
+    assert window.preprocess.reference_label.text() == "RPP音声"
+    labels = [
+        window.preprocess.model_label, window.preprocess.backend_label,
+        window.preprocess.language_label, window.preprocess.reference_label,
+        window.asr.model_label, window.asr.backend_label, window.asr.language_label,
+        window.align.model_label, window.align.backend_label, window.align.language_label,
+        window.diar.model_label, window.diar.backend_label, window.output_location_label,
+    ]
+    for label in labels:
+        assert label.width() >= label.fontMetrics().horizontalAdvance(label.text()) + 8
+    assert window.run_log.isReadOnly()
+    window.show_progress("copyable runtime line")
+    assert "copyable runtime line" in window.run_log.toPlainText()
     inspector_scroll = window.findChild(QScrollArea, "inspectorScroll")
     assert inspector_scroll is not None
     assert inspector_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -202,7 +234,12 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.ui_lang == "en"
     assert window.table.horizontalHeaderItem(0).text() == "Input"
     assert window.table.item(0, 1).text() == "Queued"
-    assert "実験的変換版" not in window.asr.model.currentText()
+    model_labels = [window.asr.model.itemText(i) for i in range(window.asr.model.count())]
+    assert all("実験的" not in x and "Experimental" not in x and "軽量" not in x and "Lightweight" not in x and "Large" not in x for x in model_labels)
+    assert window.asr.model_label.text() == "MODEL"
+    assert window.asr.backend_label.text() == "BACKEND"
+    assert window.asr.language_label.text() == "LANG"
+    assert window.preprocess.reference_label.text() == "RPP AUDIO"
     assert window.preprocess.reference.itemText(0) == "Original"
     window.grab().save(str(reports / "gui-dcc-en.png"))
 
