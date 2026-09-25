@@ -5,7 +5,7 @@ SEP -> ASR -> forced alignment -> diarization -> RPP.
 
 Native model processes are never kept alive across different model families.
 whisper.cpp receives multiple files per process (one model context), while
-audio.cpp uses one offline batch session per RAM-bounded chunk.
+audio.cpp uses one offline batch session per RAM-bounded chunk, except Nemotron ASR,\nwhich uses its bounded native streaming session for long-form safety.
 """
 from __future__ import annotations
 
@@ -171,8 +171,61 @@ def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
     return results
 
 
+def _nemotron_streaming_asr(model, weights: Path, stage, jobs, audio_paths, root: Path,
+                            cancel, progress, item_callback):
+    """Run long-form Nemotron ASR with its bounded native streaming session.
+
+    audio.cpp batch inputs are offline-only, so each queue item uses one streaming
+    process. This trades model reloads across files for bounded graph memory and
+    preserves token timestamps through --words-out.
+    """
+    binary = executable(model.runtime, stage.device, stage.executable)
+    parameters = _stage_parameters(model, stage)
+    results = {}
+    for item_no, job in enumerate(jobs, 1):
+        checkpoint(cancel)
+        item_root = root / f'stream-{item_no}'
+        item_root.mkdir(parents=True, exist_ok=True)
+        output = item_root / 'words.json'
+        text_output = item_root / 'transcript.txt'
+        argv = [
+            str(binary), '--task', 'asr', '--family', model.family,
+            '--model', str(weights),
+            '--backend', 'best' if stage.device == 'auto' else stage.device,
+            '--mode', 'streaming', '--audio', str(audio_paths[job.key]),
+            '--threads', str(stage.threads),
+            '--language', stage.language or model.defaults.get('language', 'ja'),
+            '--words-out', str(output), '--text-out', str(text_output),
+        ]
+        for key, value in parameters.items():
+            if not key.replace('_', '').replace('.', '').isalnum():
+                raise ValueError('Invalid audio.cpp request parameter')
+            argv += ['--request-option', f'{key}={scalar(value)}']
+        argv += _session_args(model, stage)
+        log = item_root / 'engine.log'
+        try:
+            item_callback(job.index, 'ASR', '')
+            run_process(argv, cancel, progress, log)
+            if not output.is_file():
+                raise ValueError(
+                    f'audio.cpp did not produce streaming ASR timestamps for {job.source.name}')
+            raw = json.loads(output.read_text(encoding='utf-8-sig'))
+            results[job.key] = parse_audio(raw, 'asr', model.family, model.sample_rate)
+            _copy_log(log, [job], f'asr-stream-{item_no}.log')
+        except BaseException as exc:
+            if cancel.is_set():
+                raise
+            _fail(job, exc, item_callback)
+    return results
+
+
 def _audio_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
                  cancel, progress, item_callback, task: str, max_bytes: int):
+    if task == 'asr' and model.family == 'nemotron_asr':
+        return _nemotron_streaming_asr(
+            model, weights, stage, jobs, audio_paths, root,
+            cancel, progress, item_callback)
+
     binary = executable(model.runtime, stage.device, stage.executable)
     parameters = _stage_parameters(model, stage)
     results = {}

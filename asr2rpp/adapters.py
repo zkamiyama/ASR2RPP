@@ -354,9 +354,14 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         result = parse_whisper(json.loads(prefix.with_suffix('.json').read_text(encoding='utf-8-sig')))
     else:
         output = work / 'timed.json'
+        # Nemotron's offline encoder builds a full-context attention graph whose
+        # memory grows quadratically with long audio. Its native streaming session
+        # keeps a bounded cache and still returns token timestamps, so use it for
+        # all Nemotron ASR requests rather than risking multi-gigabyte graph OOM.
+        mode = 'streaming' if model.task == 'asr' and model.family == 'nemotron_asr' else 'offline'
         argv = [str(binary), '--task', model.task, '--family', model.family,
                 '--model', str(weights), '--backend', 'best' if device == 'auto' else device,
-                '--mode', 'offline', '--audio', str(audio), '--threads', str(threads)]
+                '--mode', mode, '--audio', str(audio), '--threads', str(threads)]
         if model.task == 'diar':
             argv += ['--turns-out', str(output)]
         else:
