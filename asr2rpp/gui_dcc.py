@@ -32,7 +32,7 @@ from .pipeline import MEDIA_EXTENSIONS, Stage
 from .preprocessing import Settings, run_job
 from .queue_runner import run_queue
 from .parameter_specs import specs_for
-from .adapters import executable as runtime_executable
+from .adapters import executable as runtime_executable, ffmpeg_path
 
 
 STYLE = r"""
@@ -879,6 +879,25 @@ class Worker(QThread):
             self.error.emit(str(exc))
 
 
+class FFmpegBootstrap(QThread):
+    progress = Signal(str)
+    ready = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, custom_path: str = ""):
+        super().__init__()
+        self.custom_path = custom_path
+        self.cancel = threading.Event()
+
+    def run(self):
+        try:
+            self.ready.emit(ffmpeg_path(self.custom_path, self.progress.emit, self.cancel))
+        except Cancelled:
+            pass
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
 class PreferencesDialog(QDialog):
     prepareRequested = Signal()
 
@@ -1096,6 +1115,7 @@ class MainWindow(QMainWindow):
         self.threads = int(self.preferences.value("threads", 4))
         self.entries = []
         self.worker = None
+        self.ffmpeg_worker = None
         self.completed = 0
         self.catalog = {}
         self.apply_storage_roots()
@@ -1249,6 +1269,25 @@ class MainWindow(QMainWindow):
         self.restore_stage_preferences()
         self.apply_language()
         self.output_changed()
+        if sys.platform == "win32" and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
+            self.start_ffmpeg_bootstrap()
+
+    def start_ffmpeg_bootstrap(self):
+        if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
+            return
+        worker = FFmpegBootstrap(self.runtime_paths.get("ffmpeg", ""))
+        self.ffmpeg_worker = worker
+        worker.progress.connect(self.show_progress)
+        worker.ready.connect(lambda path: self.append_log("FFmpeg: " + path))
+        worker.error.connect(self.show_error)
+        worker.finished.connect(self.ffmpeg_bootstrap_finished)
+        worker.start()
+
+    def ffmpeg_bootstrap_finished(self):
+        worker = self.ffmpeg_worker
+        self.ffmpeg_worker = None
+        if worker:
+            worker.deleteLater()
 
     def tr(self, key):
         return TEXT[self.ui_lang][key]
@@ -1643,6 +1682,8 @@ class MainWindow(QMainWindow):
             }
             self.save_preferences()
             self.update_state()
+            if sys.platform == "win32" and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
+                self.start_ffmpeg_bootstrap()
             if prepare["value"]:
                 self.start_work(True)
 
@@ -1651,6 +1692,9 @@ class MainWindow(QMainWindow):
             self.worker.cancel.set()
             event.ignore()
             return
+        if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
+            self.ffmpeg_worker.cancel.set()
+            self.ffmpeg_worker.wait(5000)
         self.save_preferences()
         event.accept()
 
