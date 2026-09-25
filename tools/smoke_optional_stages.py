@@ -51,14 +51,17 @@ for name, extra in [
     ('align-only', ['--align', 'qwen-forced-aligner', '--align-language', 'English']),
     ('both', ['--diar', 'nemotron-diarization', '--align', 'qwen-forced-aligner', '--align-language', 'English']),
 ]:
-    run(name, ['run', fixture, '--asr', 'nemotron-asr', '--asr-language', 'en-US', '--duration', '8',
+    run(name, ['run', fixture, '--asr', 'nemotron-asr', '--asr-device', 'cpu',
+               '--asr-language', 'en-US', '--duration', '8',
+               '--diar-device', 'cpu', '--align-device', 'cpu',
                '--output-dir', reports / name, *extra], 600)
 # UTF-8 input and output paths with the frozen launcher and native executable.
 unicode_input = root / '日本語入力' / '試験音声.wav'
 unicode_input.parent.mkdir(exist_ok=True)
 shutil.copy2(fixture, unicode_input)
-run('unicode-whisper', ['run', unicode_input, '--asr', 'whisper-base', '--asr-language', 'en',
-                        '--duration', '8', '--output-dir', reports / '日本語出力'], 120)
+run('unicode-whisper', ['run', unicode_input, '--asr', 'whisper-base', '--asr-device', 'cpu',
+                        '--asr-language', 'en', '--duration', '8',
+                        '--output-dir', reports / '日本語出力'], 120)
 # Check that ON/OFF reached the pipeline independently; detailed raw output is retained.
 for name in ('asr-only', 'diar-only', 'align-only', 'both'):
     manifests = list((reports / name).glob('*.asr2rpp/manifest.json'))
