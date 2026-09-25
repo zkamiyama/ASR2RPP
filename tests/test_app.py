@@ -188,6 +188,42 @@ def test_pipeline_options_disabled(tmp_path, monkeypatch):
 
 
 
+def test_native_engine_work_isolated_from_unicode_report_path(tmp_path, monkeypatch):
+    source_dir = tmp_path / '日本語入力'
+    source_dir.mkdir()
+    source = source_dir / '試験音声.wav'
+    with wave.open(str(source), 'wb') as handle:
+        handle.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+        handle.writeframes(b'\0\0' * 16000)
+
+    cache = tmp_path / 'engine-cache'
+    monkeypatch.setenv('ASR2RPP_CACHE_DIR', str(cache))
+    model = Model('test', 'whisper_cpp', 'asr', {'path': str(source)})
+    monkeypatch.setattr('asr2rpp.pipeline.executable', lambda *a: source)
+    monkeypatch.setattr('asr2rpp.pipeline.ffmpeg_path', lambda *a: 'ffmpeg')
+    monkeypatch.setattr('asr2rpp.pipeline.resolve_model', lambda *a: (source, {}))
+    monkeypatch.setattr('asr2rpp.pipeline.decode', lambda *a, **kw: 1.0)
+    engine_dirs = []
+
+    def fake_infer(_model, _weights, _audio, work, *_args, **_kwargs):
+        engine_dirs.append(Path(work))
+        Path(work).mkdir(parents=True, exist_ok=True)
+        (Path(work) / 'engine.log').write_text('native log', encoding='utf-8')
+        return Result([Unit(0, 0.8, 'test')], {})
+
+    monkeypatch.setattr('asr2rpp.pipeline.infer', fake_infer)
+    output = run_job(
+        source, Settings(Stage('test')), {'test': model},
+        threading.Event(), lambda _text: None)
+
+    assert output.is_file()
+    assert len(engine_dirs) == 1
+    assert cache in engine_dirs[0].parents
+    assert '試験音声.asr2rpp' not in str(engine_dirs[0])
+    persisted = source_dir / '試験音声.asr2rpp' / 'asr' / 'engine.log'
+    assert persisted.read_text(encoding='utf-8') == 'native log'
+
+
 def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypatch):
     engines = tmp_path / 'engines'
     suffix = '.exe' if sys.platform == 'win32' else ''
