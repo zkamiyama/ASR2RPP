@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import time
-import imageio_ffmpeg
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -20,7 +19,7 @@ def run(*args, cwd=None):
 def copy_licenses(package):
     target = package / 'licenses'
     target.mkdir(exist_ok=True)
-    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'imageio-ffmpeg', 'numpy', 'safetensors'):
+    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'numpy', 'safetensors'):
         dist = distribution(name)
         for item in dist.files or []:
             if any(x in str(item).lower() for x in ('license', 'copying', 'notice')) and str(item).lower().endswith(('.txt', '.md', '.rst', 'license', 'copying')):
@@ -34,10 +33,11 @@ def copy_licenses(package):
 os.environ['PYTHONUTF8'] = '1'
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
     '--name', 'ASR2RPP', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'PySide6.QtSvg',
+    '--hidden-import', 'asr2rpp.ffmpeg_runtime',
     '--add-data', 'models:models', '--add-data', 'assets:assets', 'launcher.py')
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--console',
     '--name', 'asr2rpp-cli', '--exclude-module', 'PySide6',
-    '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy',
+    '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime',
     '--add-data', 'models:models', 'cli_launcher.py')
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
@@ -52,19 +52,15 @@ required_native = [
 missing_native = [str(path) for path in required_native if not path.is_file()]
 if missing_native:
     raise RuntimeError('Missing packaged native runtime(s): ' + ', '.join(missing_native))
-ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
-ffmpeg_dir = package / 'engines/ffmpeg'
-ffmpeg_dir.mkdir(parents=True, exist_ok=True)
-shutil.copy2(ffmpeg, ffmpeg_dir / 'ffmpeg.exe')
 copy_licenses(package)
+# FFmpeg is deliberately not redistributed. On Windows the application resolves
+# an existing PATH/custom binary or downloads a verified LGPL build into user data.
+if list(package.rglob('ffmpeg.exe')):
+    raise RuntimeError('FFmpeg must not be bundled in the Windows application ZIP')
 for name in ('README.md', 'LICENSE', 'THIRD_PARTY.md'):
     if (ROOT / name).exists():
         shutil.copy2(ROOT / name, package / name)
 shutil.copytree(ROOT / 'models', package / 'model-templates', dirs_exist_ok=True)
-# Include license/build information of the precise bundled FFmpeg executable.
-for option, name in [('-L', 'license.txt'), ('-buildconf', 'build-configuration.txt'), ('-version', 'version.txt')]:
-    result = subprocess.run([str(ffmpeg_dir / 'ffmpeg.exe'), option], capture_output=True)
-    (ffmpeg_dir / name).write_bytes(result.stdout + result.stderr)
 # Use OS fonts; never redistribute a system or bundled font file.
 for file in package.rglob('*'):
     if file.is_file() and file.suffix.lower() in {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}:
@@ -95,6 +91,7 @@ process.wait(timeout=10)
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
 (package / 'version.json').write_text(json.dumps({'version': '0.1.0-preview', 'commit': commit,
     'platform': 'windows-x64', 'native_backends': ['cpu', 'vulkan'], 'minimum_cpu': 'AVX2',
-    'model_weights_included': False}, indent=2), encoding='utf-8')
+    'model_weights_included': False, 'ffmpeg_bundled': False,
+    'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download'}, indent=2), encoding='utf-8')
 archive = Path(shutil.make_archive(str(ROOT / 'dist/ASR2RPP-Windows-x64'), 'zip', ROOT / 'dist', 'ASR2RPP'))
 (archive.parent / 'SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n', encoding='utf-8')
