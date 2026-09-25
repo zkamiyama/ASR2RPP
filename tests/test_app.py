@@ -12,7 +12,7 @@ from rpp_writer import Source, Item, Track, Project, dumps
 from asr2rpp.catalog import load_catalog, Model, Cancelled, safe_relative, weights_root, cache_root, resolve_model
 from asr2rpp.adapters import Unit, Result, parse_whisper, parse_audio, run_process
 import asr2rpp.adapters as adapters
-from asr2rpp.pipeline import Settings, Stage, reserve_output, clean_bounds, group_units, export_rpp, run_job
+from asr2rpp.pipeline import Settings, Stage, reserve_output, clean_bounds, group_units, has_alignable_text, export_rpp, run_job
 
 
 def test_independent_writer():
@@ -151,6 +151,49 @@ def test_bounds_preserve_raw():
 def test_no_false_word_timing():
     units = group_units([Unit(0, 4, '今日はいい天気です')])
     assert len(units) == 1 and units[0].granularity == 'segment'
+
+
+def test_forced_alignment_keeps_punctuation_only_asr_span(tmp_path, monkeypatch):
+    source = tmp_path / 'source.wav'
+    with wave.open(str(source), 'wb') as handle:
+        handle.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+        handle.writeframes(b'\0\0' * 16000)
+
+    asr_model = Model('asr-test', 'whisper_cpp', 'asr', {'path': str(source)})
+    align_model = Model(
+        'align-test', 'audio_cpp', 'align', {'path': str(source)},
+        family='qwen3_forced_aligner',
+    )
+    catalog = {'asr-test': asr_model, 'align-test': align_model}
+    settings = Settings(Stage('asr-test'), align=Stage('align-test'))
+    monkeypatch.setenv('ASR2RPP_CACHE_DIR', str(tmp_path / 'cache'))
+    monkeypatch.setattr('asr2rpp.pipeline.executable', lambda *args: source)
+    monkeypatch.setattr('asr2rpp.pipeline.ffmpeg_path', lambda *args: 'ffmpeg')
+    monkeypatch.setattr('asr2rpp.pipeline.resolve_model', lambda *args: (source, {}))
+    monkeypatch.setattr('asr2rpp.pipeline.decode', lambda *args, **kwargs: 1.0)
+
+    aligned_texts = []
+
+    def fake_infer(model, _weights, _audio, _work, _options, _cancel, _progress, transcript=''):
+        if model.task == 'asr':
+            return Result([
+                Unit(0.0, 0.2, 'こんにちは。', granularity='segment'),
+                Unit(0.3, 0.4, '、', granularity='segment'),
+            ], {})
+        aligned_texts.append(transcript)
+        return Result([Unit(0.0, 0.1, transcript, granularity='word')], {})
+
+    monkeypatch.setattr('asr2rpp.pipeline.infer', fake_infer)
+    output = run_job(source, settings, catalog, threading.Event(), lambda _text: None)
+
+    assert aligned_texts == ['こんにちは。']
+    assert has_alignable_text('こんにちは') is True
+    assert has_alignable_text('、 。！？  ') is False
+    text = output.read_text(encoding='utf-8')
+    assert 'こんにちは。' in text
+    assert '、' in text
+    manifest = json.loads((tmp_path / 'source.asr2rpp' / 'manifest.json').read_text(encoding='utf-8'))
+    assert any('punctuation-only' in warning for warning in manifest['warnings'])
 
 
 def test_non_destructive_export(tmp_path):
