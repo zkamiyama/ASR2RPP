@@ -555,6 +555,15 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         continue
                     for n, segment in enumerate(job.units):
                         checkpoint(cancel)
+                        if not core.has_alignable_text(segment.text):
+                            job.warnings.append(
+                                f'{segment.start:.3f}: forced alignment skipped punctuation-only text; '
+                                'ASR interval retained')
+                            by_job[job.key].append(segment)
+                            progress(
+                                f'Forced alignment — punctuation-only text skipped for '
+                                f'{job.source.name}; ASR timing retained')
+                            continue
                         begin = max(0.0, segment.start - 0.15)
                         length = min(job.duration, segment.end + 0.25) - begin
                         key = f'{job.key}s{n:05d}'
