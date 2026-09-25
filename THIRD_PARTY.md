@@ -28,3 +28,5 @@ The app records repository revision, downloaded file SHA-256 and sizes locally.
 Anime Whisper's community conversion is experimental; availability does not imply verified transcription parity.
 
 No REAPER binary, user media, credential, or system font is distributed with ASR2RPP.
+
+- Silero VAD v5.1.2 is downloaded on demand, not bundled. The GGML is from ggml-org/whisper-vad at e5614ed76a5dd4b03fad5068c89efcd2617a9d1e, SHA-256 29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf (885098 bytes). Upstream Silero VAD and the model repository declare MIT licensing. The native helper is built from the same pinned whisper.cpp revision and its license is retained with that runtime. https://huggingface.co/ggml-org/whisper-vad and https://github.com/snakers4/silero-vad

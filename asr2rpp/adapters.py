@@ -22,6 +22,8 @@ class Unit:
     speaker: str | None = None
     granularity: str = 'segment'
     method: str = 'native_interval'
+    owner_start: float | None = None
+    owner_end: float | None = None
 
 @dataclass
 class Result:
@@ -99,7 +101,7 @@ def process_environment(binary: Path) -> dict:
     env['OMP_NUM_THREADS'] = env.get('ASR2RPP_THREADS', '4')
     # Never add generic /usr/lib: it can contain incompatible system libraries.
     # Only explicitly recognize libraries belonging to a native speech executable.
-    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'audiocpp_cli', 'nemo-speech'}:
+    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:
         for directory in (binary.resolve().parent, binary.resolve().parent.parent / 'lib'):
             if list(directory.glob('libggml*.so*')):
                 env['LD_LIBRARY_PATH'] = str(directory)
@@ -264,6 +266,7 @@ WHISPER_VALUE_OPTIONS = {
     'vad_samples_overlap': '-vo',
 }
 WHISPER_FLAG_OPTIONS = {
+    'no_timestamps': '-nt',
     'split_on_word': '-sow',
     'no_fallback': '-nf',
     'translate': '-tr',
@@ -305,7 +308,8 @@ def split_engine_parameters(model: Model, overrides: dict | None) -> tuple[dict,
             session[key[len('session.'):]] = value
         else:
             request[key] = value
-    return request, session
+    from .inference_policy import constrain_parameters
+    return constrain_parameters(model, request), session
 
 
 def validate_model_parameter_constraints(model: Model, request: dict, session: dict | None = None) -> None:
@@ -342,6 +346,10 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
     parameters, session_parameters = split_engine_parameters(model, options.get('parameters', {}))
     validate_model_parameter_constraints(model, parameters, session_parameters)
     if model.runtime == 'whisper_cpp':
+        from .inference_policy import policy_for
+        if policy_for(model).segmentation == 'vad':
+            from .vad_asr import infer_vad_whisper
+            return infer_vad_whisper(model, weights, audio, work, options, cancel, progress)
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
                 '-t', str(threads), '-ojf', '-of', str(prefix), '-np']

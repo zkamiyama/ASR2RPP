@@ -17,6 +17,8 @@ from .transcript import clean_bounds, group_units, has_alignable_text, assign_sp
 from .rpp_export import write_reference
 from .media import full_reference_duration
 from .alignment import align_segments
+from .inference_policy import policy_for
+from .adapters import split_engine_parameters, validate_model_parameter_constraints
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
                     '.m4a', '.aac', '.mp4', '.mkv', '.mov', '.webm', '.avi', '.wma'}
@@ -72,6 +74,15 @@ class Settings:
                     raise ValueError(f'Wrong model task for {task}')
                 if stage.device not in {'cpu', 'auto', 'cuda', 'vulkan', 'metal'}:
                     raise ValueError('Unsupported device')
+                model = catalog[stage.model_id]
+                request, session = split_engine_parameters(model, stage.parameters or {})
+                validate_model_parameter_constraints(model, request, session)
+                if policy_for(model).segmentation == 'vad':
+                    from .vad import VadOptions
+                    VadOptions.from_parameters(request, policy_for(model).max_segment_seconds)
+
+        if policy_for(catalog[self.asr.model_id]).requires_alignment and self.align is None:
+            raise ValueError('TOML inference policy requires forced alignment: enable --align or choose timestamp_source=vad in the model definition.')
 
 
 def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
@@ -144,7 +155,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
                 'models': provenance, 'status': 'running', 'reference_mode': 'non_destructive',
                 'audio_stream': '0:a:0', 'time_origin': 'FFmpeg normalized demuxed-media origin',
-                'source_unchanged': None}
+                'source_unchanged': None,
+                'inference_policy': asdict(policy_for(catalog[settings.asr.model_id]))}
     json_write(report / 'manifest.json', manifest)
     try:
         def infer_persist(model, weights_path, audio_path, engine_dir, report_dir,
@@ -159,7 +171,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 # copy diagnostics/results into the user-facing report with Python.
                 if engine_dir.exists():
                     report_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copytree(engine_dir, report_dir, dirs_exist_ok=True)
+                    shutil.copytree(engine_dir, report_dir, dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns('*.wav'))
 
         pcm_by_rate = {}
         def pcm(rate):
@@ -177,7 +190,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('ASR — transcribing')
         asr = infer_persist(
             asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
-            settings.asr.options())
+            dict(settings.asr.options(), alignment_requested=settings.align is not None))
         units = clean_bounds(asr.units, duration, warnings)
         if not units:
             raise ValueError('No timed speech was returned; raw engine output is retained')
@@ -206,6 +219,10 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 model, weights['diar'], audio, work / 'diar', report / 'diar',
                 settings.diar.options())
             units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
+        if any(u.method == 'vad_segment' for u in units):
+            warnings.append('VAD region timestamps used: approximate speech intervals, not word boundaries.')
+        manifest['timestamp_source'] = ('forced_alignment' if settings.align else
+                                        'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr')
         units = group_units(units)
         if not units:
             raise ValueError('No valid intervals remain after normalization')

@@ -33,6 +33,8 @@ def write_reference(output: Path, reference: Path, units, timeline_origin: float
     tracks = [Track('ORIGINAL', (original,), muted=True)]
     edits = {}
     for unit in units:
+        if unit.method == 'vad_window':
+            raise ValueError('Cannot export VAD window boundaries as speech timestamps; forced alignment is required')
         position = timeline + _seconds(unit.start)
         key = (unit.speaker or 'UNKNOWN') if diar else 'Transcript'
         # Reserve the reference name even if a custom diarizer supplies ORIGINAL.

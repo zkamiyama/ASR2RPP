@@ -23,6 +23,34 @@ def run(*args, cwd=None):
 
 def build(name, backend='cpu'):
     repo, revision, target = SOURCES[name]
+    destination = ENGINES / (name + '-' + backend)
+    required = [target + ('.exe' if os.name == 'nt' else '')]
+    if name == 'whisper_cpp' and backend == 'cpu':
+        required.append('whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else ''))
+    if name == 'audio_cpp' and backend == 'cpu':
+        required.append('audiocpp_gguf' + ('.exe' if os.name == 'nt' else ''))
+    # OPT-IN for CI restored caches only. Normal builds are never skipped.
+    manifest = destination / 'build-manifest.json'
+    if os.getenv('ASR2RPP_REUSE_VERIFIED_NATIVE') == '1' and manifest.is_file():
+        try:
+            prior = json.loads(manifest.read_text(encoding='utf-8'))
+            reusable = (prior['commit'] == revision and prior['backend'] == backend
+                        and prior['repository'] == repo and prior['files']
+                        and all(filename in prior['files'] for filename in required))
+            for filename, expected in prior['files'].items():
+                relative = Path(filename)
+                if relative.is_absolute() or '..' in relative.parts:
+                    reusable = False
+                    break
+                file = destination / relative
+                if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != expected:
+                    reusable = False
+                    break
+            if reusable:
+                print('Using manifest-verified cached runtime:', destination, flush=True)
+                return
+        except (KeyError, ValueError, OSError):
+            pass
     source = WORK / name
     source.mkdir(parents=True, exist_ok=True)
     run('git', 'init', source)
@@ -54,6 +82,8 @@ def build(name, backend='cpu'):
         flags += ['-A', 'x64']
     run('cmake', '-S', source, '-B', output, *flags)
     run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', '4')
+    if name == 'whisper_cpp' and backend == 'cpu':
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'whisper-vad-speech-segments', '--parallel', '4')
     if name == 'audio_cpp' and backend == 'cpu':
         run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', '4')
     destination = ENGINES / (name + '-' + backend)
@@ -64,6 +94,12 @@ def build(name, backend='cpu'):
         raise RuntimeError('Missing built executable: ' + binary_name)
     binary = binaries[0]
     shutil.copy2(binary, destination / binary.name)
+    if name == 'whisper_cpp' and backend == 'cpu':
+        vad_name = 'whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else '')
+        vad_binaries = list(output.rglob(vad_name))
+        if not vad_binaries:
+            raise RuntimeError('Missing built VAD helper: ' + vad_name)
+        shutil.copy2(vad_binaries[0], destination / vad_name)
     if name == 'audio_cpp' and backend == 'cpu':
         converter_name = 'audiocpp_gguf' + ('.exe' if os.name == 'nt' else '')
         converters = list(output.rglob(converter_name))

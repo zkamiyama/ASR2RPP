@@ -98,3 +98,10 @@ mainへのpushと`[build]`付きの作業ブランチコミットでWindows ZIP�
 CPUランナー上で単体テスト、元音源参照、実ネイティブASR、frozen版のアライメント・話者分離・日本語パスを検証します。
 GPUがないCIのためRTX 4080/Vulkan上の速度や全工程のピークVRAMは測定していません。
 モデルやユーザー素材はリリースに含めません。第三者ライセンスは`THIRD_PARTY.md`を参照してください。
+
+
+## モデルごとの推論制約
+
+Anime WhisperはTOMLの `constraints.inference` により、VAD短区間化・時刻生成OFF・履歴OFFを使用します。
+強制アライメントOFFではVADの発話区間時刻でRPPを出力し、ONなら単語時刻を精細化します。VADモデルは初回にチェックサム付きで自動取得します。
+設定例と編集済みTOMLの更新方法は [推論制約](docs/inference-policy.md) を参照してください。

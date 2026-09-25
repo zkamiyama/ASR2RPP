@@ -521,11 +521,14 @@ def _set_param_value(widget, spec, value):
         widget.setText(str(value or ""))
 
 
+from .inference_policy import policy_for, policy_notice, ui_parameters
+
+
 class ParameterDialog(QDialog):
     def __init__(self, model, parameters: dict, ui_lang: str, parent=None):
         super().__init__(parent)
         self.model = model
-        self.parameters = dict(parameters or {})
+        self.parameters = ui_parameters(model, parameters)
         self.ui_lang = ui_lang
         self.specs = specs_for(model)
         self.controls = {}
@@ -566,12 +569,18 @@ class ParameterDialog(QDialog):
             else:
                 control = QLineEdit()
             _set_param_value(control, spec, current)
+            control.setEnabled(not spec.get("locked", False))
             control.setToolTip(spec.get("tip_" + ui_lang, spec.get("tip_en", "")))
             label = QLabel(spec.get(ui_lang, spec.get("en", spec["key"])))
             label.setToolTip(control.toolTip())
             form.addRow(label, control)
             self.controls[spec["key"]] = (control, spec)
 
+        notice = policy_notice(model, ui_lang)
+        if notice:
+            text = QLabel(notice)
+            text.setWordWrap(True)
+            form.insertRow(0, text)
         if not self.specs:
             empty = QLabel(TEXT[ui_lang]["no_params"])
             empty.setObjectName("muted")
@@ -702,6 +711,11 @@ class StagePanel(QFrame):
             self.reference.hide()
 
         root.addWidget(self.body)
+        self.policy_label = QLabel()
+        self.policy_label.setWordWrap(True)
+        self.policy_label.setObjectName("muted")
+        self.policy_label.hide()
+        root.addWidget(self.policy_label)
         self.device.currentIndexChanged.connect(self.changed)
         self.language.currentTextChanged.connect(self.changed)
         self.apply_language(ui_lang)
@@ -746,10 +760,14 @@ class StagePanel(QFrame):
         self._model_changed()
 
     def _model_changed(self):
+        self.policy_label.clear()
+        self.policy_label.hide()
         model = self.catalog.get(self.model.currentData())
         if model:
             allowed = {spec["key"] for spec in specs_for(model)}
-            self.parameters = {key: value for key, value in self.parameters.items() if key in allowed}
+            self.parameters = ui_parameters(model, {key: value for key, value in self.parameters.items() if key in allowed})
+            self.policy_label.setText(policy_notice(model, self.ui_lang))
+            self.policy_label.setVisible(bool(self.policy_label.text()))
             default_language = str(model.defaults.get("language", "ja"))
             presets = [default_language, "auto", "ja", "ja-JP", "en", "en-US"]
             if model.family == "qwen3_forced_aligner":
@@ -781,6 +799,10 @@ class StagePanel(QFrame):
                 self.model.setItemText(i, label)
                 self.model.setItemData(i, description, Qt.ItemDataRole.ToolTipRole)
         self.params.setToolTip(tr["parameters"])
+        model = self.catalog.get(self.model.currentData())
+        if model:
+            self.policy_label.setText(policy_notice(model, lang))
+            self.policy_label.setVisible(bool(self.policy_label.text()))
         selected = self.device.currentData()
         self.device.blockSignals(True)
         self.device.clear()
@@ -818,7 +840,7 @@ class StagePanel(QFrame):
             device = "vulkan"
         executable = runtime_paths.get(f"{model.runtime}:{device}", "")
         return Stage(model_id, device, executable, self.language.currentText().strip(),
-                     threads, copy.deepcopy(self.parameters))
+                     threads, ui_parameters(model, copy.deepcopy(self.parameters)))
 
 
 class Worker(QThread):
@@ -849,6 +871,12 @@ class Worker(QThread):
             seen.add(stage.model_id)
             resolve_model(self.catalog[stage.model_id], self.cancel, self.progress.emit,
                           download=True, keep_source=self.keep_sources)
+            model = self.catalog[stage.model_id]
+            if policy_for(model).segmentation == 'vad':
+                from .vad import vad_model
+                from .adapters import split_engine_parameters
+                request, _ = split_engine_parameters(model, stage.parameters or {})
+                vad_model(model, request, self.cancel, self.progress.emit)
 
     def run(self):
         try:
@@ -1339,11 +1367,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 panel.parameters = {}
             model = self.catalog.get(panel.model.currentData())
-            if model and model.disabled_parameters:
-                panel.parameters = {
-                    name: value for name, value in panel.parameters.items()
-                    if name not in model.disabled_parameters
-                }
+            if model:
+                panel.parameters = ui_parameters(model, panel.parameters)
         ref = str(self.preferences.value("preprocess/reference", "original"))
         idx = self.preprocess.reference.findData(ref)
         if idx >= 0:
@@ -1559,6 +1584,19 @@ class MainWindow(QMainWindow):
         return " > ".join(stages)
 
     def update_state(self):
+        model = self.catalog.get(self.asr.model.currentData()) if hasattr(self, 'catalog') else None
+        required = bool(model and policy_for(model).requires_alignment)
+        was_forced = getattr(self, '_alignment_forced', False)
+        if required and not was_forced:
+            self._alignment_previous = self.align.toggle.isChecked()
+        self._alignment_forced = required
+        if required and not self.align.toggle.isChecked():
+            self.align.toggle.setChecked(True)
+        elif was_forced and not required:
+            self.align.toggle.setChecked(getattr(self, '_alignment_previous', False))
+        self.align.toggle.setEnabled(not required)
+        if required:
+            self.align.toggle.setToolTip(policy_notice(model, self.ui_lang))
         if self.worker is None:
             self.status_label.setText(
                 f"{self.tr('ready')}   {self.pipeline_text()}   "

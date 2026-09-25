@@ -64,6 +64,50 @@ shutil.copy2(fixture, unicode_input)
 run('unicode-whisper', ['run', unicode_input, '--asr', 'whisper-base', '--asr-device', 'cpu',
                         '--asr-language', 'en', '--duration', '8',
                         '--output-dir', reports / '日本語出力'], 120)
+# The new policy is data-driven even for Whisper Base; no Anime model-ID branch.
+source_bin = next((Path(os.environ['ASR2RPP_HOME'])/'weights'/'whisper-base').rglob('ggml-base.bin'))
+profile = Path(os.environ['ASR2RPP_HOME'])/'models'/'policy-base.toml'
+profile.write_text('runtime="whisper_cpp"\ntask="asr"\n[source]\npath=' +
+                   json.dumps(str(source_bin.resolve())) +
+                   '\n[constraints.inference]\nsegmentation="vad"\ntimestamps=false\nhistory=false\nmax_segment_seconds=25.0\ntimestamp_source="alignment"\n', encoding='utf-8')
+run('policy-requires-align', ['run', fixture, '--asr', 'policy-base', '--asr-device', 'cpu',
+                             '--asr-language', 'en', '--duration', '8',
+                             '--output-dir', reports/'policy-rejected'], 30)
+results['policy-requires-align']['expected_returncode'] = 2
+assert results['policy-requires-align']['returncode'] == 2
+assert not list((reports/'policy-rejected').glob('*.rpp'))
+profile.write_text(profile.read_text(encoding='utf-8').replace('timestamp_source="alignment"', 'timestamp_source="vad"'), encoding='utf-8')
+run('vad-region-times', ['run', unicode_input, '--asr', 'policy-base', '--asr-device', 'cpu',
+                         '--asr-language', 'en', '--duration', '8', '--output-dir', reports/'vad-region-times'], 180)
+if results['vad-region-times'].get('returncode') == 0:
+    report = next((reports/'vad-region-times').glob('*.asr2rpp'))
+    manifest = json.loads((report/'manifest.json').read_text(encoding='utf-8'))
+    transcript = json.loads((report/'transcript.json').read_text(encoding='utf-8'))
+    vad = json.loads((report/'asr'/'vad.json').read_text(encoding='utf-8'))
+    assert manifest['timestamp_source'] == 'vad' and manifest['source_unchanged']
+    assert transcript['units'] and all(u['method'] == 'vad_segment' for u in transcript['units'])
+    assert not (report/'align').exists() and not list(report.rglob('*.wav'))
+    assert not vad['context_overlap_enabled'] and vad['options']['overlap'] == 0
+    results['vad-region-times']['vad_segments'] = len(transcript['units'])
+    results['vad-region-times']['timestamp_source'] = manifest['timestamp_source']
+run('vad-policy', ['run', unicode_input, '--asr', 'policy-base', '--asr-device', 'cpu',
+                   '--asr-language', 'en', '--align', 'qwen-forced-aligner', '--align-device', 'cpu',
+                   '--align-language', 'English', '--duration', '8', '--output-dir', reports/'vad-policy'], 600)
+if results['vad-policy'].get('returncode') == 0:
+    report = next((reports/'vad-policy').glob('*.asr2rpp'))
+    manifest = json.loads((report/'manifest.json').read_text(encoding='utf-8'))
+    vad = json.loads((report/'asr'/'vad.json').read_text(encoding='utf-8'))
+    transcript = json.loads((report/'transcript.json').read_text(encoding='utf-8'))
+    assert manifest['source_unchanged'] and manifest['inference_policy']['timestamps'] is False
+    assert vad['windows'] and max(w['end']-w['start'] for w in vad['windows']) <= 25.0001
+    assert transcript['units'] and all(u['method'] != 'vad_window' for u in transcript['units'])
+    assert not list(report.rglob('*.wav'))
+    for log in (report/'asr').glob('asr-batch-*.log'):
+        command = json.loads(log.read_text(encoding='utf-8').splitlines()[0])['command']
+        assert '-nt' in command and command[command.index('-mc')+1] == '0' and '--vad' not in command
+    results['vad-policy']['windows'] = len(vad['windows'])
+    results['vad-policy']['aligned_units'] = len(transcript['units'])
+
 # Check that ON/OFF reached the pipeline independently; detailed raw output is retained.
 for name in ('asr-only', 'diar-only', 'align-only', 'both'):
     manifests = list((reports / name).glob('*.asr2rpp/manifest.json'))
@@ -85,4 +129,4 @@ for name in ('asr-only', 'diar-only', 'align-only', 'both'):
 
 (reports / 'summary.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
 print(json.dumps(results, indent=2))
-raise SystemExit(0 if all(v.get('returncode') == 0 for v in results.values()) else 1)
+raise SystemExit(0 if all(v.get('returncode') == v.get('expected_returncode', 0) for v in results.values()) else 1)

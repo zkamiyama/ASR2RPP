@@ -188,6 +188,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     inspector_scroll = window.findChild(QScrollArea, "inspectorScroll")
     assert inspector_scroll is not None
     assert inspector_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    window.asr.model.setCurrentIndex(window.asr.model.findData("whisper-base"))
     # Disabled optional stages collapse to their header only. Explicitly
     # switch them off because earlier GUI migration tests may persist settings.
     window.preprocess.toggle.setChecked(False)
