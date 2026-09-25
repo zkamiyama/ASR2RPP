@@ -106,6 +106,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     if "QT_QPA_PLATFORM" not in os.environ:
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("ASR2RPP_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP", "1")
     monkeypatch.delenv("ASR2RPP_WEIGHTS_DIR", raising=False)
     monkeypatch.delenv("ASR2RPP_CACHE_DIR", raising=False)
 
