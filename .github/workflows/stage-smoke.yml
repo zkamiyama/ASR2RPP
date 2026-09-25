@@ -1,4 +1,5 @@
 name: Frozen Windows optional-stage checks
+# CPU runner: optional native stages are explicitly exercised with CPU backends.
 on:
   push:
     branches: [feat/queue-gui]
