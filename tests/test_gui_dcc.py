@@ -129,7 +129,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
 
     assert window.windowTitle() == "ASR2RPP"
     assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
-    assert window.run_button.text() == "GO!"
+    assert window.run_button.text() == "GO"
     assert isinstance(window.run_button, QPushButton)
     assert window.run_button.icon().isNull()
     assert window.run_button.height() == window.settings_button.height() == window.language_button.height()
