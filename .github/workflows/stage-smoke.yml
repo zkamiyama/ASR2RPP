@@ -1,0 +1,51 @@
+name: Frozen Windows optional-stage checks
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful ASR2RPP application workflow run ID
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  stages:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Resolve the exact source of the successful build
+        id: build
+        uses: actions/github-script@v7
+        env:
+          BUILD_RUN_ID: ${{ inputs.build_run }}
+        with:
+          script: |
+            const run_id = Number(process.env.BUILD_RUN_ID);
+            if (!Number.isSafeInteger(run_id)) throw new Error('Invalid run ID');
+            const {data} = await github.rest.actions.getWorkflowRun({...context.repo, run_id});
+            if (data.status !== 'completed' || data.conclusion !== 'success') {
+              throw new Error('Select a completed, successful build');
+            }
+            core.setOutput('sha', data.head_sha);
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.build.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ASR2RPP-Windows-x64-${{ inputs.build_run }}
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: download
+      - run: python tools/smoke_optional_stages.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optional-stage-reports-${{ github.run_id }}
+          path: reports/stages/
+          retention-days: 7

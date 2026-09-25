@@ -1,0 +1,11 @@
+runtime = "audio_cpp"
+task = "diar"
+family = "nemotron_3_diar"
+name = "Nemotron 3 Diarization · BF16"
+description = "最大8話者。音源分離は行いません。audio.cpp 0.8.2以降の対応ビルドが必要です。"
+[source]
+repo = "https://huggingface.co/audio-cpp/Nemotron-3-Diarization-GGUF"
+files = ["nemotron-3-diarization-bf16.gguf"]
+[defaults.request]
+speaker_threshold = 0.5
+speaker_min_frames = 10

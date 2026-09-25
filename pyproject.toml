@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asr2rpp"
+version = "0.1.0"
+description = "Native speech inference to non-destructive REAPER projects"
+requires-python = ">=3.11"
+dependencies = ["numpy>=2,<3", "safetensors>=0.4,<1"]
+
+[project.optional-dependencies]
+gui = ["PySide6==6.8.3"]
+dev = ["pytest>=8", "PySide6==6.8.3", "pyinstaller==6.22.3"]
+
+[project.scripts]
+asr2rpp = "asr2rpp.cli:main"
+
+[tool.setuptools]
+packages = ["asr2rpp"]
+py-modules = ["rpp_writer"]

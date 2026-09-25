@@ -1,0 +1,13 @@
+final-vulkan-gear-package-20260924
+2026-09-24 rebuild after validated torch-free big_beta7 auto-conversion
+2026-09-24 rebuild with PyInstaller 6.22.3 and validated big_beta7 converter
+2026-09-24 storage settings and GUI review final build
+2026-09-24 build after storage-directory settings and GUI audit
+2026-09-24 final GUI storage/font audit build
+2026-09-24 final dark DCC GUI build with QtSvg icons
+2026-09-24 retry final DCC Windows build after Vulkan preference migration
+2026-09-24 final compact DCC build with collapsed disabled stages
+2026-09-24 retry compact DCC build with isolated saved-state test
+2026-09-24 final DCC dark UI + native cpp parameter audit
+2026-09-24 compact Maya-style inspector + TOML model constraints
+2026-09-24 maya-compact dcc gui final build

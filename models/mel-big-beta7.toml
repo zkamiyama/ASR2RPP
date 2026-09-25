@@ -1,0 +1,29 @@
+# pcunwa/Mel-Band-Roformer-big / big_beta7.ckpt
+# `モデルを取得`だけで、ユーザースペース内にF16 GGUFへ自動変換します。
+# PyTorchは使用しません。変換中間のSafeTensorsは成功後に削除されます。
+runtime = "audio_cpp"
+task = "sep"
+family = "mel_band_roformer"
+name = "Mel-Band RoFormer big beta7 · F16"
+sample_rate = 44100
+description = "背景音除去用。元CKPTを安全なtorch-free readerで検証し、audio.cpp F16 GGUFへ自動変換します。"
+
+[source]
+repo = "pcunwa/Mel-Band-Roformer-big"
+revision = "1508d1ed7c54cb0017b2cbfaabdaf3ca87d2cf74"
+files = ["big_beta7.ckpt", "big_beta7.yaml"]
+entry = "big_beta7-f16.gguf"
+
+[source.sha256]
+"big_beta7.ckpt" = "9d68b9a8689a3500c45d3418a7811934e557760db07285f483088a0965b0eb88"
+
+[source.convert]
+kind = "mel_band_roformer_ckpt_to_gguf"
+checkpoint = "big_beta7.ckpt"
+config = "big_beta7.yaml"
+output = "big_beta7-f16.gguf"
+precision = "f16"
+keep_intermediate = false
+
+[defaults.session]
+num_overlap = 2

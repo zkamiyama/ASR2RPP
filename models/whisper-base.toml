@@ -1,0 +1,10 @@
+# Default multilingual smoke-test model. No Python model runtime required.
+runtime = "whisper_cpp"
+task = "asr"
+name = "Whisper Base"
+description = "標準Whisper。精度の最終推奨ではなく、導入と動作確認用です。"
+[source]
+repo = "https://huggingface.co/ggerganov/whisper.cpp"
+files = ["ggml-base.bin"]
+[defaults]
+language = "ja"

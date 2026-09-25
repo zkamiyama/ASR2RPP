@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+*.spec
+reports/
+engines/
+*.wav
+*.mp4
+*.gguf
+*.bin
+*.zip
