@@ -1,0 +1,128 @@
+name: Public Anime Whisper offline assets
+on:
+  push:
+    branches: [validation/anime-whisper-conversion]
+    paths: ['.github/workflows/anime-offline-kit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Acquire public weights only; no user media is fetched here
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          mkdir -p offline/source offline/existing offline/metadata
+          python - <<'PY'
+          import sys, json, hashlib
+          from pathlib import Path
+          sys.path.insert(0, 'experiments/anime-whisper')
+          import convert_anime_whisper as conv
+          conv.acquire(Path('offline/source'))
+          revision = '35b467f144c62a3ab2d84bfbb517d6af5135444a'
+          conv.download(f'https://huggingface.co/Aratako/anime-whisper-ggml/resolve/{revision}/ggml-anime-whisper.bin', Path('offline/existing/ggml-anime-whisper.bin'), 'bce42c15312fcdbdcc8432b2ce63ba967f4cc3d2cc783fd6ab2ba264caf0db8d')
+          for name, directory in [('source', Path('offline/source')), ('existing', Path('offline/existing'))]:
+              big = directory / ('model.safetensors' if name == 'source' else 'ggml-anime-whisper.bin')
+              record = {'name': big.name, 'size': big.stat().st_size, 'sha256': conv.digest(big), 'parts': []}
+              with big.open('rb') as inp:
+                  for n in range(16):
+                      block = inp.read(384*1024**2)
+                      if not block:
+                          break
+                      part = Path('offline') / f'{name}-{n:02d}.part'
+                      part.write_bytes(block)
+                      record['parts'].append({'file': part.name, 'size': len(block), 'sha256': hashlib.sha256(block).hexdigest()})
+              Path(f'offline/metadata/{name}-parts.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
+          PY
+      - name: Build pinned native CPU runtime
+        run: |
+          python tools/build_native.py whisper_cpp:cpu
+          tar -czf offline/metadata/whisper-cpu-linux.tar.gz -C engines whisper_cpp-cpu
+          cp offline/source/*.json offline/source/mel_filters.npz offline/metadata/
+          cp experiments/anime-whisper/LICENSE offline/metadata/CONVERTER-LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-offline-meta-${{ github.run_id }}
+          path: offline/metadata/
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-00-${{ github.run_id }}
+          path: offline/source-00.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-01-${{ github.run_id }}
+          path: offline/source-01.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-02-${{ github.run_id }}
+          path: offline/source-02.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-03-${{ github.run_id }}
+          path: offline/source-03.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-04-${{ github.run_id }}
+          path: offline/source-04.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-05-${{ github.run_id }}
+          path: offline/source-05.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-06-${{ github.run_id }}
+          path: offline/source-06.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-source-07-${{ github.run_id }}
+          path: offline/source-07.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-existing-00-${{ github.run_id }}
+          path: offline/existing-00.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-existing-01-${{ github.run_id }}
+          path: offline/existing-01.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-existing-02-${{ github.run_id }}
+          path: offline/existing-02.part
+          compression-level: 1
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anime-existing-03-${{ github.run_id }}
+          path: offline/existing-03.part
+          compression-level: 1
+          retention-days: 2
