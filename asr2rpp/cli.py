@@ -89,7 +89,7 @@ def main(argv=None):
         if args.command == 'models':
             if args.action == 'list':
                 for model in catalog.values():
-                    print(f'{model.id}\t{model.task}\t{model.runtime}\t{model.label}')
+                    print(f'{model.id}\t{model.task}\t{model.runtime}')
             else:
                 for model_id in args.ids:
                     if model_id not in catalog:
