@@ -61,21 +61,33 @@ def executable(runtime: str, device: str, custom: str = '') -> Path:
     raise FileNotFoundError(f'{runtime} ({device}) is not installed. Select its executable in Runtime settings.')
 
 
-def ffmpeg_path(custom: str = '') -> str:
+def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
     if custom:
-        if not Path(custom).is_file():
+        path = Path(custom).expanduser().resolve()
+        if not path.is_file():
             raise FileNotFoundError(custom)
-        return custom
-    for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
-        if root.exists():
-            for pattern in ('ffmpeg.exe', 'ffmpeg', 'ffmpeg-*.exe'):
-                found = list(root.rglob(pattern))
-                if found:
-                    return str(found[0])
+        return str(path)
+
     found = shutil.which('ffmpeg')
     if found:
         return found
-    raise FileNotFoundError('FFmpeg not found. Select ffmpeg in Runtime settings.')
+
+    # Existing portable/development layouts remain supported, but new releases
+    # do not redistribute FFmpeg inside the application ZIP.
+    for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
+        if root.exists():
+            for pattern in ('ffmpeg.exe', 'ffmpeg', 'ffmpeg-*.exe'):
+                matches = sorted(root.rglob(pattern))
+                if matches:
+                    return str(matches[0])
+
+    from .ffmpeg_runtime import installed_ffmpeg, ensure_ffmpeg
+    installed = installed_ffmpeg()
+    if installed:
+        return str(installed)
+    if sys.platform == 'win32':
+        return str(ensure_ffmpeg(progress=progress, cancel=cancel))
+    raise FileNotFoundError('FFmpeg not found in PATH or ASR2RPP user runtime data.')
 
 
 def process_environment(binary: Path) -> dict:
@@ -126,7 +138,7 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                     except queue.Empty:
                         pass
                 if process.returncode:
-                    raise RuntimeError(f'{Path(argv[0]).name} exited {process.returncode}. See {log}')
+                    raise RuntimeError(f'{Path(argv[0]).name} exited {process.returncode}')
             finally:
                 if process.poll() is None:
                     if os.name == 'nt':

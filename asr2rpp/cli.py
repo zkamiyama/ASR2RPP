@@ -70,7 +70,8 @@ def main(argv=None):
         except Exception as exc:
             failures.append('audiocpp_gguf: ' + str(exc))
         try:
-            from .adapters import executable
+            from .adapters import executable, ffmpeg_path
+            print('ffmpeg', ffmpeg_path(progress=lambda text: print(text, file=sys.stderr, flush=True)), 'OK')
             for runtime in ('whisper_cpp', 'audio_cpp'):
                 path = executable(runtime, 'cpu')
                 print(runtime + ':cpu', path, 'OK')

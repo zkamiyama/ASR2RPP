@@ -104,7 +104,7 @@ def decode(source: Path, destination: Path, rate: int, settings: Settings,
     if length:
         filters += f':duration={length}'
     filters += ',asetpts=PTS-STARTPTS'
-    argv = [ffmpeg_path(settings.ffmpeg), '-hide_banner', '-loglevel', 'error', '-nostdin',
+    argv = [ffmpeg_path(settings.ffmpeg, progress, cancel), '-hide_banner', '-loglevel', 'error', '-nostdin',
             '-i', str(source), '-map', '0:a:0', '-vn', '-af', filters,
             '-ac', '1', '-ar', str(rate), '-c:a', 'pcm_s16le', '-y', str(destination)]
     run_process(argv, cancel, progress, destination.with_suffix('.decode.log'))

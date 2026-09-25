@@ -103,7 +103,7 @@ def separate(source: Path, work: Path, settings: Settings, model: Model, weights
     if settings.clip_duration:
         filters += f':duration={settings.clip_duration}'
     filters += ',asetpts=PTS-STARTPTS'
-    run_process([ffmpeg_path(settings.ffmpeg), '-hide_banner', '-loglevel', 'error', '-nostdin',
+    run_process([ffmpeg_path(settings.ffmpeg, progress, cancel), '-hide_banner', '-loglevel', 'error', '-nostdin',
                  '-i', str(source), '-map', '0:a:0', '-vn', '-af', filters, '-ac', '2',
                  '-ar', str(rate), '-c:a', 'pcm_f32le', '-y', str(mixture)],
                 cancel, progress, logs / 'preprocess-decode.log')
