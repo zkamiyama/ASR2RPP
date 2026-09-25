@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +25,8 @@ def make_archive() -> bytes:
     with zipfile.ZipFile(buffer, "w") as package:
         package.writestr("ffmpeg-master-latest-win64-lgpl-shared/bin/ffmpeg.exe", b"fake-ffmpeg")
         package.writestr("ffmpeg-master-latest-win64-lgpl-shared/bin/avcodec.dll", b"fake-dll")
-        package.writestr("ffmpeg-master-latest-win64-lgpl-shared/doc/readme.txt", b"not installed")
+        package.writestr("ffmpeg-master-latest-win64-lgpl-shared/LICENSE.txt", b"LGPL runtime license")
+        package.writestr("ffmpeg-master-latest-win64-lgpl-shared/doc/extra.txt", b"not installed")
     return buffer.getvalue()
 
 
@@ -63,6 +65,7 @@ def test_verified_ffmpeg_download_is_cached_in_user_data(tmp_path, monkeypatch):
     assert executable.read_bytes() == b"fake-ffmpeg"
     assert (executable.parent / "avcodec.dll").read_bytes() == b"fake-dll"
     assert not (executable.parent.parent / "doc").exists()
+    assert (executable.parent.parent / "LICENSE.txt").read_bytes() == b"LGPL runtime license"
     manifest = json.loads((tmp_path / "runtime" / "installed.json").read_text(encoding="utf-8"))
     assert manifest["provider"] == runtime.PROVIDER
     assert manifest["sha256"] == expected
@@ -91,3 +94,10 @@ def test_bad_ffmpeg_checksum_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         runtime.ensure_ffmpeg()
     assert runtime.installed_ffmpeg() is None
+
+
+def test_windows_packager_does_not_bundle_ffmpeg():
+    source = Path("tools/package_windows.py").read_text(encoding="utf-8")
+    assert "imageio_ffmpeg" not in source
+    assert "engines/ffmpeg" not in source
+    assert "FFmpeg must not be bundled" in source
