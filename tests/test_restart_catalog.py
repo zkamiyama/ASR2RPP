@@ -252,3 +252,16 @@ def test_bootstrap_owner_and_late_progress_signals(tmp_path,monkeypatch):
     monkeypatch.setattr(gui.FFmpegBootstrap,'start',lambda _:pytest.fail('Duplicate bootstrap'))
     window.start_ffmpeg_bootstrap();assert window.ffmpeg_worker is new
     window.ffmpeg_worker=None;window.close()
+
+
+@pytest.mark.parametrize('lines', [[], ['total_size=N/A','progress=end'],
+    ['total_size=0','progress=end'], ['total_size=123','progress=end'], ['total_size=96000']])
+def test_reference_duration_never_accepts_partial_or_invalid_pcm_count(tmp_path,monkeypatch,lines):
+    from asr2rpp import media
+    from asr2rpp.pipeline import Stage, Settings
+    monkeypatch.setattr(media,'ffmpeg_path',lambda *a:'ffmpeg')
+    def run(argv,cancel,progress,log):
+        for line in lines: progress(line)
+    monkeypatch.setattr(media,'run_process',run)
+    with pytest.raises(ValueError,match='complete PCM'):
+        media.full_reference_duration(tmp_path/'clip.mp4',Settings(Stage('a'),clip_start=90),25,tmp_path,threading.Event(),lambda _:None)

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 import math
+import os
 import struct
 import wave
 from .catalog import checkpoint
@@ -84,26 +85,34 @@ def full_reference_duration(source, settings, known_duration, work, cancel, prog
         if length <= 0:
             raise ValueError('Reference duration must be positive')
         return length
-    last_us = 0
+    # Some valid FFmpeg builds report out_time_us=N/A for audio-only null
+    # outputs. Raw PCM byte count is exact and does not depend on progress PTS.
+    # Write to the OS null device, never another full WAV on the user's disk.
+    total_bytes = None
+    finished = False
     def collect(line):
-        nonlocal last_us
-        if line.startswith('out_time_us='):
+        nonlocal total_bytes, finished
+        if line.startswith('total_size='):
             try:
-                last_us = max(last_us, int(line.split('=', 1)[1]))
+                value = int(line.split('=', 1)[1])
+                if value >= 0:
+                    total_bytes = value
             except ValueError:
                 pass
-        elif not line.startswith(('out_time_', 'bitrate=', 'total_size=', 'speed=', 'progress=')):
+        elif line == 'progress=end':
+            finished = True
+        elif not line.startswith(('out_time', 'bitrate=', 'speed=', 'progress=', 'dup_frames=', 'drop_frames=')):
             progress(line)
     progress('ORIGINAL — measuring the full reference duration')
     run_process([ffmpeg_path(settings.ffmpeg, progress, cancel), '-hide_banner',
                  '-loglevel', 'error', '-nostdin', '-nostats', '-progress', 'pipe:1',
                  '-i', str(source), '-map', '0:a:0', '-vn',
-                 '-af', 'aresample=48000:async=1:first_pts=0', '-ac', '1',
-                 '-c:a', 'pcm_s16le', '-f', 'null', '-'],
+                 '-af', 'aresample=48000:async=1:first_pts=0', '-ac', '1', '-ar', '48000',
+                 '-c:a', 'pcm_s16le', '-f', 's16le', '-y', os.devnull],
                 cancel, collect, Path(work) / 'reference-duration.log')
-    if last_us <= 0:
-        raise ValueError('Could not determine the full reference duration')
-    return Fraction(last_us, 1_000_000)
+    if not finished or total_bytes is None or total_bytes <= 0 or total_bytes % 2:
+        raise ValueError('Could not determine the full reference duration from complete PCM output')
+    return Fraction(total_bytes, 2 * 48000)
 
 
 @timed('slice_pcm')

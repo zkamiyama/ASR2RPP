@@ -1134,6 +1134,8 @@ class MainWindow(QMainWindow):
     def __init__(self, preferences=None):
         super().__init__()
         self.setWindowTitle("ASR2RPP")
+        from .branding import configure_window
+        configure_window(self)
         self.resize(1180, 760)
         self.setMinimumSize(920, 600)
 
@@ -1726,6 +1728,22 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(self.tr("preparing"))
             self.worker.start()
         except Exception as exc:
+            # A failed QThread.start must not leave the GUI permanently busy.
+            # A thread that did start keeps ownership until its finished signal.
+            worker = self.worker
+            if worker is not None:
+                if worker.isRunning():
+                    self._stopping = True
+                    worker.cancel.set()
+                    self.update_state()
+                else:
+                    if self._run_ledger is not None:
+                        for index in self._run_ledger.pending:
+                            self._apply_item_event(index, 'failed', str(exc))
+                    self.worker = None
+                    self._stopping = False
+                    self.set_busy(False)
+                    worker.deleteLater()
             QMessageBox.warning(self, "ASR2RPP", str(exc))
 
     def show_progress(self, value):
@@ -1746,6 +1764,10 @@ class MainWindow(QMainWindow):
         sender = self.sender()
         if sender is not None and sender is not self.worker:
             return  # A queued signal from a finished attempt must not touch a new one.
+        self._apply_item_event(index, status, detail)
+
+    def _apply_item_event(self, index, status, detail):
+        # Internal reconciliation may run inside a button slot: it is not a worker signal.
         if self._run_ledger is None or not 0 <= index < len(self.entries):
             return
         event = self._run_ledger.accept(index, status, detail)
@@ -1769,7 +1791,7 @@ class MainWindow(QMainWindow):
                 status, detail = worker.ledger.records.get(index, ('waiting', ''))
                 if status not in TERMINAL:
                     status, detail = ('stopped', '') if worker.cancel.is_set() else ('failed', 'Worker ended without a result')
-                self.item_changed(index, status, detail)
+                self._apply_item_event(index, status, detail)
         self.worker = None
         self._stopping = False
         self.set_busy(False)
