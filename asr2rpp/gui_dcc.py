@@ -1739,7 +1739,7 @@ class MainWindow(QMainWindow):
                 else:
                     if self._run_ledger is not None:
                         for index in self._run_ledger.pending:
-                            self.item_changed(index, 'failed', str(exc))
+                            self._apply_item_event(index, 'failed', str(exc))
                     self.worker = None
                     self._stopping = False
                     self.set_busy(False)
@@ -1764,6 +1764,10 @@ class MainWindow(QMainWindow):
         sender = self.sender()
         if sender is not None and sender is not self.worker:
             return  # A queued signal from a finished attempt must not touch a new one.
+        self._apply_item_event(index, status, detail)
+
+    def _apply_item_event(self, index, status, detail):
+        # Internal reconciliation may run inside a button slot: it is not a worker signal.
         if self._run_ledger is None or not 0 <= index < len(self.entries):
             return
         event = self._run_ledger.accept(index, status, detail)
@@ -1787,7 +1791,7 @@ class MainWindow(QMainWindow):
                 status, detail = worker.ledger.records.get(index, ('waiting', ''))
                 if status not in TERMINAL:
                     status, detail = ('stopped', '') if worker.cancel.is_set() else ('failed', 'Worker ended without a result')
-                self.item_changed(index, status, detail)
+                self._apply_item_event(index, status, detail)
         self.worker = None
         self._stopping = False
         self.set_busy(False)

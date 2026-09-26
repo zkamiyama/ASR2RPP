@@ -78,7 +78,7 @@ normally kept under `%LOCALAPPDATA%\ASR2RPP` and can be reused.
 
 The app reads the **`models` folder next to the EXE directly**. It does not copy
 these TOML definitions into a temporary folder. Most users do not need to edit them.
-For a custom model, use **Settings → Advanced → Open custom TOMLs** and give the
+For a custom model, use **Settings → Advanced → Open custom TOML** and give the
 TOML a unique filename. Do not reuse a built-in model's filename. Definitions are
 reloaded before GO; invalid or conflicting definitions are reported instead of
 silently selecting a different model.

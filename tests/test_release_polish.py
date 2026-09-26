@@ -43,10 +43,11 @@ def test_thread_start_failure_unlocks_go_and_can_retry(tmp_path, monkeypatch, ap
     source.write_bytes(b'test input; native inference stubbed')
     window.add_paths([str(source)])
     try:
-        window.start_work()
+        window.run_button.click()
         assert errors and 'could not start' in errors[-1]
         assert window.worker is None and not window._stopping
         assert window.entries[0]['status'] == 'failed'
+        assert window.completed == window._run_ledger.completed == 1
         assert window.run_button.isEnabled() and window.run_button.text() == 'GO'
         assert window.settings_button.isEnabled()
         monkeypatch.setattr(gui.Worker, 'start', original_start)
@@ -55,7 +56,7 @@ def test_thread_start_failure_unlocks_go_and_can_retry(tmp_path, monkeypatch, ap
             output.write_text('test result')
             return output
         monkeypatch.setattr(gui, 'run_job', success)
-        window.start_work()
+        window.run_button.click()
         deadline = time.monotonic()+5
         while window.worker is not None:
             app.processEvents()
