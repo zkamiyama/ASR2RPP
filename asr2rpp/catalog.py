@@ -17,6 +17,8 @@ class Cancelled(Exception):
     pass
 
 
+from .performance import timed
+
 def checkpoint(cancel: threading.Event) -> None:
     if cancel.is_set():
         raise Cancelled('Cancelled by user')
@@ -189,6 +191,7 @@ def load_catalog(directory: Path | None = None) -> tuple[dict[str, Model], list[
     return models, errors
 
 
+@timed('sha256')
 def digest(path: Path) -> str:
     hasher = hashlib.sha256()
     with path.open('rb') as handle:
@@ -197,16 +200,23 @@ def digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def local_model_path(model):
+    """Cheap path validation; checksum remains mandatory at actual resolution."""
+    path = Path(model.source['path']).expanduser()
+    if not path.is_absolute():
+        path = (model.definition.parent if model.definition else model_directory()) / path
+    path = path.resolve()
+    if not path.exists():
+        raise FileNotFoundError(f'Model file not found: {path}')
+    return path
+
+
+@timed('model_resolution')
 def resolve_model(model: Model, cancel: threading.Event, progress, download: bool = False, keep_source: bool = False) -> tuple[Path, dict]:
     """Cache identity includes the complete source definition; edits cannot reuse stale weights."""
     checkpoint(cancel)
     if 'path' in model.source:
-        path = Path(model.source['path']).expanduser()
-        if not path.is_absolute():
-            path = (model.definition.parent if model.definition else model_directory()) / path
-        path = path.resolve()
-        if not path.exists():
-            raise FileNotFoundError(f'Model file not found: {path}')
+        path = local_model_path(model)
         return path, {'local_path': str(path), 'sha256': digest(path) if path.is_file() else None}
     identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
     directory = weights_root() / model.id / identity
@@ -253,10 +263,12 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
                 if total and total + 256 * 1024 ** 2 > shutil.disk_usage(directory).free:
                     raise OSError('Insufficient disk space for model')
                 done, notified = 0, -1
+                downloaded_sha = hashlib.sha256()
                 with partial.open('wb') as handle:
                     while block := response.read(1024 * 1024):
                         checkpoint(cancel)
                         handle.write(block)
+                        downloaded_sha.update(block)
                         done += len(block)
                         bucket = done // (16 * 1024 ** 2)
                         if bucket != notified:
@@ -264,7 +276,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
                             notified = bucket
                 if total and done != total:
                     raise OSError('Incomplete model download')
-            sha = digest(partial)
+            sha = downloaded_sha.hexdigest()
             if expected and sha != expected:
                 raise ValueError('Model SHA-256 mismatch')
             if partial.stat().st_size < 1024:

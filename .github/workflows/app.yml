@@ -1,8 +1,8 @@
 name: ASR2RPP application
 on:
   push:
-    branches: [main, feat/queue-gui, feat/vad-region-timestamps]
-    paths: ['asr2rpp/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
+    branches: [main, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance]
+    paths: ['asr2rpp/**', 'native/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -23,6 +23,11 @@ jobs:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 fonts-noto-cjk
       - run: python -m pip install pytest PySide6==6.8.3 numpy safetensors
+      - name: Native PCM protocol and numeric equivalence tests
+        run: |
+          cmake -S native -B build/pcm-tests
+          cmake --build build/pcm-tests --config Release
+          ctest --test-dir build/pcm-tests -C Release --output-on-failure
       - run: python -m pytest tests -v --junitxml=reports/tests.xml
       - if: always()
         run: mkdir -p reports && git archive --format=zip --output=reports/source.zip HEAD
@@ -48,6 +53,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install PySide6==6.8.3 pyinstaller==6.22.3 pytest numpy safetensors
+      - name: Windows native PCM protocol tests
+        run: |
+          cmake -S native -B build/pcm-tests
+          cmake --build build/pcm-tests --config Release
+          ctest --test-dir build/pcm-tests -C Release --output-on-failure
       - run: python -m pytest tests -v --junitxml=reports/windows-tests.xml
         env:
           # Use the native Windows QPA for screenshots. The offscreen plugin on
@@ -60,7 +70,7 @@ jobs:
           path: |
             engines/
             build/native/whisper_cpp/samples/
-          key: win-native-cpu-vulkan-v1-${{ hashFiles('tools/build_native.py') }}
+          key: win-native-cpu-vulkan-v1-${{ hashFiles('tools/build_native.py', 'tools/patch_whisper.py', 'native/**') }}
           restore-keys: win-native-cpu-vulkan-v1-
       - name: Install Vulkan SDK for native runtime builds
         if: steps.native.outputs.cache-hit != 'true'

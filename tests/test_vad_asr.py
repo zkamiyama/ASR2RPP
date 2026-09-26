@@ -85,6 +85,7 @@ def test_vad_asr_uses_independent_windows_ignores_native_fake_times(tmp_path,mon
     binary=tmp_path/'whisper-cli';binary.touch()
     windows=[SpeechWindow(1,2,1,2),SpeechWindow(8,10,8,10)]
     monkeypatch.setattr(asr,'executable',lambda *a:binary)
+    monkeypatch.setattr(asr,'capabilities',lambda *a:frozenset())
     monkeypatch.setattr(asr,'detect_windows',lambda *a,**kw:(windows,{'windows':[]}))
     commands=[]
     def native(argv,cancel,progress,log):

@@ -1,0 +1,56 @@
+{
+  "environment": "RTX 4080 / WSL / CUDA; same settings, warm local caches; local-file SHA verification included",
+  "asr_before_seconds": [
+    36.774195,
+    37.014325,
+    37.176787
+  ],
+  "asr_after_seconds": [
+    23.735767,
+    23.985819,
+    24.580293
+  ],
+  "asr_median_before": 37.014325,
+  "asr_median_after": 23.985819,
+  "comparisons": [
+    {
+      "scenario": "asr",
+      "before_seconds": 36.774195,
+      "after_seconds": 23.735767,
+      "exact_normalized_output_match": true
+    },
+    {
+      "scenario": "queue",
+      "before_seconds": 26.19821,
+      "after_seconds": 21.545639,
+      "exact_normalized_output_match": true
+    },
+    {
+      "scenario": "all",
+      "before_seconds": 25.887512,
+      "after_seconds": 24.778508,
+      "exact_normalized_output_match": true
+    },
+    {
+      "scenario": "align",
+      "before_seconds": 21.293905,
+      "after_seconds": 19.645636,
+      "exact_normalized_output_match": true
+    },
+    {
+      "scenario": "diar",
+      "before_seconds": 13.73592,
+      "after_seconds": 13.804923,
+      "exact_normalized_output_match": true
+    },
+    {
+      "scenario": "nemotron",
+      "before_seconds": 8.193393,
+      "after_seconds": 7.949695,
+      "exact_normalized_output_match": true
+    }
+  ],
+  "no_model_or_decode_parameter_reduction": true,
+  "private_media_included": false,
+  "asr_reduction_pct": 35.198552
+}

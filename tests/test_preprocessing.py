@@ -61,15 +61,14 @@ def test_pipeline_reference_and_cleanup(tmp_path, monkeypatch, mode, same):
         path = work / 'stems' / 'vocals.wav'
         make_wave(path)
         return path, {'test_fixture': True}
-    def fake_recognition(path, settings, models, cancel, progress):
+    def fake_recognition(path, settings, models, cancel, progress, *, _analysis_report):
         assert path != source and settings.clip_start == 0 and settings.preprocess is None
         captured.append(path)
-        out = Path(settings.output_directory) / 'vocals.rpp'
-        report = out.with_suffix('.asr2rpp')
+        report = Path(_analysis_report)
         report.mkdir(parents=True)
         (report / 'transcript.json').write_text(json.dumps({'units': [asdict(Unit(.25, 1.5, '発話'))], 'warnings': []}), encoding='utf-8')
-        out.write_text('Mock intermediate RPP', encoding='utf-8')
-        return out
+        (report/'manifest.json').write_text(json.dumps({'timestamp_source':'native_asr'}))
+        return report
     monkeypatch.setattr(prep, 'separate', fake_separator)
     monkeypatch.setattr(prep.core, 'run_job', fake_recognition)
     settings = prep.Settings(Stage('asr'), preprocess=Stage('sep'), reference_audio=mode,
@@ -141,5 +140,3 @@ def test_raw_checkpoint_is_not_a_different_model(tmp_path):
     with pytest.raises(ValueError, match='converted'):
         prep.separate(tmp_path/'input.wav', tmp_path/'work', settings, model,
                       tmp_path/'big_beta7.ckpt', threading.Event(), print)
-
-

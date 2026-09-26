@@ -180,7 +180,7 @@ def test_queue_original_track_and_alignment_end_to_end(tmp_path, monkeypatch):
                                      threading.Event(), lambda _: None, lambda *args: events.append(args))
     assert set(outputs) == {0, 1}, events
     assert len(commands) == 1  # shares model across both files
-    assert len(decodes) == 4  # one ASR and one alignment decode per file, not per segment
+    assert len(decodes) == 2  # shared 16 kHz PCM: one decode per file across both stages
     for out in outputs.values():
         assert 'LENGTH 3\n' in first_track(out.read_text())
         assert '、' in out.read_text()

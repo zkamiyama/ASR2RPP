@@ -25,6 +25,10 @@ MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '
 MAX_OUTPUT_STEM_CHARS = 120
 
 
+from .performance import timed, profiled, report_directory
+from .diagnostics import persist_tree
+
+
 def compact_output_stem(value: str, max_chars: int = MAX_OUTPUT_STEM_CHARS) -> str:
     """Keep output components short and stable without losing collision resistance."""
     value = value.rstrip(' .') or 'output'
@@ -98,6 +102,7 @@ def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tup
             continue
         try:
             report.mkdir()
+            report_directory(report)
             return output, report
         except FileExistsError:
             continue
@@ -108,6 +113,7 @@ def json_write(path: Path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
 
 
+@timed('decode')
 def decode(source: Path, destination: Path, rate: int, settings: Settings,
            cancel, progress, start: float | None = None, duration: float | None = None) -> float:
     offset = settings.clip_start if start is None else start
@@ -131,7 +137,8 @@ def export_rpp(source: Path, output: Path, units: list[Unit], offset: float,
                     reference_duration=reference_duration)
 
 
-def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel: threading.Event, progress) -> Path:
+@profiled
+def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel: threading.Event, progress, *, _analysis_report: Path | None = None) -> Path:
     settings = copy.deepcopy(settings)
     settings.validate(catalog)
     source = source.expanduser().resolve()
@@ -145,7 +152,13 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             executable(model.runtime, stage.device, stage.executable)
             weights[task], provenance[task] = resolve_model(model, cancel, progress)
     ffmpeg_path(settings.ffmpeg)
-    output, report = reserve_output(source, settings)
+    if _analysis_report is None:
+        output, report = reserve_output(source, settings)
+    else:
+        report = Path(_analysis_report)
+        report.mkdir(parents=True, exist_ok=False)
+        report_directory(report)
+        output = None
     started = time.monotonic()
     warnings, pcm_files = [], []
     cache_directory = cache_root()
@@ -170,9 +183,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 # Keep their working files in the ASCII-ish cache workspace and
                 # copy diagnostics/results into the user-facing report with Python.
                 if engine_dir.exists():
-                    report_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copytree(engine_dir, report_dir, dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns('*.wav'))
+                    persist_tree(engine_dir, report_dir)
 
         pcm_by_rate = {}
         def pcm(rate):
@@ -209,8 +220,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             finally:
                 # Never copy temporary audio slices into the user's report.
                 if engine_dir.exists():
-                    shutil.copytree(engine_dir, report / 'align', dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns('*.wav'))
+                    persist_tree(engine_dir, report / 'align')
         if settings.diar is not None:
             model = catalog[settings.diar.model_id]
             audio, _ = pcm(model.sample_rate)
@@ -230,6 +240,11 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('RPP — writing non-destructive references')
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
                    'units': [asdict(u) for u in units], 'warnings': warnings})
+        if _analysis_report is not None:
+            manifest.update(status='completed', elapsed_seconds=time.monotonic()-started,
+                            source_unchanged=(digest(source)==manifest['source_sha256']), warnings=warnings,
+                            analysis_only=True)
+            return report
         reference_length = full_reference_duration(
             source, settings, duration, work, cancel, progress)
         export_rpp(source, output, units, settings.clip_start, settings.diar is not None,

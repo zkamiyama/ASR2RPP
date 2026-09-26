@@ -53,9 +53,15 @@ class QueueJob:
     failed: bool = False
 
 
+from .performance import profiled, report_directory
+
+from .diagnostics import persist_tree
+
 def _jsonable_result(job: QueueJob, task: str, result: Result) -> None:
     directory = job.report / task
     directory.mkdir(parents=True, exist_ok=True)
+    if task == 'asr' and isinstance(result.raw, dict) and 'inference_policy' in result.raw and (directory/'raw.json').exists() and (directory/'normalized.json').exists():
+        return
     core.json_write(directory / 'raw.json', result.raw)
     core.json_write(directory / 'normalized.json', [asdict(unit) for unit in result.units])
 
@@ -129,7 +135,30 @@ def _session_args(model, stage):
 def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
                    cancel, progress, item_callback, alignment_requested=False):
     if policy_for(model).segmentation == 'vad':
-        from .vad_asr import infer_vad_whisper
+        from .vad_asr import infer_vad_whisper, infer_vad_many
+        from .whisper_io import capabilities
+        try:
+            binary = executable(model.runtime, stage.device, stage.executable)
+        except FileNotFoundError:
+            binary = None
+        if binary and 'ASR2RPP_PCM_PLAN_V1' in capabilities(binary, root, cancel, progress):
+            by_key = {j.key:j for j in jobs}
+            items = [(j.key,audio_paths[j.key],root/j.key) for j in jobs]
+            try:
+                for job in jobs:
+                    item_callback(job.index, 'ASR', '')
+                return infer_vad_many(model, weights, items,
+                    dict(stage.options(), alignment_requested=alignment_requested),
+                    cancel, progress, lambda key,exc:_fail(by_key[key],exc,item_callback), root)
+            finally:
+                _copy_log(root/'asr-session.log', jobs, 'asr-session.log')
+                # On incomplete shared output retain the untouched bundle once,
+                # clearly labelled as queue-wide; do not lose it during cleanup.
+                shared = root/'native-session.json'
+                if shared.exists() and jobs and (cancel.is_set() or any(j.failed for j in jobs)):
+                    shutil.copy2(shared, jobs[0].report/'failed-shared-asr-session.json')
+                for job in jobs:
+                    persist_tree(root/job.key,job.report/'asr')
         results = {}
         for job in jobs:
             checkpoint(cancel)
@@ -144,13 +173,15 @@ def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
                 _fail(job, exc, item_callback)
             finally:
                 if work.exists():
-                    shutil.copytree(work, job.report / 'asr', dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns('*.wav'))
+                    persist_tree(work, job.report / 'asr')
         return results
     binary = executable(model.runtime, stage.device, stage.executable)
     parameters = _stage_parameters(model, stage)
+    from .whisper_io import capabilities, response_command
+    response_files = 'ASR2RPP_RESPONSE_V1' in capabilities(binary, root, cancel, progress)
+    chunks = (jobs[i:i+4096] for i in range(0,len(jobs),4096)) if response_files else _chunks_for_command(jobs, lambda j: audio_paths[j.key])
     results = {}
-    for chunk_no, chunk in enumerate(_chunks_for_command(jobs, lambda j: audio_paths[j.key]), 1):
+    for chunk_no, chunk in enumerate(chunks, 1):
         checkpoint(cancel)
         out = root / f'chunk-{chunk_no}' / 'out'
         out.mkdir(parents=True, exist_ok=True)
@@ -165,6 +196,10 @@ def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
             item_callback(job.index, 'ASR', '')
             argv += ['-f', str(audio_paths[job.key]), '-of', str(out / job.key)]
         log = root / f'chunk-{chunk_no}' / 'engine.log'
+        if response_files:
+            args_file = log.with_suffix('.args')
+            argv = response_command(argv,args_file)
+            _copy_log(args_file,chunk,f'asr-batch-{chunk_no}.args')
         try:
             run_process(argv, cancel, progress, log)
             for job in chunk:
@@ -378,6 +413,7 @@ def _resolve_models(settings, catalog, cancel, progress):
     return selected
 
 
+@profiled
 def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progress,
               item_callback, batch_audio_ram_mb: int = DEFAULT_BATCH_AUDIO_RAM_MB):
     """Run a GUI queue stage-by-stage.
@@ -408,6 +444,14 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
     try:
         with tempfile.TemporaryDirectory(prefix='queue-', dir=cache_directory) as temporary:
             root = Path(temporary)
+
+            decoded = {}
+            def decode_once(job, destination, rate):
+                key = (job.key, rate)
+                if key not in decoded:
+                    duration = _decode_for_model(job, destination, rate, settings, cancel, progress)
+                    decoded[key] = (destination, duration)
+                return decoded[key]
 
             # 1. Source separation. The audio.cpp process exits before ASR starts,
             # so its model/VRAM is released before the next family is loaded.
@@ -496,7 +540,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                 try:
                     item_callback(job.index, 'ASR準備', '')
                     path = root / 'asr-input' / f'{job.key}.wav'
-                    duration = _decode_for_model(job, path, asr_model.sample_rate, settings, cancel, progress)
+                    path, duration = decode_once(job, path, asr_model.sample_rate)
                     if duration <= 0:
                         raise ValueError('No audio in selected interval')
                     job.duration = duration
@@ -529,7 +573,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     job.units = [replace(unit, speaker=None) for unit in core.group_units(units)]
                 except BaseException as exc:
                     _fail(job, exc, item_callback)
-            shutil.rmtree(root / 'asr-input', ignore_errors=True)
+            # PCM remains until the last enabled stage; same-rate stages share it.
 
             # 3. Forced alignment, if selected. One request per ASR segment,
             # but requests share an audio.cpp model session within each RAM-bound batch.
@@ -547,7 +591,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     try:
                         # Decode each file once, rather than starting FFmpeg and
                         # reading a long video from the beginning for every phrase.
-                        _decode_for_model(job, alignment_pcm, model.sample_rate, settings, cancel, progress)
+                        alignment_pcm, _ = decode_once(job, alignment_pcm, model.sample_rate)
                     except Exception as exc:
                         if cancel.is_set():
                             raise
@@ -599,7 +643,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     else:
                         job.units = aligned
                 shutil.rmtree(root / 'align-source', ignore_errors=True)
-                shutil.rmtree(root / 'align-pcm', ignore_errors=True)
+                # Shared PCM cleanup belongs to the queue workspace.
 
             # 4. Diarization. It is intentionally after alignment so speaker
             # assignment can use the final/finer text intervals.
@@ -610,7 +654,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     checkpoint(cancel)
                     try:
                         path = root / 'diar-input' / f'{job.key}.wav'
-                        _decode_for_model(job, path, model.sample_rate, settings, cancel, progress)
+                        path, _ = decode_once(job, path, model.sample_rate)
                         diar_inputs[job.key] = path
                     except BaseException as exc:
                         if cancel.is_set():
@@ -627,7 +671,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         job.units = core.assign_speakers(job.units, turns, job.warnings)
                     except BaseException as exc:
                         _fail(job, exc, item_callback)
-                shutil.rmtree(root / 'diar-input', ignore_errors=True)
+                # Shared PCM cleanup belongs to the queue workspace.
 
             # 5. Final RPP. At this point no inference process/model is resident.
             for job in _active(jobs):

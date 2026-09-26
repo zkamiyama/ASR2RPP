@@ -20,7 +20,11 @@ VAD_SHA256 = '29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf'
 VAD_SIZE = 885098
 VAD_URL = f'https://huggingface.co/ggml-org/whisper-vad/resolve/{VAD_REVISION}/{VAD_FILE}'
 _DOWNLOAD_LOCK = threading.Lock()
+_HELP_CHECKED = set()
+_HELP_LOCK = threading.Lock()
 
+
+from .performance import timed
 
 def vad_model(model, parameters, cancel, progress):
     custom = parameters.get('vad_model', '')
@@ -184,6 +188,7 @@ def bounded_windows(spans, audio, maximum, overlap, cancel):
     return windows, forced
 
 
+@timed('vad')
 def detect_windows(model, parameters, audio, root, binary, cancel, progress, limit, context_overlap=True):
     from .adapters import run_process
     from .media import wave_info
@@ -200,9 +205,18 @@ def detect_windows(model, parameters, audio, root, binary, cancel, progress, lim
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     help_log = root / 'vad-help.log'
-    run_process([str(helper), '--help'], cancel, lambda _line: None, help_log, timeout=30)
-    if 'centiseconds (1/100th of a second)' not in help_log.read_text(encoding='utf-8'):
-        raise ValueError('Unrecognized VAD timestamp units; use the app-pinned native helper')
+    stat = helper.stat()
+    help_key = (str(helper.resolve()),stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+    with _HELP_LOCK:
+        checked = help_key in _HELP_CHECKED
+    if not checked:
+        run_process([str(helper), '--help'], cancel, lambda _line: None, help_log, timeout=30)
+        if 'centiseconds (1/100th of a second)' not in help_log.read_text(encoding='utf-8'):
+            raise ValueError('Unrecognized VAD timestamp units; use the app-pinned native helper')
+        with _HELP_LOCK:
+            if len(_HELP_CHECKED)>32:
+                _HELP_CHECKED.clear()
+            _HELP_CHECKED.add(help_key)
     log = root / 'vad.log'
     progress('VAD: detecting speech on the original audio timeline')
     run_process([str(helper), '-vm', str(weights), '-f', str(audio), '-t', '4',
@@ -216,7 +230,7 @@ def detect_windows(model, parameters, audio, root, binary, cancel, progress, lim
               'time_mapping': 'original PCM timeline; silence is not concatenated',
               'detected_spans': spans, 'windows': [asdict(w) for w in windows],
               'forced_splits': forced, 'requested_overlap': requested_overlap,
-              'context_overlap_enabled': context_overlap}
+              'context_overlap_enabled': context_overlap, 'helper_timestamp_units': 'centiseconds'}
     (root / 'vad.json').write_text(json.dumps(record, indent=2, allow_nan=False), encoding='utf-8')
     progress(f'VAD: {len(spans)} speech regions, {len(windows)} bounded windows, {forced} forced splits')
     return windows, record

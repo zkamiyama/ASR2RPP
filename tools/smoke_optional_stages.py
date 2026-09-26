@@ -90,6 +90,9 @@ if results['vad-region-times'].get('returncode') == 0:
     assert not vad['context_overlap_enabled'] and vad['options']['overlap'] == 0
     results['vad-region-times']['vad_segments'] = len(transcript['units'])
     results['vad-region-times']['timestamp_source'] = manifest['timestamp_source']
+    raw = json.loads((report/'asr'/'raw.json').read_text(encoding='utf-8'))
+    assert raw['performance']['input_mode'] == 'pcm_plan_v1'
+    assert raw['performance']['model_processes'] == 1 and raw['performance']['segment_wav_files'] == 0
 run('vad-policy', ['run', unicode_input, '--asr', 'policy-base', '--asr-device', 'cpu',
                    '--asr-language', 'en', '--align', 'qwen-forced-aligner', '--align-device', 'cpu',
                    '--align-language', 'English', '--duration', '8', '--output-dir', reports/'vad-policy'], 600)
@@ -107,6 +110,37 @@ if results['vad-policy'].get('returncode') == 0:
         assert '-nt' in command and command[command.index('-mc')+1] == '0' and '--vad' not in command
     results['vad-policy']['windows'] = len(vad['windows'])
     results['vad-policy']['aligned_units'] = len(transcript['units'])
+
+# Compare the packaged native PCM plan against the same binary's WAV path.
+import wave
+sys.path.insert(0, str(root))
+from asr2rpp.whisper_io import write_plan
+from asr2rpp.vad import SpeechWindow
+from asr2rpp.media import slice_pcm
+import threading
+native = cli.parent/'engines'/'whisper_cpp-cpu'/'whisper-cli.exe'
+compare = reports/'pcm-equivalence'
+compare.mkdir(exist_ok=True)
+windows = [SpeechWindow(i,i+2,i,i+2) for i in (0,2,4,6)]
+legacy = [compare/f'legacy-{i}' for i in range(4)]
+planned = [compare/f'plan-{i}' for i in range(4)]
+base = [str(native), '-m', str(source_bin), '-l', 'en', '-nt', '-mc', '0', '-ng', '-oj', '-np']
+command = list(base)
+for i,w in enumerate(windows):
+    audio = compare/f'input-{i}.wav'
+    slice_pcm(fixture,audio,w.start,w.end-w.start,threading.Event())
+    command += ['-f',str(audio),'-of',str(legacy[i])]
+with (compare/'legacy.log').open('w',encoding='utf-8') as log:
+    subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=120)
+plan = compare/'input.plan'
+write_plan(fixture,windows,planned,plan,threading.Event())
+with (compare/'plan.log').open('w',encoding='utf-8') as log:
+    subprocess.run(base+['--asr2rpp-pcm-plan',str(plan)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=120)
+for left,right in zip(legacy,planned):
+    a = json.loads(left.with_suffix('.json').read_text(encoding='utf-8'))['transcription']
+    b = json.loads(right.with_suffix('.json').read_text(encoding='utf-8'))['transcription']
+    assert a == b, (left.name,right.name)
+results['pcm-equivalence'] = {'returncode':0,'independent_regions':4,'exact_native_transcription_match':True}
 
 # Check that ON/OFF reached the pipeline independently; detailed raw output is retained.
 for name in ('asr-only', 'diar-only', 'align-only', 'both'):
