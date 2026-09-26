@@ -1,7 +1,7 @@
 name: ASR2RPP application
 on:
   push:
-    branches: [main, feat/queue-gui]
+    branches: [main, feat/queue-gui, feat/vad-region-timestamps]
     paths: ['asr2rpp/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
@@ -61,6 +61,7 @@ jobs:
             engines/
             build/native/whisper_cpp/samples/
           key: win-native-cpu-vulkan-v1-${{ hashFiles('tools/build_native.py') }}
+          restore-keys: win-native-cpu-vulkan-v1-
       - name: Install Vulkan SDK for native runtime builds
         if: steps.native.outputs.cache-hit != 'true'
         shell: pwsh
@@ -70,6 +71,8 @@ jobs:
           "C:\VulkanSDK\1.4.350.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - if: steps.native.outputs.cache-hit != 'true'
         run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan
+        env:
+          ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
       - run: python tools/package_windows.py
       - name: Frozen optional stages and ORIGINAL track
         run: python tools/smoke_optional_stages.py

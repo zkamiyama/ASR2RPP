@@ -21,7 +21,9 @@ import threading
 
 from . import pipeline as core
 from . import preprocessing as pre
-from .alignment import infer_requests, chunks_by_size as _chunks_by_size
+from .alignment import (infer_requests, chunks_by_size as _chunks_by_size,
+                        alignment_bounds, aligned_units)
+from .inference_policy import policy_for
 from .media import slice_pcm
 from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
 from .adapters import (
@@ -125,7 +127,26 @@ def _session_args(model, stage):
 
 
 def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
-                   cancel, progress, item_callback):
+                   cancel, progress, item_callback, alignment_requested=False):
+    if policy_for(model).segmentation == 'vad':
+        from .vad_asr import infer_vad_whisper
+        results = {}
+        for job in jobs:
+            checkpoint(cancel)
+            work = root / job.key
+            try:
+                item_callback(job.index, 'ASR', '')
+                results[job.key] = infer_vad_whisper(
+                    model, weights, audio_paths[job.key], work, dict(stage.options(), alignment_requested=alignment_requested), cancel, progress)
+            except Exception as exc:
+                if cancel.is_set():
+                    raise
+                _fail(job, exc, item_callback)
+            finally:
+                if work.exists():
+                    shutil.copytree(work, job.report / 'asr', dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns('*.wav'))
+        return results
     binary = executable(model.runtime, stage.device, stage.executable)
     parameters = _stage_parameters(model, stage)
     results = {}
@@ -276,6 +297,8 @@ class AlignRequest:
     begin: float
     length: float
     text: str
+    owner_start: float | None = None
+    owner_end: float | None = None
 
 
 def _align_batch(model, weights: Path, stage, requests: list[AlignRequest], root: Path,
@@ -327,6 +350,9 @@ def _prepare_jobs(indexed_paths, settings, catalog, item_callback):
             'status': 'queued',
             'queue_strategy': 'stage_major',
             'source_unchanged': None,
+            'inference_policy': asdict(policy_for(catalog[settings.asr.model_id])),
+            'timestamp_source': ('forced_alignment' if settings.align else
+                                 'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr'),
         }
         job = QueueJob(index, f'q{index:06d}', source, output, report, source_sha, manifest)
         _write_manifest(job)
@@ -483,7 +509,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
             if asr_model.runtime == 'whisper_cpp':
                 asr_results = _whisper_batch(asr_model, asr_weights, asr_stage, _active(jobs),
                                              asr_inputs, root / 'asr-batch', cancel, progress,
-                                             item_callback)
+                                             item_callback, alignment_requested=settings.align is not None)
             else:
                 asr_results = _audio_batch(asr_model, asr_weights, asr_stage, _active(jobs),
                                            asr_inputs, root / 'asr-batch', cancel, progress,
@@ -495,6 +521,8 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     units = core.clean_bounds(result.units, job.duration, job.warnings)
                     if not units:
                         raise ValueError('No timed speech was returned')
+                    if any(unit.method == 'vad_segment' for unit in units):
+                        job.warnings.append('VAD region timestamps used: approximate speech intervals, not word boundaries.')
                     if any(unit.method == 'emission_frame' for unit in units):
                         job.warnings.append(
                             'ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
@@ -536,14 +564,14 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                                 f'Forced alignment — punctuation-only text skipped for '
                                 f'{job.source.name}; ASR timing retained')
                             continue
-                        begin = max(0.0, segment.start - 0.15)
-                        length = min(job.duration, segment.end + 0.25) - begin
+                        begin, length = alignment_bounds(segment, job.duration)
                         key = f'{job.key}s{n:05d}'
                         path = root / 'align-source' / f'{key}.wav'
                         path.parent.mkdir(parents=True, exist_ok=True)
                         try:
                             length = slice_pcm(alignment_pcm, path, begin, length, cancel)
-                            requests.append(AlignRequest(key, job, path, begin, length, segment.text))
+                            requests.append(AlignRequest(key, job, path, begin, length, segment.text,
+                                                         segment.owner_start, segment.owner_end))
                         except BaseException as exc:
                             if cancel.is_set():
                                 raise
@@ -561,13 +589,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         directory = req.job.report / 'align' / req.key
                         directory.mkdir(parents=True, exist_ok=True)
                         core.json_write(directory / 'raw.json', result.raw)
-                        local = core.clean_bounds(result.units, req.length, req.job.warnings)
-                        if not local:
-                            raise ValueError('Aligner returned no intervals')
-                        by_job[req.job.key].extend(
-                            replace(unit, start=unit.start + req.begin, end=unit.end + req.begin)
-                            for unit in local
-                        )
+                        by_job[req.job.key].extend(aligned_units(result, req, req.job.warnings))
                     except BaseException as exc:
                         _fail(req.job, exc, item_callback)
                 for job in _active(jobs):

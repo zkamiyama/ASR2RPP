@@ -52,11 +52,30 @@ def cache_root() -> Path:
 def model_directory() -> Path:
     directory = data_root() / 'models'
     directory.mkdir(parents=True, exist_ok=True)
+    migration_file = assets_root() / 'models' / 'template-migrations.json'
+    migrations = json.loads(migration_file.read_text(encoding='utf-8')) if migration_file.exists() else {}
     for template in (assets_root() / 'models').glob('*.toml'):
         dest = directory / template.name
         if not dest.exists():
             with dest.open('x', encoding='utf-8') as handle:
                 handle.write(template.read_text(encoding='utf-8'))
+        elif template.name in migrations:
+            old = dest.read_text(encoding='utf-8-sig')
+            fingerprint = hashlib.sha256(old.encode('utf-8')).hexdigest()
+            if fingerprint in migrations[template.name]:
+                backup = dest.with_name(dest.name + '.' + fingerprint[:12] + '.bak')
+                if not backup.exists():
+                    with backup.open('x', encoding='utf-8') as handle:
+                        handle.write(old)
+                import tempfile
+                fd, name = tempfile.mkstemp(prefix='template-', suffix='.tmp', dir=directory)
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                        handle.write(template.read_text(encoding='utf-8'))
+                    if dest.read_text(encoding='utf-8-sig') == old:
+                        os.replace(name, dest)
+                finally:
+                    Path(name).unlink(missing_ok=True)
     return directory
 
 
@@ -116,12 +135,18 @@ class Model:
             raise ValueError('defaults.request must be a TOML table')
         if not isinstance(self.constraints, dict):
             raise ValueError('constraints must be a TOML table')
-        unknown_constraints = set(self.constraints) - {'disabled_parameters'}
+        unknown_constraints = set(self.constraints) - {'disabled_parameters', 'inference'}
         if unknown_constraints:
             raise ValueError(f'Unknown constraints: {sorted(unknown_constraints)}')
         disabled = self.constraints.get('disabled_parameters', [])
         if not isinstance(disabled, list) or any(not isinstance(x, str) or not x.strip() for x in disabled):
             raise ValueError('constraints.disabled_parameters must be an array of non-empty strings')
+
+        from .inference_policy import policy_for, constrain_parameters
+        policy = policy_for(self)
+        if self.disabled_parameters & set(policy.forced_parameters):
+            raise ValueError('Disabled parameters conflict with required inference policy')
+        constrain_parameters(self, self.defaults.get('request', {}))
 
     @property
     def disabled_parameters(self) -> frozenset[str]:

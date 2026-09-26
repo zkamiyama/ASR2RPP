@@ -21,6 +21,8 @@ class AlignmentInput:
     begin: float
     length: float
     text: str
+    owner_start: float | None = None
+    owner_end: float | None = None
 
 
 def chunks_by_size(items, path_of, max_bytes):
@@ -93,6 +95,27 @@ def infer_requests(model, weights, stage, requests, root, cancel, progress,
     return results
 
 
+def alignment_bounds(segment, duration):
+    if segment.method == 'vad_window':
+        return segment.start, segment.end - segment.start
+    begin = max(0.0, segment.start - 0.15)
+    return begin, min(duration, segment.end + 0.25) - begin
+
+
+def aligned_units(result, request, warnings):
+    local = clean_bounds(result.units, request.length, warnings)
+    if not local:
+        raise ValueError(f'Aligner returned no valid intervals for request {request.key}')
+    output = []
+    for unit in local:
+        start, end = unit.start + request.begin, unit.end + request.begin
+        midpoint = (start + end) / 2
+        if request.owner_start is not None and not request.owner_start <= midpoint < request.owner_end:
+            continue
+        output.append(replace(unit, start=start, end=end, owner_start=None, owner_end=None))
+    return output
+
+
 def align_segments(model, weights, stage, units, pcm, duration, root, cancel, progress, warnings):
     """Slice cached PCM once per segment, then align in reusable native sessions."""
     aligned, requests = [], []
@@ -104,16 +127,13 @@ def align_segments(model, weights, stage, units, pcm, duration, root, cancel, pr
             continue
         if segment.end - segment.start > 55:
             raise ValueError('Alignment needs <=55-second matched transcript/audio segments')
-        begin = max(0.0, segment.start - 0.15)
-        length = min(duration, segment.end + 0.25) - begin
+        begin, length = alignment_bounds(segment, duration)
         key = f's{index:06d}'
         file = Path(root) / 'slices' / f'{key}.wav'
         length = slice_pcm(pcm, file, begin, length, cancel)
-        requests.append(AlignmentInput(key, file, begin, length, segment.text))
+        requests.append(AlignmentInput(key, file, begin, length, segment.text,
+                                       segment.owner_start, segment.owner_end))
     results = infer_requests(model, weights, stage, requests, root, cancel, progress)
     for req in requests:
-        local = clean_bounds(results[req.key].units, req.length, warnings)
-        if not local:
-            raise ValueError(f'Aligner returned no valid intervals for request {req.key}')
-        aligned.extend(replace(u, start=u.start + req.begin, end=u.end + req.begin) for u in local)
+        aligned.extend(aligned_units(results[req.key], req, warnings))
     return clean_bounds(aligned, duration, warnings)

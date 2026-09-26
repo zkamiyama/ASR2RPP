@@ -23,7 +23,7 @@ def main(argv=None):
     run.add_argument('files', nargs='+', type=Path)
     run.add_argument('--asr', default='whisper-base')
     run.add_argument('--diar', help='omit to disable diarization')
-    run.add_argument('--align', help='omit to disable forced alignment')
+    run.add_argument('--align', help='optional forced-alignment model; VAD region timestamps are used otherwise (unless TOML requires alignment)')
     run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')
     run.add_argument('--rpp-audio', choices=['original', 'processed'], default='original',
                      help='processed keeps a persistent WAV next to the RPP; requires --preprocess')
@@ -75,6 +75,8 @@ def main(argv=None):
             for runtime in ('whisper_cpp', 'audio_cpp'):
                 path = executable(runtime, 'cpu')
                 print(runtime + ':cpu', path, 'OK')
+            from .vad import vad_executable
+            print('whisper-vad-speech-segments', vad_executable(), 'OK')
         except Exception as exc:
             failures.append('native runtime: ' + str(exc))
         for failure in failures:
@@ -94,7 +96,14 @@ def main(argv=None):
                 for model_id in args.ids:
                     if model_id not in catalog:
                         raise ValueError(f'Unknown model: {model_id}')
-                    resolve_model(catalog[model_id], cancel, progress, download=True, keep_source=args.keep_source)
+                    model = catalog[model_id]
+                    resolve_model(model, cancel, progress, download=True, keep_source=args.keep_source)
+                    from .inference_policy import policy_for
+                    if policy_for(model).segmentation == 'vad':
+                        from .vad import vad_model
+                        from .adapters import split_engine_parameters
+                        parameters, _ = split_engine_parameters(model, None)
+                        vad_model(model, parameters, cancel, progress)
             return 0
         def stage(task):
             model_id = getattr(args, task)
