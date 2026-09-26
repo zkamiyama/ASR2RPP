@@ -1341,8 +1341,8 @@ class MainWindow(QMainWindow):
             self.start_ffmpeg_bootstrap()
 
     def start_ffmpeg_bootstrap(self):
-        if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
-            return
+        if self.ffmpeg_worker is not None:
+            return  # Keep ownership until its queued finished signal is handled.
         worker = FFmpegBootstrap(self.runtime_paths.get("ffmpeg", ""))
         self.ffmpeg_worker = worker
         worker.progress.connect(self.show_progress)
@@ -1353,6 +1353,8 @@ class MainWindow(QMainWindow):
 
     def ffmpeg_bootstrap_finished(self):
         worker = self.ffmpeg_worker
+        if worker is None or (self.sender() is not None and self.sender() is not worker):
+            return
         self.ffmpeg_worker = None
         if worker:
             worker.deleteLater()
@@ -1727,11 +1729,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "ASR2RPP", str(exc))
 
     def show_progress(self, value):
+        sender = self.sender()
+        if (isinstance(sender, Worker) and sender is not self.worker) or (isinstance(sender, FFmpegBootstrap) and sender is not self.ffmpeg_worker):
+            return
         self.append_log(value)
         self.status_label.setText(str(value)[:180])
 
     def show_error(self, value):
-        if isinstance(self.sender(), Worker) and self.sender() is not self.worker:
+        sender = self.sender()
+        if (isinstance(sender, Worker) and sender is not self.worker) or (isinstance(sender, FFmpegBootstrap) and sender is not self.ffmpeg_worker):
             return
         self.append_log("[ERROR] " + str(value))
         self.status_label.setText(str(value)[:180])

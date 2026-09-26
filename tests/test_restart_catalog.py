@@ -215,3 +215,40 @@ def test_invalid_saved_preferences_do_not_crash_or_replace_missing_model(tmp_pat
     assert w.threads==4 and w.batch_audio_ram_mb==512 and w.runtime_paths=={}
     assert w.asr.model.currentIndex()==-1 and w.asr.parameters=={}
     w.close();app.processEvents()
+
+
+def test_cancel_during_ffmpeg_bootstrap_lock_wait(tmp_path,monkeypatch):
+    from asr2rpp import ffmpeg_runtime as runtime
+    from types import SimpleNamespace
+    import time
+    monkeypatch.setattr(runtime,'sys',SimpleNamespace(platform='win32'))
+    cancel=threading.Event();timer=threading.Timer(.15,cancel.set)
+    runtime._DOWNLOAD_LOCK.acquire();timer.start();started=time.monotonic()
+    try:
+        with pytest.raises(catalog.Cancelled):runtime.ensure_ffmpeg(cancel=cancel)
+        assert time.monotonic()-started<2
+        assert runtime._DOWNLOAD_LOCK.locked()
+    finally:
+        timer.cancel();runtime._DOWNLOAD_LOCK.release()
+
+
+def test_bootstrap_owner_and_late_progress_signals(tmp_path,monkeypatch):
+    pytest.importorskip('PySide6')
+    monkeypatch.setenv('QT_QPA_PLATFORM','offscreen')
+    monkeypatch.setenv('ASR2RPP_HOME',str(tmp_path/'home'))
+    monkeypatch.setenv('ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP','1')
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QSettings
+    from asr2rpp import gui_dcc as gui
+    app=QApplication.instance() or QApplication([])
+    window=gui.MainWindow(QSettings(str(tmp_path/'prefs.ini'),QSettings.Format.IniFormat))
+    old,new=gui.FFmpegBootstrap(),gui.FFmpegBootstrap()
+    window.ffmpeg_worker=new
+    old.finished.connect(window.ffmpeg_bootstrap_finished)
+    old.progress.connect(window.show_progress)
+    old.error.connect(window.show_error)
+    old.finished.emit();old.progress.emit('stale');old.error.emit('stale error');app.processEvents()
+    assert window.ffmpeg_worker is new and 'stale' not in window.run_log.toPlainText()
+    monkeypatch.setattr(gui.FFmpegBootstrap,'start',lambda _:pytest.fail('Duplicate bootstrap'))
+    window.start_ffmpeg_bootstrap();assert window.ffmpeg_worker is new
+    window.ffmpeg_worker=None;window.close()

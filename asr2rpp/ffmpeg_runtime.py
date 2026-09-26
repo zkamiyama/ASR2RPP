@@ -124,7 +124,10 @@ def ensure_ffmpeg(progress=None, cancel=None) -> Path:
     if sys.platform != "win32":
         raise FileNotFoundError("Automatic FFmpeg download is currently supported on Windows only")
 
-    with _DOWNLOAD_LOCK:
+    while not _DOWNLOAD_LOCK.acquire(timeout=0.1):
+        _check_cancel(cancel)
+    try:
+        _check_cancel(cancel)
         existing = installed_ffmpeg()
         if existing:
             return existing
@@ -173,3 +176,5 @@ def ensure_ffmpeg(progress=None, cancel=None) -> Path:
             checksum_file.unlink(missing_ok=True)
             archive.unlink(missing_ok=True)
             shutil.rmtree(staging, ignore_errors=True)
+    finally:
+        _DOWNLOAD_LOCK.release()
