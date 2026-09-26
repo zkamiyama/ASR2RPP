@@ -4,6 +4,8 @@ from .adapters import Unit
 from .text_join import join_timed
 
 
+from .performance import timed
+
 def clean_bounds(units: list[Unit], duration: float, warnings: list[str]) -> list[Unit]:
     result = []
     for index, unit in enumerate(units):
@@ -46,6 +48,7 @@ def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
     return grouped
 
 
+@timed('speaker_assignment')
 def assign_speakers(units: list[Unit], turns: list[Unit], warnings: list[str]) -> list[Unit]:
     ordered_turns = sorted(enumerate(turns), key=lambda pair: pair[1].start)
     active, next_turn, assigned = {}, 0, [None] * len(units)

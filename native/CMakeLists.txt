@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+project(asr2rpp_pcm_plan_test LANGUAGES CXX)
+add_executable(asr2rpp-pcm-plan-test pcm_plan_test.cpp)
+target_compile_features(asr2rpp-pcm-plan-test PRIVATE cxx_std_11)
+enable_testing()
+add_test(NAME bounded_pcm_plan COMMAND asr2rpp-pcm-plan-test ${CMAKE_CURRENT_BINARY_DIR})

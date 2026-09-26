@@ -869,9 +869,15 @@ class Worker(QThread):
             if not stage or stage.model_id in seen:
                 continue
             seen.add(stage.model_id)
-            resolve_model(self.catalog[stage.model_id], self.cancel, self.progress.emit,
-                          download=True, keep_source=self.keep_sources)
             model = self.catalog[stage.model_id]
+            if 'path' in model.source and not self.prepare_only:
+                from .catalog import local_model_path
+                local_model_path(model)
+                # The pipeline verifies the full SHA-256 before loading. Avoid
+                # hashing a local multi-GB file twice just to prepare a download.
+            else:
+                resolve_model(model, self.cancel, self.progress.emit,
+                              download=True, keep_source=self.keep_sources)
             if policy_for(model).segmentation == 'vad':
                 from .vad import vad_model
                 from .adapters import split_engine_parameters
@@ -1442,8 +1448,7 @@ class MainWindow(QMainWindow):
         text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
         if not text:
             return
-        for line in text.split("\n"):
-            self.run_log.appendPlainText(line)
+        self.run_log.appendPlainText(text)
 
     def toggle_language(self):
         self.ui_lang = "en" if self.ui_lang == "ja" else "ja"

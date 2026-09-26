@@ -33,6 +33,8 @@ class Result:
     warnings: list[str] | None = None
 
 
+from .performance import timed
+
 def executable(runtime: str, device: str, custom: str = '') -> Path:
     if custom:
         path = Path(custom).expanduser().resolve()
@@ -109,6 +111,7 @@ def process_environment(binary: Path) -> dict:
     return env
 
 
+@timed(lambda argv, *a, **kw: 'process.'+Path(argv[0]).stem)
 def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                 timeout: float = 7200) -> None:
     checkpoint(cancel)
@@ -120,14 +123,24 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
     log.parent.mkdir(parents=True, exist_ok=True)
     kwargs = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {'start_new_session': True}
     started = time.monotonic()
+    last_flush = started
     with log.open('w', encoding='utf-8') as handle:
         handle.write(json.dumps({'command': argv, 'device_verification': 'requested; inspect engine log'}, ensure_ascii=False) + '\n')
         with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               stdin=subprocess.DEVNULL, env=env, **kwargs) as process:
-            lines = queue.Queue()
+            lines = queue.Queue(maxsize=1024)
+            stop_reader = threading.Event()
             def reader():
                 for line in iter(process.stdout.readline, b''):
-                    lines.put(line.decode('utf-8', errors='replace'))
+                    value = line.decode('utf-8', errors='replace')
+                    while not stop_reader.is_set():
+                        try:
+                            lines.put(value,timeout=0.1)
+                            break
+                        except queue.Full:
+                            pass
+                    if stop_reader.is_set():
+                        break
             thread = threading.Thread(target=reader, daemon=True)
             thread.start()
             try:
@@ -138,7 +151,10 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                     try:
                         line = lines.get(timeout=0.1)
                         handle.write(line)
-                        handle.flush()
+                        now = time.monotonic()
+                        if now-last_flush >= 0.25:
+                            handle.flush()
+                            last_flush = now
                         if line.strip():
                             progress(line.strip()[-400:])
                     except queue.Empty:
@@ -146,6 +162,7 @@ def run_process(argv: list[str], cancel: threading.Event, progress, log: Path,
                 if process.returncode:
                     raise RuntimeError(f'{Path(argv[0]).name} exited {process.returncode}')
             finally:
+                stop_reader.set()
                 if process.poll() is None:
                     if os.name == 'nt':
                         subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
@@ -391,3 +408,4 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
     (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in result.units], ensure_ascii=False, indent=2), encoding='utf-8')
     return result
+

@@ -25,6 +25,8 @@ class AlignmentInput:
     owner_end: float | None = None
 
 
+from .performance import timed
+
 def chunks_by_size(items, path_of, max_bytes):
     if max_bytes <= 0:
         raise ValueError('Batch byte budget must be positive')
@@ -116,6 +118,7 @@ def aligned_units(result, request, warnings):
     return output
 
 
+@timed('alignment')
 def align_segments(model, weights, stage, units, pcm, duration, root, cancel, progress, warnings):
     """Slice cached PCM once per segment, then align in reusable native sessions."""
     aligned, requests = [], []

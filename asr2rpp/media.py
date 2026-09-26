@@ -22,6 +22,8 @@ class WaveInfo:
         return Fraction(self.frames, self.sample_rate)
 
 
+from .performance import timed
+
 def wave_info(path: Path) -> WaveInfo:
     """Read PCM/IEEE-float WAV headers without converting the saved media."""
     size = path.stat().st_size
@@ -66,6 +68,7 @@ def validate_duration(before: WaveInfo, after: WaveInfo):
 
 
 
+@timed('reference_duration')
 def full_reference_duration(source, settings, known_duration, work, cancel, progress):
     """Reuse full decoded duration; only scan when an original was clipped.
 
@@ -103,6 +106,7 @@ def full_reference_duration(source, settings, known_duration, work, cancel, prog
     return Fraction(last_us, 1_000_000)
 
 
+@timed('slice_pcm')
 def slice_pcm(source: Path, destination: Path, start: float, duration: float, cancel) -> float:
     """Copy only a requested interval from decoded PCM, in bounded blocks.
 

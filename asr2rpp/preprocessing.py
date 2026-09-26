@@ -39,6 +39,10 @@ class Settings(core.Settings):
 
 
 
+from .performance import timed, profiled, report_directory
+
+@timed('separation')
+
 def separate(source: Path, work: Path, settings: Settings, model: Model, weights: Path, cancel, progress, log_dir: Path | None = None):
     if weights.suffix.lower() in {'.ckpt', '.pt', '.pth'}:
         raise ValueError('Model installation did not finish; converted GGUF is unavailable')
@@ -90,6 +94,7 @@ def separate(source: Path, work: Path, settings: Settings, model: Model, weights
                     'waveform_delay_calibrated': False}
 
 
+@profiled
 def run_job(source, settings: Settings, catalog, cancel, progress):
     settings = copy.deepcopy(settings)
     settings.validate(catalog)
@@ -122,13 +127,12 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
                                  clip_start=0.0, clip_duration=0.0, same_directory=False,
                                  output_directory=str(work / 'recognition'))
             # Every enabled inference stage sees the same processed time axis.
-            try:
-                core.run_job(vocals, downstream, catalog, cancel, progress)
-            finally:
-                for analysis in (work / 'recognition').glob('*.asr2rpp'):
-                    shutil.copytree(analysis, report / 'analysis', dirs_exist_ok=True)
+            core.run_job(vocals, downstream, catalog, cancel, progress,
+                         _analysis_report=report / 'analysis')
             transcript = json.loads((report / 'analysis' / 'transcript.json').read_text(encoding='utf-8'))
             units = [Unit(**record) for record in transcript['units']]
+            analysis_manifest = json.loads((report/'analysis'/'manifest.json').read_text(encoding='utf-8'))
+            manifest['timestamp_source'] = analysis_manifest.get('timestamp_source')
             checkpoint(cancel)
             if digest(source) != manifest['source_sha256']:
                 raise ValueError('Original input changed while processing')
@@ -165,3 +169,4 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
         manifest['elapsed_seconds'] = time.monotonic() - started
         manifest['temporary_preprocessed_audio_removed'] = (temp_path is None or not temp_path.exists())
         core.json_write(report / 'manifest.json', manifest)
+

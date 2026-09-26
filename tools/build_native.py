@@ -8,6 +8,11 @@ import subprocess
 import sys
 import tempfile
 
+try:
+    from .patch_whisper import apply as patch_whisper, patch_digest
+except ImportError:
+    from patch_whisper import apply as patch_whisper, patch_digest
+
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / 'build' / 'native'
 ENGINES = ROOT / 'engines'
@@ -44,6 +49,7 @@ def preserve_restored_samples(source: Path):
 
 def build(name, backend='cpu'):
     repo, revision, target = SOURCES[name]
+    extension = patch_digest() if name == 'whisper_cpp' else None
     destination = ENGINES / (name + '-' + backend)
     required = [target + ('.exe' if os.name == 'nt' else '')]
     if name == 'whisper_cpp' and backend == 'cpu':
@@ -57,6 +63,7 @@ def build(name, backend='cpu'):
             prior = json.loads(manifest.read_text(encoding='utf-8'))
             reusable = (prior['commit'] == revision and prior['backend'] == backend
                         and prior['repository'] == repo and prior['files']
+                        and prior.get('asr2rpp_pcm_plan_sha256') == extension
                         and all(filename in prior['files'] for filename in required))
             for filename, expected in prior['files'].items():
                 relative = Path(filename)
@@ -84,6 +91,8 @@ def build(name, backend='cpu'):
     # the optional server frontend (SSH URL), which a standalone CLI does not use.
     if name != 'audio_cpp':
         run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
+    if name == 'whisper_cpp':
+        patch_whisper(source)
     if backend not in {'cpu', 'vulkan'}:
         raise ValueError(f'Unsupported packaged backend: {backend}')
     output = source / ('build-' + backend)
@@ -144,7 +153,9 @@ def build(name, backend='cpu'):
             shutil.copy2(source / filename, destination / filename)
     if name == 'audio_cpp' and (source / 'model_specs').exists():
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
-    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {}}
+    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {},
+                'asr2rpp_pcm_plan_sha256': extension,
+                'pcm_plan_version': 1 if extension else None}
     for file in destination.rglob('*'):
         if file.is_file() and file != destination / 'build-manifest.json':
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()

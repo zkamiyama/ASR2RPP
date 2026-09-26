@@ -6,10 +6,13 @@ from rpp_writer import Source, Item, Track, Project, write
 from .transcript import safe_label
 
 
+from .performance import timed
+
 def _seconds(value) -> Fraction:
     return value if isinstance(value, Fraction) else Fraction(str(value))
 
 
+@timed('rpp_export')
 def write_reference(output: Path, reference: Path, units, timeline_origin: float,
                     reference_origin: float, diar: bool, sample_rate: int = 48000,
                     *, reference_duration):
