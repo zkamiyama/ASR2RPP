@@ -80,9 +80,13 @@ def test_clipped_video_duration_scan_ignores_inference_clip(tmp_path, monkeypatc
     monkeypatch.setattr(media, 'ffmpeg_path', lambda *args: 'ffmpeg')
     def scan(argv, cancel, progress, log):
         assert 'atrim' not in ' '.join(argv)
-        assert argv[-3:] == ['-f', 'null', '-']
+        import os
+        assert argv[-4:] == ['-f', 's16le', '-y', os.devnull]
+        assert argv[argv.index('-ar')+1] == '48000'
         progress('out_time_us=N/A')
-        progress('out_time_us=20500000')
+        progress('out_time_us=N/A')
+        progress('total_size=1968000')
+        progress('progress=end')
     monkeypatch.setattr(media, 'run_process', scan)
     assert full_reference_duration(tmp_path / 'video.mp4', Settings(Stage('a'), clip_start=10),
                                    2, tmp_path, threading.Event(), lambda _: None) == Fraction(41, 2)
