@@ -25,7 +25,7 @@ from .alignment import (infer_requests, chunks_by_size as _chunks_by_size,
                         alignment_bounds, aligned_units)
 from .inference_policy import policy_for
 from .media import slice_pcm
-from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model
+from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model, definition_provenance
 from .adapters import (
     Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
     run_process, scalar, whisper_parameter_args, split_engine_parameters,
@@ -71,7 +71,9 @@ def _write_manifest(job: QueueJob) -> None:
 
 
 def _fail(job: QueueJob, error, item_callback) -> None:
-    if job.failed:
+    if isinstance(error, Cancelled):
+        raise error
+    if job.failed or job.manifest.get('status') in {'completed', 'cancelled'}:
         return
     job.failed = True
     job.manifest.update(status='failed', error=str(error))
@@ -80,7 +82,7 @@ def _fail(job: QueueJob, error, item_callback) -> None:
 
 
 def _active(jobs):
-    return [job for job in jobs if not job.failed]
+    return [job for job in jobs if not job.failed and job.manifest.get('status') not in {'completed', 'cancelled', 'failed'}]
 
 
 def _chunks_for_command(items, path_of, max_chars: int = 22000, max_items: int = 96):
@@ -367,31 +369,47 @@ def _decode_for_model(job: QueueJob, destination: Path, rate: int, settings,
     return core.decode(job.source, destination, rate, settings, cancel, progress)
 
 
-def _prepare_jobs(indexed_paths, settings, catalog, item_callback):
+def _cancel_jobs(jobs, item_callback):
+    for job in _active(jobs):
+        job.manifest['status'] = 'cancelled'
+        try:
+            _write_manifest(job)
+        finally:
+            item_callback(job.index, '中断', 'ユーザーが停止しました')
+
+
+def _prepare_jobs(indexed_paths, settings, catalog, item_callback, cancel):
     jobs = []
-    for index, value in indexed_paths:
-        source = Path(value).expanduser().resolve()
-        if not source.is_file() or source.suffix.lower() not in core.MEDIA_EXTENSIONS:
-            item_callback(index, '失敗', 'Unsupported or missing input')
-            continue
-        siblings = ('_vocals.wav',) if (getattr(settings, 'preprocess', None) is not None and
-                                         getattr(settings, 'reference_audio', 'original') == 'processed') else ()
-        output, report = core.reserve_output(source, settings, sibling_suffixes=siblings)
-        source_sha = digest(source)
-        manifest = {
-            'source': str(source),
-            'source_sha256': source_sha,
-            'settings': asdict(settings),
-            'status': 'queued',
-            'queue_strategy': 'stage_major',
-            'source_unchanged': None,
-            'inference_policy': asdict(policy_for(catalog[settings.asr.model_id])),
-            'timestamp_source': ('forced_alignment' if settings.align else
-                                 'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr'),
-        }
-        job = QueueJob(index, f'q{index:06d}', source, output, report, source_sha, manifest)
-        _write_manifest(job)
-        jobs.append(job)
+    try:
+        for index, value in indexed_paths:
+            checkpoint(cancel)
+            try:
+                source = Path(value).expanduser().resolve()
+                if not source.is_file() or source.suffix.lower() not in core.MEDIA_EXTENSIONS:
+                    raise ValueError('Unsupported or missing input')
+                siblings = ('_vocals.wav',) if (getattr(settings, 'preprocess', None) is not None and
+                                             getattr(settings, 'reference_audio', 'original') == 'processed') else ()
+                output, report = core.reserve_output(source, settings, sibling_suffixes=siblings)
+                manifest = {'source': str(source), 'settings': asdict(settings), 'status': 'queued',
+                    'queue_strategy': 'stage_major', 'source_unchanged': None,
+                    'inference_policy': asdict(policy_for(catalog[settings.asr.model_id])),
+                    'timestamp_source': 'forced_alignment' if settings.align else
+                        'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr'}
+                job = QueueJob(index, f'q{index:06d}', source, output, report, '', manifest)
+                jobs.append(job)
+                job.source_sha256 = digest(source)
+                job.manifest['source_sha256'] = job.source_sha256
+                _write_manifest(job)
+            except Cancelled:
+                raise
+            except Exception as exc:
+                if jobs and jobs[-1].index == index:
+                    _fail(jobs[-1], exc, item_callback)
+                else:
+                    item_callback(index, '失敗', str(exc))
+    except Cancelled:
+        _cancel_jobs(jobs, item_callback)
+        raise
     return jobs
 
 
@@ -422,26 +440,31 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
     """
     settings = copy.deepcopy(settings)
     settings.validate(catalog)
+    checkpoint(cancel)
     max_bytes = max(128, min(int(batch_audio_ram_mb), 8192)) * 1024 * 1024
-    jobs = _prepare_jobs(indexed_paths, settings, catalog, item_callback)
-    if not jobs:
+    jobs = _prepare_jobs(indexed_paths, settings, catalog, item_callback, cancel)
+    if not _active(jobs):
         return {}
     try:
         selected = _resolve_models(settings, catalog, cancel, progress)
-    except BaseException as exc:
-        for job in jobs:
+    except Cancelled:
+        _cancel_jobs(jobs, item_callback)
+        raise
+    except Exception as exc:
+        for job in _active(jobs):
             _fail(job, exc, item_callback)
         return {}
 
-    for job in jobs:
-        job.manifest['models'] = {name: provenance for name, (_m, _p, provenance, _s) in selected.items()}
-        job.manifest['status'] = 'running'
-        _write_manifest(job)
-
-    cache_directory = cache_root()
-    cache_directory.mkdir(parents=True, exist_ok=True)
     completed = {}
     try:
+        for job in _active(jobs):
+            job.manifest['model_definitions'] = {name: definition_provenance(m) for name, (m, _p, _prov, _s) in selected.items()}
+            job.manifest['models'] = {name: provenance for name, (_m, _p, provenance, _s) in selected.items()}
+            job.manifest['status'] = 'running'
+            _write_manifest(job)
+
+        cache_directory = cache_root()
+        cache_directory.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='queue-', dir=cache_directory) as temporary:
             root = Path(temporary)
 
@@ -728,9 +751,9 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     _fail(job, exc, item_callback)
 
     except Cancelled:
-        for job in _active(jobs):
-            job.manifest['status'] = 'cancelled'
-            _write_manifest(job)
-            item_callback(job.index, '中断', 'ユーザーが停止しました')
+        _cancel_jobs(jobs, item_callback)
         raise
+    except Exception as exc:
+        for job in _active(jobs):
+            _fail(job, exc, item_callback)
     return completed

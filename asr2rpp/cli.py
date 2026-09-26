@@ -18,6 +18,7 @@ def main(argv=None):
     models = sub.add_parser('models', help='list/install TOML model definitions')
     models.add_argument('action', choices=['list', 'install'])
     models.add_argument('ids', nargs='*')
+    models.add_argument('--json', dest='as_json', action='store_true', help='include the authoritative TOML path and hash')
     models.add_argument('--keep-source', action='store_true', help='keep original source checkpoints after a successful conversion')
     run = sub.add_parser('run', help='convert files sequentially to non-destructive RPP')
     run.add_argument('files', nargs='+', type=Path)
@@ -90,6 +91,11 @@ def main(argv=None):
     try:
         if args.command == 'models':
             if args.action == 'list':
+                if args.as_json:
+                    print(json.dumps([{'id': m.id, 'runtime': m.runtime, 'task': m.task,
+                        'definition': str(m.definition), 'sha256': m.definition_sha256}
+                        for m in catalog.values()], ensure_ascii=False))
+                    return 0
                 for model in catalog.values():
                     print(f'{model.id}\t{model.task}\t{model.runtime}')
             else:
