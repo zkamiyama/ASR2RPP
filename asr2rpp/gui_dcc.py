@@ -1134,6 +1134,8 @@ class MainWindow(QMainWindow):
     def __init__(self, preferences=None):
         super().__init__()
         self.setWindowTitle("ASR2RPP")
+        from .branding import configure_window
+        configure_window(self)
         self.resize(1180, 760)
         self.setMinimumSize(920, 600)
 
@@ -1726,6 +1728,22 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(self.tr("preparing"))
             self.worker.start()
         except Exception as exc:
+            # A failed QThread.start must not leave the GUI permanently busy.
+            # A thread that did start keeps ownership until its finished signal.
+            worker = self.worker
+            if worker is not None:
+                if worker.isRunning():
+                    self._stopping = True
+                    worker.cancel.set()
+                    self.update_state()
+                else:
+                    if self._run_ledger is not None:
+                        for index in self._run_ledger.pending:
+                            self.item_changed(index, 'failed', str(exc))
+                    self.worker = None
+                    self._stopping = False
+                    self.set_busy(False)
+                    worker.deleteLater()
             QMessageBox.warning(self, "ASR2RPP", str(exc))
 
     def show_progress(self, value):

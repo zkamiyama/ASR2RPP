@@ -81,6 +81,8 @@ def exercise(destination, cases=None):
             gui.Worker._prepare_models, gui.run_job, gui.run_queue = prepare, single, queue
             prefs = QSettings(str(root/f'{mode}.ini'), QSettings.Format.IniFormat)
             window = gui.MainWindow(preferences=prefs)
+            assert not window.windowIcon().pixmap(16, 16).isNull()
+            assert not window.windowIcon().pixmap(64, 64).isNull()
             window.queue_strategy = 'stage' if mode.startswith('queue') or mode == 'missing-result' else 'file'
             window.asr.model.setCurrentIndex(window.asr.model.findData('whisper-base'))
             for panel in (window.preprocess, window.align, window.diar):
@@ -129,7 +131,7 @@ def exercise(destination, cases=None):
                 assert window.completed == 3-len(successful) and not window.run_button.isEnabled()
             window.close(); app.processEvents(); window = None
             results.append({'case': mode, 'passed': True})
-        report = {'passed': True, 'cases': results, 'model_directory': str(model_directory()),
+        report = {'passed': True, 'window_icon_valid': True, 'cases': results, 'model_directory': str(model_directory()),
                   'inference': 'deterministic stubs; native execution tested separately'}
         (root/'summary.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
         return report
