@@ -34,16 +34,17 @@ os.environ['PYTHONUTF8'] = '1'
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
     '--name', 'ASR2RPP', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'PySide6.QtSvg',
     '--hidden-import', 'asr2rpp.ffmpeg_runtime',
-    '--add-data', 'models:models', '--add-data', 'assets:assets', 'launcher.py')
+    '--add-data', 'assets:assets', 'launcher.py')
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--console',
     '--name', 'asr2rpp-cli', '--exclude-module', 'PySide6',
     '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime',
-    '--add-data', 'models:models', 'cli_launcher.py')
+    'cli_launcher.py')
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
 required_native = [
     package / 'engines/whisper_cpp-cpu/whisper-cli.exe',
+    package / 'engines/whisper_cpp-cpu/whisper-vad-speech-segments.exe',
     package / 'engines/whisper_cpp-vulkan/whisper-cli.exe',
     package / 'engines/audio_cpp-cpu/audiocpp_cli.exe',
     package / 'engines/audio_cpp-cpu/audiocpp_gguf.exe',
@@ -60,7 +61,9 @@ if list(package.rglob('ffmpeg.exe')):
 for name in ('README.md', 'LICENSE', 'THIRD_PARTY.md'):
     if (ROOT / name).exists():
         shutil.copy2(ROOT / name, package / name)
-shutil.copytree(ROOT / 'models', package / 'model-templates', dirs_exist_ok=True)
+shutil.copytree(ROOT / 'models', package / 'models', dirs_exist_ok=True)
+if (package/'model-templates').exists() or (package/'_internal/models').exists():
+    raise RuntimeError('Duplicate bundled model definitions are not permitted')
 # Use OS fonts; never redistribute a system or bundled font file.
 for file in package.rglob('*'):
     if file.is_file() and file.suffix.lower() in {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}:
@@ -69,6 +72,16 @@ reports = ROOT / 'reports'
 reports.mkdir(exist_ok=True)
 run(package / 'asr2rpp-cli.exe', 'doctor')
 run(package / 'asr2rpp-cli.exe', 'models', 'list')
+listed = subprocess.check_output([str(package/'asr2rpp-cli.exe'), 'models', 'list', '--json'], text=True, encoding='utf-8')
+assert len(json.loads(listed)) >= 7
+for entry in json.loads(listed):
+    file = package/'models'/f"{entry['id']}.toml"
+    assert Path(entry['definition']).resolve() == file.resolve()
+    assert entry['sha256'] == hashlib.sha256(file.read_bytes()).hexdigest()
+run(package / 'ASR2RPP.exe', '--self-test-lifecycle', reports/'frozen-lifecycle')
+lifecycle = json.loads((reports/'frozen-lifecycle/summary.json').read_text())
+assert lifecycle['passed'] and Path(lifecycle['model_directory']).resolve() == (package/'models').resolve()
+(reports/'catalog-source.json').write_text(listed,encoding='utf-8')
 run(package / 'asr2rpp-cli.exe', 'models', 'install', 'whisper-base')
 # A public upstream fixture, not the user's private media.
 fixture = ROOT / 'build/native/whisper_cpp/samples/jfk.wav'
@@ -86,7 +99,7 @@ process.terminate()
 process.wait(timeout=10)
 (reports / 'frozen-smoke.json').write_text(json.dumps({
     'cli_doctor': 'passed', 'cli_models_list': 'passed', 'cli_model_download': 'passed', 'cli_asr_to_rpp': 'passed',
-    'gui_startup_5s': 'passed', 'gui_interaction': 'tested from same source, not frozen',
+    'gui_startup_5s': 'passed', 'gui_interaction': 'frozen GO-STOP-GO lifecycle, errors and completed-item preservation passed',
     'ffmpeg_bundled': False, 'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download',
     'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()

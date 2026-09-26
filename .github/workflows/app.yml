@@ -1,7 +1,7 @@
 name: ASR2RPP application
 on:
   push:
-    branches: [main, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance]
+    branches: [main, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance, fix/restart-catalog]
     paths: ['asr2rpp/**', 'native/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
@@ -173,3 +173,47 @@ jobs:
           name: linux-native-reports-${{ github.run_id }}
           path: reports/
           retention-days: 7
+
+  release:
+    needs: [test, windows, linux-native]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ASR2RPP-Windows-x64-${{ github.run_id }}
+          path: release-files
+      - name: Verify the exact tested ZIP before publishing
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, zipfile
+          root = pathlib.Path('release-files')
+          archive = root / 'ASR2RPP-Windows-x64.zip'
+          expected = (root / 'SHA256SUMS.txt').read_text().split()[0]
+          with archive.open('rb') as handle:
+              assert hashlib.file_digest(handle, 'sha256').hexdigest() == expected
+          with zipfile.ZipFile(archive) as package:
+              meta = json.loads(package.read('ASR2RPP/version.json'))
+              assert meta['commit'] == os.environ['GITHUB_SHA']
+              assert not meta['ffmpeg_bundled']
+              assert 'ASR2RPP/models/anime-whisper.toml' in package.namelist()
+              assert not any('/model-templates/' in n or '/_internal/models/' in n for n in package.namelist())
+      - name: Publish immutable commit-tagged preview ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          tag="preview-${GITHUB_SHA:0:12}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Release already exists; leaving published assets unchanged.'
+          else
+            gh release create "$tag" release-files/ASR2RPP-Windows-x64.zip release-files/SHA256SUMS.txt \
+              --target "$GITHUB_SHA" --prerelease --title "ASR2RPP Windows ${GITHUB_SHA:0:12}" \
+              --notes-file docs/release-notes.md
+          fi

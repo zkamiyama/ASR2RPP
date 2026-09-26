@@ -52,33 +52,38 @@ def cache_root() -> Path:
 
 
 def model_directory() -> Path:
-    directory = data_root() / 'models'
-    directory.mkdir(parents=True, exist_ok=True)
-    migration_file = assets_root() / 'models' / 'template-migrations.json'
-    migrations = json.loads(migration_file.read_text(encoding='utf-8')) if migration_file.exists() else {}
-    for template in (assets_root() / 'models').glob('*.toml'):
-        dest = directory / template.name
-        if not dest.exists():
-            with dest.open('x', encoding='utf-8') as handle:
-                handle.write(template.read_text(encoding='utf-8'))
-        elif template.name in migrations:
-            old = dest.read_text(encoding='utf-8-sig')
-            fingerprint = hashlib.sha256(old.encode('utf-8')).hexdigest()
-            if fingerprint in migrations[template.name]:
-                backup = dest.with_name(dest.name + '.' + fingerprint[:12] + '.bak')
-                if not backup.exists():
-                    with backup.open('x', encoding='utf-8') as handle:
-                        handle.write(old)
-                import tempfile
-                fd, name = tempfile.mkstemp(prefix='template-', suffix='.tmp', dir=directory)
-                try:
-                    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-                        handle.write(template.read_text(encoding='utf-8'))
-                    if dest.read_text(encoding='utf-8-sig') == old:
-                        os.replace(name, dest)
-                finally:
-                    Path(name).unlink(missing_ok=True)
-    return directory
+    """Authoritative shipped definitions, read in place (never from _MEIPASS)."""
+    root = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else assets_root()
+    return root / 'models'
+
+
+def custom_model_directory() -> Path:
+    """Explicit user models, separate from shipped definitions; no auto-copy."""
+    return data_root() / 'custom-models'
+
+
+def _definition_files(directory):
+    if directory is not None:
+        directory = Path(directory)
+        return [(p, 'explicit') for p in sorted(directory.glob('*.toml'))], []
+    bundled = model_directory()
+    if not bundled.is_dir():
+        return [], [f'Missing model definitions: {bundled}. Extract the complete application ZIP.']
+    files = [(p, 'bundled') for p in sorted(bundled.glob('*.toml'))]
+    files += [(p, 'custom') for p in sorted(custom_model_directory().glob('*.toml'))]
+    # Read old *custom* definitions in place for compatibility. Old shipped copies
+    # must never silently shadow this version's authoritative bundled definition.
+    files += [(p, 'legacy') for p in sorted((data_root() / 'models').glob('*.toml'))]
+    return files, []
+
+
+def _known_template_copy(file, bundled):
+    fingerprint = hashlib.sha256(file.read_text(encoding='utf-8-sig').encode()).hexdigest()
+    if bundled.is_file() and fingerprint == hashlib.sha256(bundled.read_text(encoding='utf-8-sig').encode()).hexdigest():
+        return True
+    migrations = model_directory() / 'template-migrations.json'
+    known = json.loads(migrations.read_text(encoding='utf-8')) if migrations.is_file() else {}
+    return fingerprint in known.get(file.name, [])
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,7 @@ class Model:
     sample_rate: int = 16000
     description: str = ''
     definition: Path | None = None
+    definition_sha256: str = ''
 
     @property
     def label(self) -> str:
@@ -175,20 +181,37 @@ def repo_id(value: str) -> str:
 
 
 def load_catalog(directory: Path | None = None) -> tuple[dict[str, Model], list[str]]:
-    models, errors = {}, []
-    for file in sorted((directory or model_directory()).glob('*.toml')):
+    files, errors = _definition_files(directory)
+    models, claimed = {}, {}
+    for file, origin in files:
         try:
-            data = tomllib.loads(file.read_text(encoding='utf-8-sig'))
+            key = file.stem.casefold()
+            if key in claimed:
+                previous = claimed[key]
+                if origin == 'legacy' and _known_template_copy(file, previous):
+                    continue
+                raise ValueError(f'Duplicate model ID; {previous} is authoritative. '
+                                 'Rename the custom TOML to a distinct model ID; it was not overwritten.')
+            # A broken custom override must not cause silent fallback to another file.
+            claimed[key] = file
+            payload = file.read_bytes()
+            data = tomllib.loads(payload.decode('utf-8-sig'))
             allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description'}
             unknown = set(data) - allowed
             if unknown:
                 raise ValueError(f'Unknown fields: {sorted(unknown)}')
-            model = Model(id=file.stem, definition=file, **data)
+            model = Model(id=file.stem, definition=file.resolve(),
+                          definition_sha256=hashlib.sha256(payload).hexdigest(), **data)
             model.validate()
             models[model.id] = model
-        except (ValueError, TypeError, OSError) as error:
-            errors.append(f'{file.name}: {error}')
+        except (ValueError, TypeError, OSError, AttributeError) as error:
+            errors.append(f'{file}: {error}')
     return models, errors
+
+
+def definition_provenance(model):
+    return {'path': str(model.definition) if model.definition else None,
+            'sha256': model.definition_sha256 or None}
 
 
 @timed('sha256')

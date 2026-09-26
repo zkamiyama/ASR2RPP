@@ -73,11 +73,15 @@ Windows ZIPでは`python -m asr2rpp.cli`を`asr2rpp-cli.exe`に置き換えま�
 データルートはWindowsでは`%LOCALAPPDATA%\ASR2RPP`、macOSでは`~/Library/Application Support/ASR2RPP`、
 Linuxでは`$XDG_DATA_HOME/asr2rpp`（未設定なら`~/.local/share/asr2rpp`）です。
 `ASR2RPP_HOME`があればそれを優先します。
-`models/`にTOML、`weights/`に重み、`cache/`に一時ファイル、`runtime/ffmpeg/`に取得したFFmpegを置きます。
+`weights/`に重み、`cache/`に推論用一時ファイル、`runtime/ffmpeg/`に取得したFFmpegを置きます。
+同梱TOMLは展開したアプリの `models/` をGUIとCLIが直接読みます。一時フォルダーやユーザーフォルダーへの自動コピーはしません。
+独自TOMLはデータルートの `custom-models/` に置き、同梱モデルと異なるファイル名（モデルID）を使ってください。
 重みと一時保存先はGUI設定または`ASR2RPP_WEIGHTS_DIR` / `ASR2RPP_CACHE_DIR`で変更できます。
 
-標準TOMLは初回だけコピーし、既存のユーザー編集は上書きしません。取得ログは古い説明名ではなくモデルIDを表示します。
-TOMLの変更後は設定から再読込してください。配布モデルと異なる独自モデルにはアダプターの追加実装が必要な場合があります。
+旧データルート `models/` の未編集同梱コピーは読み飛ばし、独自IDのモデルは旧場所から直接読み続けます。
+同梱と同名の編集済みTOMLは自動上書きせず、競合と実ファイルの場所を表示します。独自IDに変更して利用してください。
+GO直前と「モデル定義を再読込」で原本を読み直し、実行中は開始時の定義スナップショットを使用します。
+ログはモデルID、ツールチップと `models list --json` は読込元のパス、診断manifestはTOMLのSHA-256も記録します。配布モデルと異なる独自モデルにはアダプターの追加実装が必要な場合があります。
 Mel-Band RoFormerの元CKPTは検証・変換成功後に既定で削除します。失敗時は再試行用に残します。
 設定の「変換成功後も元チェックポイントを保持」をONにすると成功後も残します。
 
@@ -105,3 +109,11 @@ GPUがないCIのためRTX 4080/Vulkan上の速度や全工程のピークVRAM�
 Anime WhisperはTOMLの `constraints.inference` により、VAD短区間化・時刻生成OFF・履歴OFFを使用します。
 強制アライメントOFFではVADの発話区間時刻でRPPを出力し、ONなら単語時刻を精細化します。VADモデルは初回にチェックサム付きで自動取得します。
 設定例と編集済みTOMLの更新方法は [推論制約](docs/inference-policy.md) を参照してください。
+
+
+## 停止と再実行
+
+STOP後は子プロセスと一時ファイルの終了処理を待ちます。終了処理中は二重起動できません。
+GOは待機・中断・失敗の項目を対象に再実行し、完了済みの出力は再処理しません。
+準備中の停止、工程中の停止、例外でも項目を実行中のまま残さず、進捗の終端通知は1回だけにします。
+ウィンドウを閉じた場合も停止処理を待ってから閉じます。途中からの推論再開ではなく項目単位の再実行です。

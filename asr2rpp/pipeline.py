@@ -11,7 +11,7 @@ import threading
 import time
 import tempfile
 import wave
-from .catalog import Model, checkpoint, cache_root, resolve_model, digest
+from .catalog import Model, checkpoint, cache_root, resolve_model, digest, definition_provenance
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
 from .transcript import clean_bounds, group_units, has_alignable_text, assign_speakers, safe_label
 from .rpp_export import write_reference
@@ -166,7 +166,9 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
     temporary = tempfile.TemporaryDirectory(prefix='job-', dir=cache_directory)
     work = Path(temporary.name)
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
-                'models': provenance, 'status': 'running', 'reference_mode': 'non_destructive',
+                'models': provenance,
+                'model_definitions': {task: definition_provenance(catalog[stage.model_id]) for task, stage in
+                    [('asr', settings.asr), ('diar', settings.diar), ('align', settings.align)] if stage is not None}, 'status': 'running', 'reference_mode': 'non_destructive',
                 'audio_stream': '0:a:0', 'time_origin': 'FFmpeg normalized demuxed-media origin',
                 'source_unchanged': None,
                 'inference_policy': asdict(policy_for(catalog[settings.asr.model_id]))}
@@ -240,9 +242,11 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('RPP — writing non-destructive references')
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
                    'units': [asdict(u) for u in units], 'warnings': warnings})
+        if digest(source) != manifest['source_sha256']:
+            raise ValueError('Original input changed while processing')
         if _analysis_report is not None:
             manifest.update(status='completed', elapsed_seconds=time.monotonic()-started,
-                            source_unchanged=(digest(source)==manifest['source_sha256']), warnings=warnings,
+                            source_unchanged=True, warnings=warnings,
                             analysis_only=True)
             return report
         reference_length = full_reference_duration(
@@ -252,7 +256,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
                                       'duration_seconds': float(reference_length)}
         manifest.update(status='completed', elapsed_seconds=time.monotonic() - started,
-                        source_unchanged=(digest(source) == manifest['source_sha256']), warnings=warnings,
+                        source_unchanged=True, warnings=warnings,
                         output=str(output))
         return output
     except BaseException as error:

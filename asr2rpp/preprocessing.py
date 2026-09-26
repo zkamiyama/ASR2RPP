@@ -12,7 +12,7 @@ import shutil
 import tempfile
 import time
 from . import pipeline as core
-from .catalog import Model, checkpoint, cache_root, digest, resolve_model
+from .catalog import Model, checkpoint, cache_root, digest, resolve_model, definition_provenance
 from .adapters import (executable, ffmpeg_path, run_process, Unit, split_engine_parameters,
                        audio_session_args, validate_model_parameter_constraints, scalar)
 from .rpp_export import write_reference
@@ -108,7 +108,7 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
     siblings = ('_vocals.wav',) if settings.reference_audio == 'processed' else ()
     output, report = core.reserve_output(source, settings, sibling_suffixes=siblings)
     manifest = {'source': str(source), 'source_sha256': digest(source), 'settings': asdict(settings),
-                'status': 'running', 'model': provenance, 'reference_audio': settings.reference_audio,
+                'status': 'running', 'model': provenance, 'model_definition': definition_provenance(model), 'reference_audio': settings.reference_audio,
                 'clip_start': settings.clip_start, 'source_unchanged': None}
     started = time.monotonic()
     core.json_write(report / 'manifest.json', manifest)

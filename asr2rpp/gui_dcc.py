@@ -13,7 +13,7 @@ import sys
 import threading
 import tomllib
 
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl, QSize, QLocale
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl, QSize, QLocale, QTimer
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog,
@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
 
 from .catalog import (
     Cancelled, assets_root, cache_root, data_root, load_catalog, model_directory,
-    resolve_model, weights_root,
+    resolve_model, weights_root, custom_model_directory, checkpoint,
 )
+from .run_state import RETRYABLE, TERMINAL, RunLedger
 from .pipeline import MEDIA_EXTENSIONS, Stage
 from .preprocessing import Settings, run_job
 from .queue_runner import run_queue
@@ -250,7 +251,8 @@ TEXT = {
         "keep_source": "変換成功後も元チェックポイントを保持",
         "prepare_models": "選択モデルを準備",
         "open_models": "モデル保存先を開く",
-        "open_toml": "モデルTOMLを開く",
+        "open_toml": "同梱TOMLを開く",
+        "open_custom_toml": "独自TOMLを開く",
         "reload_toml": "モデル定義を再読込",
         "exe_override": "実行ファイル上書き",
         "save": "保存",
@@ -318,7 +320,8 @@ TEXT = {
         "keep_source": "Keep source checkpoint after conversion",
         "prepare_models": "Prepare selected models",
         "open_models": "Open model directory",
-        "open_toml": "Open model TOML",
+        "open_toml": "Open bundled TOML",
+        "open_custom_toml": "Open custom TOML",
         "reload_toml": "Reload model definitions",
         "exe_override": "Executable overrides",
         "save": "Save",
@@ -749,12 +752,12 @@ class StagePanel(QFrame):
                 label, description = model_text(model, self.ui_lang)
                 self.model.addItem(label, model.id)
                 index = self.model.count() - 1
-                self.model.setItemData(index, description, Qt.ItemDataRole.ToolTipRole)
+                source = str(model.definition) if model.definition else ""
+                self.model.setItemData(index, description + ("\nTOML: " + source if source else ""), Qt.ItemDataRole.ToolTipRole)
         if selected:
-            index = self.model.findData(selected)
-            if index >= 0:
-                self.model.setCurrentIndex(index)
-        if self.model.count() and self.model.currentIndex() < 0:
+            # A removed/broken selected model must not become a different model.
+            self.model.setCurrentIndex(self.model.findData(selected))
+        elif self.model.count():
             self.model.setCurrentIndex(0)
         self.model.blockSignals(False)
         self._model_changed()
@@ -766,6 +769,7 @@ class StagePanel(QFrame):
         if model:
             allowed = {spec["key"] for spec in specs_for(model)}
             self.parameters = ui_parameters(model, {key: value for key, value in self.parameters.items() if key in allowed})
+            self.model.setToolTip("TOML: " + str(model.definition or ""))
             self.policy_label.setText(policy_notice(model, self.ui_lang))
             self.policy_label.setVisible(bool(self.policy_label.text()))
             default_language = str(model.defaults.get("language", "ja"))
@@ -851,9 +855,10 @@ class Worker(QThread):
     def __init__(self, jobs, settings, catalog, prepare_only=False,
                  keep_sources=False, queue_strategy="stage", batch_audio_ram_mb=512):
         super().__init__()
-        self.jobs = jobs
+        self.jobs = tuple(jobs)
+        self.ledger = RunLedger(tuple(i for i, _ in self.jobs))
         self.settings = copy.deepcopy(settings)
-        self.catalog = catalog.copy()
+        self.catalog = copy.deepcopy(catalog)
         self.prepare_only = prepare_only
         self.keep_sources = keep_sources
         self.queue_strategy = queue_strategy
@@ -866,6 +871,7 @@ class Worker(QThread):
     def _prepare_models(self):
         seen = set()
         for stage in self._stages():
+            checkpoint(self.cancel)
             if not stage or stage.model_id in seen:
                 continue
             seen.add(stage.model_id)
@@ -884,33 +890,46 @@ class Worker(QThread):
                 request, _ = split_engine_parameters(model, stage.parameters or {})
                 vad_model(model, request, self.cancel, self.progress.emit)
 
+    def emit_item(self, index, status, detail=''):
+        event = self.ledger.accept(index, status, detail)
+        if event is not None:
+            self.item.emit(index, *event)
+
     def run(self):
+        failure = 'Processing ended without a result'
         try:
+            checkpoint(self.cancel)
             self._prepare_models()
+            checkpoint(self.cancel)
             if self.prepare_only:
                 self.progress.emit("Models ready")
                 return
             if self.queue_strategy == "stage" and len(self.jobs) > 1:
                 run_queue(self.jobs, self.settings, self.catalog, self.cancel,
-                          self.progress.emit, self.item.emit, self.batch_audio_ram_mb)
+                          self.progress.emit, self.emit_item, self.batch_audio_ram_mb)
                 return
             for index, path in self.jobs:
-                if self.cancel.is_set():
-                    break
-                self.item.emit(index, "running", "")
+                checkpoint(self.cancel)
+                self.emit_item(index, "running")
                 try:
                     output = run_job(Path(path), self.settings, self.catalog,
                                      self.cancel, self.progress.emit)
-                    self.item.emit(index, "done", str(output))
+                    self.emit_item(index, "done", str(output))
                 except Cancelled:
-                    self.item.emit(index, "stopped", "")
-                    break
+                    raise
                 except Exception as exc:
-                    self.item.emit(index, "failed", str(exc))
+                    checkpoint(self.cancel)
+                    self.emit_item(index, "failed", str(exc))
         except Cancelled:
-            pass
+            self.cancel.set()
         except Exception as exc:
-            self.error.emit(str(exc))
+            failure = str(exc)
+            self.error.emit(failure)
+        finally:
+            if not self.prepare_only:
+                for index in self.ledger.pending:
+                    self.emit_item(index, "stopped" if self.cancel.is_set() else "failed",
+                                   "" if self.cancel.is_set() else failure)
 
 
 class FFmpegBootstrap(QThread):
@@ -1028,6 +1047,9 @@ class PreferencesDialog(QDialog):
         row.addWidget(open_toml)
         row.addWidget(reload_toml)
         advanced_layout.addLayout(row)
+        custom_toml = QPushButton(icon("folder_open"), tr["open_custom_toml"])
+        custom_toml.clicked.connect(lambda: owner.open_path(custom_model_directory()))
+        advanced_layout.addWidget(custom_toml)
 
         self.keep_source = QCheckBox(tr["keep_source"])
         self.keep_source.setChecked(owner.keep_model_sources)
@@ -1109,13 +1131,13 @@ class PreferencesDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, preferences=None):
         super().__init__()
         self.setWindowTitle("ASR2RPP")
         self.resize(1180, 760)
         self.setMinimumSize(920, 600)
 
-        self.preferences = QSettings("ASR2RPP", "ASR2RPP")
+        self.preferences = preferences if preferences is not None else QSettings("ASR2RPP", "ASR2RPP")
         # The legacy preview defaulted native runtimes to CPU. The DCC UI changes the
         # product default to Vulkan, so migrate once; later explicit CPU choices persist.
         if not self.preferences.value("runtime_defaults_v2", False, type=bool):
@@ -1136,7 +1158,9 @@ class MainWindow(QMainWindow):
                 self.runtime_defaults[key] = "vulkan"
         try:
             self.runtime_paths = json.loads(self.preferences.value("runtime_paths", "{}"))
-        except Exception:
+            if not isinstance(self.runtime_paths, dict) or any(not isinstance(v, str) for v in self.runtime_paths.values()):
+                raise ValueError('Invalid runtime path preferences')
+        except (ValueError, TypeError):
             self.runtime_paths = {}
         self.model_storage_dir = str(self.preferences.value("storage/model_dir", "")).strip()
         self.temp_storage_dir = str(self.preferences.value("storage/temp_dir", "")).strip()
@@ -1145,10 +1169,20 @@ class MainWindow(QMainWindow):
         self.queue_strategy = str(self.preferences.value("queue/strategy", "stage"))
         if self.queue_strategy not in {"stage", "file"}:
             self.queue_strategy = "stage"
-        self.batch_audio_ram_mb = int(self.preferences.value("queue/batch_audio_ram_mb", 512))
-        self.threads = int(self.preferences.value("threads", 4))
+        try:
+            self.batch_audio_ram_mb = max(128, min(8192, int(self.preferences.value("queue/batch_audio_ram_mb", 512))))
+        except (ValueError, TypeError):
+            self.batch_audio_ram_mb = 512
+        try:
+            self.threads = max(1, min(128, int(self.preferences.value("threads", 4))))
+        except (ValueError, TypeError):
+            self.threads = 4
         self.entries = []
         self.worker = None
+        self._stopping = False
+        self._close_requested = False
+        self._run_ledger = None
+        self.catalog_errors = []
         self.ffmpeg_worker = None
         self.completed = 0
         self.catalog = {}
@@ -1307,8 +1341,8 @@ class MainWindow(QMainWindow):
             self.start_ffmpeg_bootstrap()
 
     def start_ffmpeg_bootstrap(self):
-        if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
-            return
+        if self.ffmpeg_worker is not None:
+            return  # Keep ownership until its queued finished signal is handled.
         worker = FFmpegBootstrap(self.runtime_paths.get("ffmpeg", ""))
         self.ffmpeg_worker = worker
         worker.progress.connect(self.show_progress)
@@ -1319,9 +1353,13 @@ class MainWindow(QMainWindow):
 
     def ffmpeg_bootstrap_finished(self):
         worker = self.ffmpeg_worker
+        if worker is None or (self.sender() is not None and self.sender() is not worker):
+            return
         self.ffmpeg_worker = None
         if worker:
             worker.deleteLater()
+        if self._close_requested:
+            QTimer.singleShot(0, self.close)
 
     def tr(self, key):
         return TEXT[self.ui_lang][key]
@@ -1347,18 +1385,27 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def reload_catalog(self):
-        self.catalog, errors = load_catalog()
-        for panel in (self.preprocess, self.asr, self.align, self.diar):
+        if self.worker:
+            return
+        panels = (self.preprocess, self.asr, self.align, self.diar)
+        saved = [(p.model.currentData(), p.language.currentText(), copy.deepcopy(p.parameters)) for p in panels]
+        self.catalog, self.catalog_errors = load_catalog()
+        for panel, (selected, language, parameters) in zip(panels, saved):
             panel.set_catalog(self.catalog)
-        if errors:
-            self.status_label.setText(errors[0])
+            if selected and selected == panel.model.currentData():
+                panel.language.setCurrentText(language)
+                panel.parameters = ui_parameters(self.catalog[selected], parameters)
+        for error in self.catalog_errors:
+            self.append_log('[MODEL] ' + error)
+        if self.catalog_errors:
+            self.status_label.setText(self.catalog_errors[0])
 
     def restore_stage_preferences(self):
         for key, panel in (("preprocess", self.preprocess), ("asr", self.asr),
                            ("align", self.align), ("diar", self.diar)):
             model_id = str(self.preferences.value(f"{key}/model", ""))
             index = panel.model.findData(model_id)
-            if index >= 0:
+            if model_id:
                 panel.model.setCurrentIndex(index)
             device = str(self.preferences.value(f"{key}/device", "default"))
             index = panel.device.findData(device)
@@ -1370,7 +1417,9 @@ class MainWindow(QMainWindow):
             panel.language.setCurrentText(language)
             try:
                 panel.parameters = json.loads(self.preferences.value(f"{key}/parameters", "{}"))
-            except Exception:
+                if not isinstance(panel.parameters, dict):
+                    raise ValueError('Invalid parameter preferences')
+            except (ValueError, TypeError):
                 panel.parameters = {}
             model = self.catalog.get(panel.model.currentData())
             if model:
@@ -1529,17 +1578,23 @@ class MainWindow(QMainWindow):
         self.update_state()
 
     def remove_selected(self):
+        if self.worker:
+            return
         rows = {index.row() for index in self.table.selectionModel().selectedRows()}
         self.entries = [entry for i, entry in enumerate(self.entries) if i not in rows]
         self.render_queue()
 
     def retry_failed(self):
+        if self.worker:
+            return
         for entry in self.entries:
             if entry["status"] in {"failed", "stopped"}:
                 entry.update(status="waiting", output="")
         self.render_queue()
 
     def clear_queue(self):
+        if self.worker:
+            return
         self.entries.clear()
         self.render_queue()
 
@@ -1608,8 +1663,8 @@ class MainWindow(QMainWindow):
                 f"W:{self.runtime_defaults['whisper_cpp'].upper()}  "
                 f"A:{self.runtime_defaults['audio_cpp'].upper()}")
         valid_output = self.output_mode.currentData() == "same" or bool(self.output_dir.text().strip())
-        can_go = valid_output and any(e["status"] == "waiting" for e in self.entries)
-        self.run_button.setEnabled(True if self.worker else can_go)
+        can_go = valid_output and any(e["status"] in RETRYABLE for e in self.entries)
+        self.run_button.setEnabled(not self._stopping if self.worker else can_go)
         self.run_button.setProperty("running", bool(self.worker))
         self.run_button.setText("STOP" if self.worker else "GO")
         self.run_button.style().unpolish(self.run_button)
@@ -1628,7 +1683,9 @@ class MainWindow(QMainWindow):
 
     def toggle_run(self):
         if self.worker:
+            self._stopping = True
             self.worker.cancel.set()
+            self.update_state()
             self.status_label.setText("Stopping..." if self.ui_lang == "en" else "停止処理中...")
             return
         self.start_work(False)
@@ -1637,17 +1694,23 @@ class MainWindow(QMainWindow):
         if self.worker:
             return
         try:
+            self.reload_catalog()
             settings = self.current_settings()
             validation = copy.deepcopy(settings)
             if prepare_only:
                 validation.same_directory = True
             validation.validate(self.catalog)
-            jobs = [(i, e["path"]) for i, e in enumerate(self.entries)
-                    if e["status"] == "waiting"]
+            jobs = [] if prepare_only else [(i, e["path"]) for i, e in enumerate(self.entries)
+                    if e["status"] in RETRYABLE]
             if not prepare_only and not jobs:
                 return
             self.save_preferences()
             self.completed = 0
+            self._stopping = False
+            self._run_ledger = RunLedger(tuple(i for i, _ in jobs))
+            for i, _ in jobs:
+                self.entries[i].update(status="waiting", output="")
+            self.render_queue()
             self.progress.setRange(0, 0 if prepare_only else max(1, len(jobs)))
             self.progress.setValue(0)
             self.append_log("— " + (self.tr("preparing") if prepare_only else self.pipeline_text()) + " —")
@@ -1666,41 +1729,61 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "ASR2RPP", str(exc))
 
     def show_progress(self, value):
+        sender = self.sender()
+        if (isinstance(sender, Worker) and sender is not self.worker) or (isinstance(sender, FFmpegBootstrap) and sender is not self.ffmpeg_worker):
+            return
         self.append_log(value)
         self.status_label.setText(str(value)[:180])
 
     def show_error(self, value):
+        sender = self.sender()
+        if (isinstance(sender, Worker) and sender is not self.worker) or (isinstance(sender, FFmpegBootstrap) and sender is not self.ffmpeg_worker):
+            return
         self.append_log("[ERROR] " + str(value))
         self.status_label.setText(str(value)[:180])
 
     def item_changed(self, index, status, detail):
-        mapping = {
-            "実行中": "running", "完了": "done", "失敗": "failed", "中断": "stopped",
-            "ASR": "running", "SEP": "running", "Forced Align": "running",
-            "Diarization": "running", "RPP": "running", "ASR準備": "running",
-            "前処理準備": "running",
-        }
-        canonical = mapping.get(status, status if status in {"running", "done", "failed", "stopped"} else "running")
+        sender = self.sender()
+        if sender is not None and sender is not self.worker:
+            return  # A queued signal from a finished attempt must not touch a new one.
+        if self._run_ledger is None or not 0 <= index < len(self.entries):
+            return
+        event = self._run_ledger.accept(index, status, detail)
+        if event is None:
+            return
+        canonical, detail = event
         self.entries[index].update(status=canonical, output=detail if canonical in {"done", "failed"} else "")
         if detail and canonical in {"failed", "stopped"}:
             self.append_log(detail)
-        if canonical in {"done", "failed", "stopped"}:
-            self.completed += 1
-            self.progress.setValue(self.completed)
+        self.completed = self._run_ledger.completed
+        self.progress.setValue(self.completed)
         self.render_queue()
 
     def work_finished(self):
         worker = self.worker
+        if worker is None or (self.sender() is not None and self.sender() is not worker):
+            return
+        if self._run_ledger:
+            for index in self._run_ledger.pending:
+                # Reconcile even an unexpected worker exit. Completed items are immutable.
+                status, detail = worker.ledger.records.get(index, ('waiting', ''))
+                if status not in TERMINAL:
+                    status, detail = ('stopped', '') if worker.cancel.is_set() else ('failed', 'Worker ended without a result')
+                self.item_changed(index, status, detail)
         self.worker = None
+        self._stopping = False
         self.set_busy(False)
         if self.progress.maximum() == 0:
             self.progress.setRange(0, 1)
             self.progress.setValue(1)
         self.update_state()
-        if worker:
-            worker.deleteLater()
+        worker.deleteLater()
+        if self._close_requested:
+            QTimer.singleShot(0, self.close)
 
     def open_settings(self):
+        if self.worker:
+            return
         dialog = PreferencesDialog(self)
         prepare = {"value": False}
         dialog.prepareRequested.connect(lambda: prepare.__setitem__("value", True))
@@ -1731,15 +1814,15 @@ class MainWindow(QMainWindow):
                 self.start_work(True)
 
     def closeEvent(self, event):
+        self._close_requested = True
         if self.worker:
-            self.worker.cancel.set()
+            self.toggle_run()
             event.ignore()
             return
         if self.ffmpeg_worker and self.ffmpeg_worker.isRunning():
             self.ffmpeg_worker.cancel.set()
-            if not self.ffmpeg_worker.wait(5000):
-                event.ignore()
-                return
+            event.ignore()
+            return
         self.save_preferences()
         event.accept()
 

@@ -90,26 +90,17 @@ max_segment_seconds=12.0
     assert policy_for(models['custom']).uses_vad_timing
 
 
-def test_generic_template_upgrade_preserves_custom_files(tmp_path, monkeypatch):
+def test_model_directory_never_copies_or_rewrites_templates(tmp_path, monkeypatch):
     import asr2rpp.catalog as catalog
     assets, home = tmp_path/'assets', tmp_path/'home'
     (assets/'models').mkdir(parents=True); (home/'models').mkdir(parents=True)
-    old, new = 'old template\n', 'new template\n'
-    fingerprint = hashlib.sha256(old.encode()).hexdigest()
-    for name in ['plain.toml', 'custom.toml']:
-        (assets/'models'/name).write_text(new)
-    (assets/'models'/'template-migrations.json').write_text(json.dumps({n:[fingerprint] for n in ['plain.toml','custom.toml']}))
-    (home/'models'/'plain.toml').write_text(old)
-    (home/'models'/'custom.toml').write_text('user modified')
+    (assets/'models'/'a.toml').write_text('new shipped definition')
+    (home/'models'/'a.toml').write_text('older user file')
     monkeypatch.setattr(catalog, 'assets_root', lambda: assets)
     monkeypatch.setattr(catalog, 'data_root', lambda: home)
-    catalog.model_directory()
-    assert (home/'models'/'plain.toml').read_text() == new
-    assert (home/'models'/'custom.toml').read_text() == 'user modified'
-    backups = list((home/'models').glob('*.bak'))
-    assert len(backups) == 1 and backups[0].read_text() == old
-    catalog.model_directory()
-    assert len(list((home/'models').glob('*.bak'))) == 1
+    assert catalog.model_directory() == assets/'models'
+    assert (home/'models'/'a.toml').read_text() == 'older user file'
+    assert not list(home.rglob('*.bak')) and not list(home.rglob('*.tmp'))
 
 
 def test_gui_policy_locks_values_but_alignment_remains_optional(tmp_path, monkeypatch):
