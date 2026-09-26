@@ -50,9 +50,6 @@ jobs:
                               worker.deleteLater()
                       QMessageBox.warning(self, "ASR2RPP", str(exc))
           '''
-          # Strip the YAML-readable extra indentation from the generated lines.
-          lines = new.splitlines()
-          new = lines[0] + '\n' + '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[1:]) + '\n'
           assert block.count(old) == 1
           s = s[:first] + block.replace(old, new, 1) + s[last:]
           compile(s, str(p), 'exec')
