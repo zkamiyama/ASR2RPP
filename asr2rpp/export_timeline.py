@@ -48,8 +48,13 @@ def build_timeline(reference: Path, units, timeline_origin: float,
         start, end = seconds(unit.start), seconds(unit.end)
         position = timeline + start
         offset = position - origin
-        if end <= start or offset < -1e-9 or offset + end - start > duration + 1e-6:
+        if end <= start or offset < -1e-9 or offset + end - start > duration + 0.001:
             raise ValueError('Edit interval is outside its reference media')
+        # Resampling can round the selected duration up by one input sample.
+        # Only the edit boundary is capped; fine units and native data stay intact.
+        length = min(end-start, duration-max(0.0, offset))
+        if length <= 0:
+            continue
         speaker = unit.speaker if diar else None
         key = speaker if diar else '__transcript__'
         title = (str(speaker) if speaker is not None else 'UNKNOWN') if diar else 'Transcript'
@@ -66,9 +71,10 @@ def build_timeline(reference: Path, units, timeline_origin: float,
             lane = dict(track=track, end=0.0)
             lanes.append(lane)
         lane['track']['clips'].append(dict(text=unit.text, start_seconds=position,
-            source_start_seconds=max(0.0, offset), duration_seconds=end-start,
+            source_start_seconds=max(0.0, offset), duration_seconds=length,
+            reference_boundary_clamped=length < end-start,
             unit_index=index, method=unit.method, granularity=unit.granularity))
-        lane['end'] = position + end-start
+        lane['end'] = position + length
     value = dict(sample_rate=sample_rate, time_unit='seconds', interval='[start,end)',
         reference=dict(path=str(reference), url=reference.as_uri(),
                        origin_seconds=origin, duration_seconds=duration), tracks=tracks)
