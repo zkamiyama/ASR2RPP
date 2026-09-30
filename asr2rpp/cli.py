@@ -27,7 +27,8 @@ def main(argv=None):
     run.add_argument('files', nargs='+', type=Path)
     run.add_argument('--format', dest='formats', action='append', metavar='RPP,OTIO,JSON',
                      help='Output formats, comma-separated or repeatable; default: rpp')
-    run.add_argument('--asr', default='whisper-base')
+    run.add_argument('--asr', default='anime-whisper',
+                     help='ASR model ID (default: anime-whisper, language ja)')
     run.add_argument('--diar', help='omit to disable diarization')
     run.add_argument('--align', help='forced-alignment model; select --timing auto or alignment')
     run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')

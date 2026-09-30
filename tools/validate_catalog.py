@@ -31,7 +31,7 @@ def case_arguments(model_id, definition, device, fixtures, output):
     english = language in ('en', 'en-US') or model_id == 'voxtral-mini-realtime-q4'
     fixture = fixtures['en' if english else 'ja']
     selected_device = 'cpu' if definition.get('provider', definition.get('runtime')) == 'sherpa_onnx' else device
-    base = ['run', str(fixture), '--threads', '4', '--output-dir', str(output)]
+    base = ['run', str(fixture), '--threads', '4', '--format', 'rpp,otio,json', '--output-dir', str(output)]
     if task == 'asr':
         base += ['--asr', model_id, '--asr-device', selected_device, '--timing', 'auto']
         if definition.get('capabilities', {}).get('speakers'):
@@ -114,6 +114,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--package', type=Path, help='Expanded Windows directory or macOS .app')
     group.add_argument('--source-root', type=Path, help='Developer check, not a frozen-package test')
+    parser.add_argument('--archive', type=Path, help='Exact ZIP that was extracted for this test')
     parser.add_argument('--fixture-ja', type=Path, required=True)
     parser.add_argument('--fixture-en', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
@@ -121,11 +122,14 @@ def main():
     parser.add_argument('--ffmpeg', required=True)
     parser.add_argument('--device', choices=('cpu', 'vulkan', 'metal'), default='cpu')
     parser.add_argument('--models', nargs='*', help='Default: every shipped TOML, including optional stages')
+    parser.add_argument('--resume', action='store_true', help='Resume the identical package/fixtures in an existing report')
     parser.add_argument('--install', action='store_true', help='Explicitly allow downloading the selected weights')
     parser.add_argument('--timeout', type=int, default=900)
     args = parser.parse_args()
+    if args.resume and not (args.package and args.archive):
+        raise ValueError('Resume requires a frozen package and its exact --archive')
     report = args.report.resolve()
-    report.mkdir(parents=True, exist_ok=False)
+    report.mkdir(parents=True, exist_ok=args.resume)
     if args.package:
         package = args.package.resolve()
         assets = package / 'Contents/Resources' if package.suffix == '.app' else package
@@ -162,12 +166,25 @@ def main():
     version = assets / 'version.json'
     if version.is_file():
         summary['package_commit'] = json.loads(version.read_text())['commit']
+    if args.archive:
+        summary['package_sha256'] = digest(args.archive)
     summary_file = report / 'summary.json'
+    if args.resume and summary_file.exists():
+        previous = json.loads(summary_file.read_text(encoding='utf-8'))
+        for key in ('validation_mode', 'package_commit', 'package_sha256', 'device', 'fixtures', 'definition_hashes'):
+            if previous.get(key) != summary.get(key):
+                raise ValueError('Resume identity mismatch: ' + key)
+        summary['cases'] = previous.get('cases', {})
     def save():
         summary_file.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     for model_id in selected:
+        if summary['cases'].get(model_id, {}).get('passed'):
+            print(model_id, 'already verified for this exact package', flush=True)
+            continue
         d = definitions[model_id]
         output = report / model_id
+        if output.exists():
+            raise ValueError('Incomplete previous case exists; keep it and select a new report directory: ' + str(output))
         fixture, device, argv = case_arguments(model_id, d, args.device, fixtures, output)
         key = 'ja' if fixture == fixtures['ja'] else 'en'
         record = dict(task=d['task'], requested_device=device, fixture=key, passed=False)
@@ -185,6 +202,8 @@ def main():
             record.update(validate_output(output, d['task'],
                           d['task'] == 'asr' and d.get('capabilities', {}).get('timestamps') == 'none',
                           hashes[key], durations[key], d.get('capabilities', {}).get('speakers', False)))
+            from smoke_outputs import check_exports
+            record['exports'] = check_exports(next(output.glob('*.json')))
             gpu_lines = []
             for log in output.rglob('*.log'):
                 for line in log.read_text(encoding='utf-8', errors='replace').splitlines():

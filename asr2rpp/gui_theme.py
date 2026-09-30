@@ -346,8 +346,8 @@ MODEL_TEXT = {
         "en": ("VibeVoice ASR · Q8", "Long-form offline integrated ASR with comparatively high memory usage."),
     },
     "whisper-base": {
-        "ja": ("Whisper Base", "標準Whisper Base。既定モデル・動作確認向け。"),
-        "en": ("Whisper Base", "Standard Whisper Base, used as the default and smoke-test model."),
+        "ja": ("Whisper Base", "標準Whisper Base。軽量な動作確認向け。"),
+        "en": ("Whisper Base", "Standard Whisper Base, suitable for lightweight smoke tests."),
     },
 }
 

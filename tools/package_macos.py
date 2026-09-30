@@ -148,6 +148,7 @@ def main():
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     meta = dict(version=__version__, commit=commit, platform='macos-arm64', minimum_macos='14.0',
                 output_formats=['rpp','otio','json'], export_schema_version=1,
+                default_asr='anime-whisper', default_language='ja',
                 native_backends=['cpu', 'metal'], cuda_bundled=False, ctranslate2_bundled=False,
                 faster_whisper_bundled=False, model_weights_included=False, ffmpeg_bundled=False,
                 model_definitions='app/Contents/Resources/models', model_schema_versions=[1, 2],

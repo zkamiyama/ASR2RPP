@@ -16,6 +16,8 @@ Optional background removal, alignment and speaker labels all work before export
 3. Drop a recording into the window. For a first test, use the included `examples/sample.wav`, **Whisper Base**, language **en**, optional stages OFF, and **Settings → Timing → Automatic**.
 4. Press **GO**. Selected model weights and a missing FFmpeg are acquired on first use. Double-click a completed row to open the output folder.
 
+The first-run ASR is **Anime Whisper / ja** in both GUI and CLI. Saved GUI model/language choices are preserved. The included sample is English, so select Whisper Base / en explicitly for that sample. Anime Whisper is a larger, experimental Japanese conversion; its initial download is not the lightweight sample setup.
+
 For your own recordings, choose the appropriate language. The default destination is beside the input. The gear opens settings; the globe switches English/Japanese. Downloads require a network connection. Once dependencies are present, recognition stays on your computer.
 
 ## Choose your output

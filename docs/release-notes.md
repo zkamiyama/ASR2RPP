@@ -6,6 +6,8 @@
 
 OSに合う一式ZIPを新しいフォルダーへ全展開し、ASR2RPP.exe / ASR2RPP.appを起動してください。`examples/sample.wav`をドラッグし、Whisper Base・言語en・追加工程OFF・時刻付与「自動」でGO。初回は選択モデルと未導入のFFmpegを取得するため、ネット接続が必要です。Pythonや開発用SDKの手動導入は不要です。
 
+初期ASRは **Anime Whisper／ja**（GUI・CLI共通）。保存済みの選択は変更しません。同梱の英語サンプルにはWhisper Base／enを明示的に選んでください。
+
 ### 主な変更
 
 - 出力チップでRPP / OTIO / JSONを追加・削除。初期値RPP、未選択なら実行拒否。

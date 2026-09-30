@@ -115,7 +115,7 @@ if not fixture.exists():
     revision = json.loads((ROOT/'native/versions.json').read_text())['whisper_cpp']['commit']
     with urlopen(f'https://raw.githubusercontent.com/ggml-org/whisper.cpp/{revision}/samples/jfk.wav', timeout=30) as response:
         fixture.write_bytes(response.read())
-run(package / 'asr2rpp-cli.exe', 'run', fixture, '--asr-device', 'cpu', '--asr-language', 'en',
+run(package / 'asr2rpp-cli.exe', 'run', fixture, '--asr', 'whisper-base', '--asr-device', 'cpu', '--asr-language', 'en',
     '--output-dir', reports / 'frozen-asr')
 if not list((reports / 'frozen-asr').glob('*.rpp')):
     raise RuntimeError('Frozen CLI did not produce an RPP')
@@ -135,6 +135,7 @@ commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=Tr
     'platform': 'windows-x64', 'native_backends': ['cpu','vulkan'], 'minimum_cpu': 'AVX2',
     'model_weights_included': False, 'cuda_bundled': False, 'ctranslate2_bundled': False, 'faster_whisper_bundled': False,
     'output_formats': ['rpp','otio','json'], 'export_schema_version': 1,
+    'default_asr': 'anime-whisper', 'default_language': 'ja',
     'model_schema_versions': [1,2], 'worker_protocol': 1,
     'timing_selection': 'user-settings', 'upstream_cli_modified': False, 'ffmpeg_bundled': False, 'model_definitions': 'exe-adjacent/models',
     'icons_verified_executables': len(icon_records), 'documentation': ['README.md', 'README.ja.md'],
