@@ -1,0 +1,28 @@
+schema_version = 2
+provider = "audio_cpp"
+task = "asr"
+family = "voxtral_realtime"
+name = "Voxtral Mini 4B Realtime · Q4_K"
+sample_rate = 16000
+description = "多言語・大きめのASR。アプリではファイルをVAD分割して処理。時刻はVADまたは強制アライメント。"
+
+[capabilities]
+timestamps = "none"
+speakers = false
+
+[execution]
+mode = "offline"
+output = "text"
+max_batch_items = 4
+max_audio_seconds = 28
+
+[source]
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
+files = ["Voxtral-Mini-4B-Realtime-2602-GGUF/voxtral-mini-4b-realtime-2602-q4_k.gguf"]
+
+[source.sha256]
+"Voxtral-Mini-4B-Realtime-2602-GGUF/voxtral-mini-4b-realtime-2602-q4_k.gguf" = "8cafef18ea3e4cad81da8ffc4e72b69d2eab2c159c2e68428e2e088accbfc7f8"
+
+[defaults]
+language = "auto"

@@ -1,31 +1,26 @@
-# ASR2RPP Windows preview
+## ASR2RPP 0.3.0
 
-[English guide](https://github.com/zkamiyama/ASR2RPP/blob/main/README.md) · [日本語ガイド](https://github.com/zkamiyama/ASR2RPP/blob/main/README.ja.md)
+ローカルの音声・動画から、RPP・OpenTimelineIO・再利用可能なJSONを作成します。WindowsはVulkan、Apple SiliconはMetal。CPUも利用できます。
 
-Download **ASR2RPP-Windows-x64.zip**, extract everything into a new folder, then open **ASR2RPP.exe**.
-Python/PyTorch are not required. This preview is unsigned. Models and FFmpeg are not bundled.
+### 試し方
 
-## Changes
+OSに合う一式ZIPを新しいフォルダーへ全展開し、ASR2RPP.exe / ASR2RPP.appを起動してください。`examples/sample.wav`をドラッグし、Whisper Base・言語en・追加工程OFF・時刻付与「自動」でGO。初回は選択モデルと未導入のFFmpegを取得するため、ネット接続が必要です。Pythonや開発用SDKの手動導入は不要です。
 
-- GO works again after STOP. Stopped, failed and waiting items can be retried; completed items stay completed.
-- Preparation errors, delayed callbacks, repeated stops, close-during-work and a failed worker start are reconciled consistently.
-- The GUI and CLI read the EXE-adjacent `models` directory directly. No temporary or user-folder copies of bundled TOMLs.
-- Custom definitions use `custom-models` with distinct IDs. Conflicts are reported without changing the user's files.
-- Whole-reference duration remains measurable when FFmpeg reports unavailable progress timestamps.
-- Minimal high-contrast icons for the app, CLI and every bundled native executable; the application window and taskbar use the same identity.
-- Plain English instructions in README, with a Japanese translation linked at the top. Technical background is in `docs`.
-- Includes the VAD/TOML controls and PCM/model-reuse optimizations from earlier previews.
+初期ASRは **Anime Whisper／ja**（GUI・CLI共通）。保存済みの選択は変更しません。同梱の英語サンプルにはWhisper Base／enを明示的に選んでください。
 
-Windows/Linux tests, the frozen GO-STOP-GO lifecycle, direct-TOML provenance, native stages,
-PCM/WAV equivalence and packaged icon resources are checked before this ZIP is published.
+### 主な変更
 
-## 日本語
+- 出力チップでRPP / OTIO / JSONを追加・削除。初期値RPP、未選択なら実行拒否。
+- ORIGINAL全長ミュート、話者別トラック、無音区間、重複発話レーンを共通タイムラインから出力。
+- JSONには生の結果・補正履歴・詳細区間・設定・モデル来歴・音源参照を収録。CLI `convert`で推論せず再変換可能。
+- 20種類の代表モデルTOML、設定画面でのVAD／強制アライメント、CPU版ReazonSpeechを同梱。
+- 新しいオリジナルSVG／EXEアイコン。READMEと依存関係・カスタマイズガイドを整理。
+- CUDA・CTranslate2・faster-whisperは配布に含めません。モデル重みとFFmpegも初回の別取得です。
 
-ZIPを新しいフォルダーへ**すべて展開**して起動してください。EXEだけを移動しないでください。
-停止後はGOで中断・失敗・待機中の項目を再実行でき、完了済み項目は再処理しません。
-同梱TOMLの一時コピーを廃止し、EXEの隣の `models` を直接読みます。
-各実行ファイルのアイコンと利用者向けガイドも更新しました。
-取得済みモデル・元音源・独自TOMLは上書きしません。
+Windows: x64 / AVX2対応CPU。Mac: Apple Silicon / macOS 14以降、Intel非対応。Windowsは未署名、Macはad-hoc署名・未公証です。
 
-Recognition can be wrong. VAD timestamps describe regions, not exact word boundaries.
-GPU speed measurements from WSL/CUDA do not imply identical Windows/Vulkan performance.
+OTIOのミュート指定を反映するかは受け側の編集ソフトにも依存します。音声は埋め込まず参照します。JSONと診断フォルダーは本文や個人のパスを含むため、共有前に確認してください。
+
+公開はWindows実機の全20ケースと3形式出力、両OSのCI成果物を検証した後に行います。機能検証は認識品質・全長尺音声の保証ではありません。Mac CIの仮想GPUではQwen3-ASRのMetal行列演算機能が不足する場合、そのケースは未検証として明示します。
+
+English: Extract the complete ZIP, launch the app, drop `examples/sample.wav`, select Whisper Base and language en, then GO. First use requires internet for weights and missing FFmpeg. RPP is the default; add OTIO/JSON with the format chips. JSON can be re-exported without inference. Media is referenced, not embedded. See the included English/Japanese README, licenses and validation assets.

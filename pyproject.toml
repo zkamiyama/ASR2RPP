@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asr2rpp"
-version = "0.1.0"
-description = "Native speech inference to non-destructive REAPER projects"
+version = "0.3.0"
+description = "Local speech recognition to RPP, OpenTimelineIO and reusable JSON"
 requires-python = ">=3.11"
-dependencies = ["numpy>=2,<3", "safetensors>=0.4,<1"]
+dependencies = ["numpy>=2,<3", "safetensors>=0.4,<1", "opentimelineio==0.18.1"]
 
 [project.optional-dependencies]
 gui = ["PySide6==6.8.3"]
 dev = ["pytest>=8", "PySide6==6.8.3", "pyinstaller==6.22.3"]
+workers = ["sherpa-onnx==1.13.8"]
+faster = ["faster-whisper==1.2.1", "ctranslate2==4.8.2"]
 
 [project.scripts]
 asr2rpp = "asr2rpp.cli:main"

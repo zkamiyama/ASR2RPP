@@ -151,9 +151,17 @@ def test_gui_prepare_does_not_hash_local_weights_twice(tmp_path,monkeypatch):
     weights=tmp_path/'model.bin';weights.write_bytes(b'weights')
     model=catalog.Model('local','whisper_cpp','asr',{'path':str(weights)})
     calls=[]
+    from asr2rpp import providers
+    probes=[]
+    def preflight(*args,**kwargs):
+        probes.append(args[0].id)
+        return {'runtime':'whisper_cpp','binary':'test-runtime','sha256':'test-hash'}
+    monkeypatch.setattr(providers,'preflight',preflight)
     monkeypatch.setattr(gui_dcc,'resolve_model',lambda *a,**kw:calls.append(1))
     worker=gui_dcc.Worker([],Settings(Stage('local')),{'local':model})
     worker._prepare_models();assert calls==[]
+    assert probes==['local']
+    assert worker.settings.runtime_provenance['asr']['binary']=='test-runtime'
     path,info=catalog.resolve_model(model,threading.Event(),lambda _:None)
     import hashlib
     assert info['sha256']==hashlib.sha256(b'weights').hexdigest()

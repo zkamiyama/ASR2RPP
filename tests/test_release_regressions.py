@@ -173,10 +173,10 @@ def test_queue_original_track_and_alignment_end_to_end(tmp_path, monkeypatch):
         shutil.copyfile(source, destination); decodes.append(source)
         return 3.0
     monkeypatch.setattr(pipeline, 'decode', decode)
-    def asr(model, weights, stage, jobs, *args, alignment_requested=False):
+    def asr(model, weights, stage, jobs, *args, alignment_requested=False, **kwargs):
         assert alignment_requested
         return {j.key: Result([Unit(.1, .3, 'speech'), Unit(1, 1.1, '、')], {}) for j in jobs}
-    monkeypatch.setattr(queue_runner, '_whisper_batch', asr)
+    monkeypatch.setattr(queue_runner, '_asr_batch', asr)
     commands = []; fake_alignment_native(monkeypatch, commands)
     settings = QueueSettings(Stage('asr'), align=Stage('align'))
     events = []

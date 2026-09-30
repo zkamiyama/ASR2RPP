@@ -1,10 +1,27 @@
-runtime = "audio_cpp"
+schema_version = 2
+provider = "audio_cpp"
 task = "asr"
 family = "nemotron_asr"
 name = "Nemotron 3.5 ASR · Q8"
-description = "トークン出力フレーム由来の時刻です。境界精度にはForced Alignmentの比較が必要です。"
+sample_rate = 16000
+description = "多言語。時刻はトークン出力フレーム由来で、厳密な単語境界ではありません。"
+
+[capabilities]
+timestamps = "token"
+speakers = false
+
+[execution]
+mode = "streaming"
+output = "words"
+max_batch_items = 1
+
 [source]
-repo = "https://huggingface.co/audio-cpp/audio.cpp-gguf"
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
 files = ["Nemotron-3.5-ASR-Streaming-0.6B-GGUF/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf"]
+
+[source.sha256]
+"Nemotron-3.5-ASR-Streaming-0.6B-GGUF/nemotron-3.5-asr-streaming-0.6b-q8_0.gguf" = "c58b62c1bdd6c5d7b14b08126c5bd16c1289fee6e0d6ac0761dbd3aa6d714935"
+
 [defaults]
 language = "ja-JP"

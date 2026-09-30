@@ -167,12 +167,16 @@ def test_queue_routes_custom_policy_to_shared_vad_adapter(tmp_path,monkeypatch):
         report=tmp_path/f'report{i}';report.mkdir()
         jobs.append(queue.QueueJob(i,f'j{i}',tmp_path/f'{i}.wav',tmp_path/f'{i}.rpp',report,'hash',{}))
     calls=[]
-    def infer(model,weights,audio,work,options,cancel,progress):
-        calls.append(audio)
-        if audio.name=='1.wav':
-            raise ValueError('bad second file')
-        return Result([Unit(1,2,'text',method='vad_window')],{})
-    monkeypatch.setattr(vad_asr,'infer_vad_whisper',infer)
+    def infer(model,weights,items,options,cancel,progress,failed,root):
+        results={}
+        for key,audio,work in items:
+            calls.append(audio)
+            if audio.name=='1.wav':
+                failed(key,ValueError('bad second file'))
+            else:
+                results[key]=Result([Unit(1,2,'text',method='vad_window')],{})
+        return results
+    monkeypatch.setattr(vad_asr,'infer_vad_many',infer)
     result=queue._whisper_batch(constrained(),tmp_path/'weights',Stage('unrelated-custom-model'),jobs,{j.key:j.source for j in jobs},tmp_path/'cache',threading.Event(),lambda x:None,lambda *a:None)
     assert list(result)==['j0'] and len(calls)==2
     assert not jobs[0].failed and jobs[1].failed

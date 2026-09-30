@@ -1,0 +1,42 @@
+schema_version = 2
+provider = "faster_whisper"
+task = "asr"
+family = "whisper"
+name = "Faster Whisper Base"
+description = "CTranslate2実行系。CPU/CUDA。探索・バッチ設定を変更できます。"
+sample_rate = 16000
+[capabilities]
+timestamps = "word"
+[execution]
+mode = "offline"
+output = "words"
+max_batch_items = 64
+[source]
+repo = "Systran/faster-whisper-base"
+revision = "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"
+entry = "."
+files = ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"]
+[source.sha256]
+"model.bin" = "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9"
+"config.json" = "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a"
+"tokenizer.json" = "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+"vocabulary.txt" = "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+[defaults]
+language = "ja"
+device = "auto"
+[parameters.beam_size]
+type = "int"
+default = 5
+min = 1
+max = 20
+ja = "ビーム幅"
+en = "Beam size"
+[parameters.batch_size]
+type = "int"
+default = 1
+min = 1
+max = 32
+ja = "推論バッチ数"
+en = "Inference batch size"
+tip_ja = "1は通常実行。2以上はバッチ実行で、結果やメモリ使用量が変わる可能性があります。"
+tip_en = "Values above 1 use batched decoding and may change results and memory usage."

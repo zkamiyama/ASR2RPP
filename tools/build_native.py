@@ -2,24 +2,31 @@
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 
-try:
-    from .patch_whisper import apply as patch_whisper, patch_digest
-except ImportError:
-    from patch_whisper import apply as patch_whisper, patch_digest
-
 ROOT = Path(__file__).resolve().parent.parent
-WORK = ROOT / 'build' / 'native'
+WORK = Path(os.environ['ASR2RPP_NATIVE_WORK']) if os.getenv('ASR2RPP_NATIVE_WORK') else ROOT / 'build' / 'native'
 ENGINES = ROOT / 'engines'
-SOURCES = {
-    'whisper_cpp': ('ggml-org/whisper.cpp', 'a664346ea5c6dddff3e61a2b7b32dd4514613f50', 'whisper-cli'),
-    'audio_cpp': ('0xShug0/audio.cpp', '9bdd1d908bbd128e9eb405f5a8e38d0defb84c72', 'audiocpp_cli'),
-}
+LOCK = json.loads((ROOT / 'native/versions.json').read_text(encoding='utf-8'))
+SOURCES = {name: (entry['repository'], entry['commit'], entry['target'])
+           for name, entry in LOCK.items() if isinstance(entry, dict)}
+
+
+def recipe_digest():
+    paths = [Path(__file__), ROOT/'native/versions.json', ROOT/'native/pcm_plan.h',
+             ROOT/'native/whisper_regions.cpp', ROOT/'native/whisper/CMakeLists.txt']
+    h = hashlib.sha256()
+    for path in paths:
+        h.update(path.read_bytes())
+    for key in ('ASR2RPP_CUDA_ARCHS', 'CMAKE_GENERATOR', 'ASR2RPP_MSVC_TOOLSET', 'MACOSX_DEPLOYMENT_TARGET'):
+        h.update((key + '=' + os.getenv(key, '')).encode())
+    h.update((sys.platform + '/' + platform.machine()).encode())
+    return h.hexdigest()
 
 
 def run(*args, cwd=None):
@@ -48,14 +55,19 @@ def preserve_restored_samples(source: Path):
 
 
 def build(name, backend='cpu'):
+    allowed = {'cpu', 'metal'} if sys.platform == 'darwin' else {'cpu', 'vulkan'} if os.name == 'nt' else {'cpu', 'vulkan', 'cuda'}
+    if backend not in allowed:
+        raise ValueError(f'Unsupported packaged backend {backend} on {sys.platform}')
     repo, revision, target = SOURCES[name]
-    extension = patch_digest() if name == 'whisper_cpp' else None
+    extension = recipe_digest()
     destination = ENGINES / (name + '-' + backend)
     required = [target + ('.exe' if os.name == 'nt' else '')]
     if name == 'whisper_cpp' and backend == 'cpu':
         required.append('whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else ''))
     if name == 'audio_cpp' and backend == 'cpu':
         required.append('audiocpp_gguf' + ('.exe' if os.name == 'nt' else ''))
+    if name == 'whisper_cpp':
+        required.append('asr2rpp-whisper-regions' + ('.exe' if os.name == 'nt' else ''))
     # OPT-IN for CI restored caches only. Normal builds are never skipped.
     manifest = destination / 'build-manifest.json'
     if os.getenv('ASR2RPP_REUSE_VERIFIED_NATIVE') == '1' and manifest.is_file():
@@ -63,7 +75,7 @@ def build(name, backend='cpu'):
             prior = json.loads(manifest.read_text(encoding='utf-8'))
             reusable = (prior['commit'] == revision and prior['backend'] == backend
                         and prior['repository'] == repo and prior['files']
-                        and prior.get('asr2rpp_pcm_plan_sha256') == extension
+                        and prior.get('build_recipe_sha256') == extension
                         and all(filename in prior['files'] for filename in required))
             for filename, expected in prior['files'].items():
                 relative = Path(filename)
@@ -91,32 +103,55 @@ def build(name, backend='cpu'):
     # the optional server frontend (SSH URL), which a standalone CLI does not use.
     if name != 'audio_cpp':
         run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
-    if name == 'whisper_cpp':
-        patch_whisper(source)
-    if backend not in {'cpu', 'vulkan'}:
-        raise ValueError(f'Unsupported packaged backend: {backend}')
-    output = source / ('build-' + backend)
+    dirty = subprocess.check_output(['git', 'diff', '--name-only'], cwd=source, text=True).strip()
+    if dirty:
+        raise RuntimeError('Upstream source must be unmodified; use a clean build directory: ' + dirty)
+    output = source / ('build-' + backend + ('-' + os.environ['ASR2RPP_BUILD_SUFFIX'] if os.getenv('ASR2RPP_BUILD_SUFFIX') else ''))
     vulkan = 'ON' if backend == 'vulkan' else 'OFF'
-    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF',
-             '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
+    cuda = 'ON' if backend == 'cuda' else 'OFF'
+    metal = 'ON' if backend == 'metal' else 'OFF'
+    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CCACHE=OFF',
+             '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
+             f'-DGGML_CUDA={cuda}', f'-DGGML_METAL={metal}', f'-DGGML_VULKAN={vulkan}']
+    if os.name == 'nt':
+        # Upstream prompts contain CJK literals. Do not interpret source bytes
+        # using the developer machine's ANSI codepage (CP932/CP1252).
+        flags += ['-DCMAKE_C_FLAGS=/utf-8', '-DCMAKE_CXX_FLAGS=/utf-8 /EHsc']
+    if sys.platform == 'darwin':
+        flags += ['-DCMAKE_OSX_ARCHITECTURES=arm64',
+                  '-DCMAKE_OSX_DEPLOYMENT_TARGET=' + os.getenv('MACOSX_DEPLOYMENT_TARGET', '14.0'),
+                  '-DBUILD_SHARED_LIBS=OFF', '-DGGML_METAL_EMBED_LIBRARY=ON',
+                  '-DGGML_OPENMP=OFF', '-DENGINE_ENABLE_OPENMP=OFF']
+    if backend == 'cuda':
+        flags.append('-DCMAKE_CUDA_ARCHITECTURES=' + os.getenv('ASR2RPP_CUDA_ARCHS', '86;89'))
+        if os.name == 'nt' and os.getenv('ASR2RPP_CUDA_HOST_COMPAT') == '1':
+            flags.append('-DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler')
     if name == 'audio_cpp':
         flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON',
                   '-DAUDIOCPP_MODEL_SET=custom',
-                  '-DAUDIOCPP_MODELS=nemotron_asr,nemotron_3_diar,vibevoice_asr,qwen3_forced_aligner,roformer',
+                  '-DAUDIOCPP_MODELS=' + ','.join(LOCK['audio_cpp']['models']),
                   '-DENGINE_ENABLE_NATIVE_CPU=OFF',
-                  '-DENGINE_ENABLE_CUDA=OFF', f'-DENGINE_ENABLE_VULKAN={vulkan}',
+                  f'-DENGINE_ENABLE_CUDA={cuda}', f'-DENGINE_ENABLE_VULKAN={vulkan}', f'-DENGINE_ENABLE_METAL={metal}',
                   '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
                   '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
     else:
-        flags += ['-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF', '-DWHISPER_CURL=OFF']
-    if os.name == 'nt':
+        flags += ['-DWHISPER_BUILD_EXAMPLES=ON', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF', '-DWHISPER_CURL=OFF']
+    if os.name == 'nt' and os.getenv('CMAKE_GENERATOR', '').lower() != 'ninja':
         flags += ['-A', 'x64']
-    run('cmake', '-S', source, '-B', output, *flags)
-    run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', '4')
+        if os.getenv('ASR2RPP_MSVC_TOOLSET'):
+            flags += ['-T', os.environ['ASR2RPP_MSVC_TOOLSET']]
+    project = source
+    if name == 'whisper_cpp':
+        project = ROOT / 'native/whisper'
+        flags.append('-DASR2RPP_WHISPER_SOURCE=' + str(source))
+    run('cmake', '-S', project, '-B', output, *flags)
+    run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
+    if name == 'whisper_cpp':
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'asr2rpp-whisper-regions', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     if name == 'whisper_cpp' and backend == 'cpu':
-        run('cmake', '--build', output, '--config', 'Release', '--target', 'whisper-vad-speech-segments', '--parallel', '4')
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'whisper-vad-speech-segments', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     if name == 'audio_cpp' and backend == 'cpu':
-        run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', '4')
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     destination = ENGINES / (name + '-' + backend)
     destination.mkdir(parents=True, exist_ok=True)
     binary_name = target + ('.exe' if os.name == 'nt' else '')
@@ -125,6 +160,11 @@ def build(name, backend='cpu'):
         raise RuntimeError('Missing built executable: ' + binary_name)
     binary = binaries[0]
     shutil.copy2(binary, destination / binary.name)
+    if name == 'whisper_cpp':
+        helper = 'asr2rpp-whisper-regions' + ('.exe' if os.name == 'nt' else '')
+        built = list(output.rglob(helper))
+        if not built: raise RuntimeError('Missing public API helper')
+        shutil.copy2(built[0], destination / helper)
     if name == 'whisper_cpp' and backend == 'cpu':
         vad_name = 'whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else '')
         vad_binaries = list(output.rglob(vad_name))
@@ -143,7 +183,7 @@ def build(name, backend='cpu'):
     licenses = destination / 'licenses'
     licenses.mkdir(exist_ok=True)
     for file in source.rglob('*'):
-        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and 'build' not in file.relative_to(source).parts:
+        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and not any(part.startswith('build') or part == '.git' for part in file.relative_to(source).parts):
             if file.suffix.lower() in {'', '.txt', '.md', '.rst'}:
                 target_license = licenses / file.relative_to(source)
                 target_license.parent.mkdir(parents=True, exist_ok=True)
@@ -153,9 +193,14 @@ def build(name, backend='cpu'):
             shutil.copy2(source / filename, destination / filename)
     if name == 'audio_cpp' and (source / 'model_specs').exists():
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
-    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {},
-                'asr2rpp_pcm_plan_sha256': extension,
-                'pcm_plan_version': 1 if extension else None}
+    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'platform': sys.platform, 'architecture': platform.machine(), 'files': {},
+                'build_recipe_sha256': extension, 'upstream_modified': False,
+                'pcm_plan_version': 1 if name == 'whisper_cpp' else None,
+                'cuda_architectures': os.getenv('ASR2RPP_CUDA_ARCHS', '86;89') if backend == 'cuda' else None,
+                'cmake_flags': flags}
+    if name == 'audio_cpp':
+        data = subprocess.check_output([str(destination / binary.name), '--list-loaders', '--json'], text=True, encoding='utf-8')
+        (destination/'capabilities.json').write_text(data, encoding='utf-8')
     for file in destination.rglob('*'):
         if file.is_file() and file != destination / 'build-manifest.json':
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()

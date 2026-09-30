@@ -1,4 +1,4 @@
-"""Install FFmpeg into user data on demand; never bundle it with ASR2RPP releases."""
+"""Acquire FFmpeg into user data on demand; never bundle it with app releases."""
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
@@ -39,7 +39,12 @@ def installed_ffmpeg() -> Path | None:
         if relative.is_absolute() or ".." in relative.parts:
             return None
         path = runtime_root().joinpath(*relative.parts)
-        return path if path.is_file() else None
+        if not path.resolve().is_relative_to(runtime_root().resolve()) or not path.is_file():
+            return None
+        expected = data.get('executable_sha256')
+        if expected and digest(path) != expected:
+            return None
+        return path
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
         return None
 
@@ -121,6 +126,9 @@ def _extract_windows_bin(archive: Path, destination: Path) -> Path:
 
 def ensure_ffmpeg(progress=None, cancel=None) -> Path:
     """Return an installed Windows FFmpeg, downloading the latest LGPL shared build if absent."""
+    if sys.platform == 'darwin':
+        from .ffmpeg_macos import ensure_ffmpeg as install_macos
+        return install_macos(progress, cancel)
     if sys.platform != "win32":
         raise FileNotFoundError("Automatic FFmpeg download is currently supported on Windows only")
 

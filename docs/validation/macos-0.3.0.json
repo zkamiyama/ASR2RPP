@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "validation_mode": "frozen-package-relocated",
+  "platform": "macos-arm64",
+  "package_commit": "af5dca873ab5d44c779f2c3e079ed81b132cefdb",
+  "package_sha256": "8d58b7e41bf7a1b0706d88f036a5f2086a240c9bfe5702b5c46b1e27b22a8285",
+  "package_bytes": 96206957,
+  "ci_run": 36773381932,
+  "reports_artifact": 11125950729,
+  "raw_portable_report_sha256": "5992e9646837e27be81220d3d0361864a4a775162062b1841a854d97b524708c",
+  "python_tests": {"passed":380,"failed":0,"skipped":0},
+  "signature_verified": true,
+  "code_signing": "ad-hoc; not notarized",
+  "mach_o_files_audited": 197,
+  "source_unchanged": true,
+  "passed": true,
+  "default_asr": "anime-whisper",
+  "default_language": "ja",
+  "distribution": {"cuda_bundled":false,"ctranslate2_bundled":false,"faster_whisper_bundled":false},
+  "cases": {
+    "downloaded-ffmpeg": {"returncode":0},
+    "doctor": {"returncode":0},
+    "lifecycle": {"returncode":0,"cases":10,"inference":"stubs; native inference separately tested"},
+    "models": {"returncode":0},
+    "whisper-cpu-native": {"returncode":0,"exports_passed":true,"formats":["rpp","otio","json"]},
+    "whisper-cpu-vad": {"returncode":0,"exports_passed":true,"formats":["rpp","otio","json"]},
+    "reazon-cpu-vad": {"returncode":0,"exports_passed":true,"formats":["rpp","otio","json"]},
+    "qwen-cpu-vad": {"returncode":0,"exports_passed":true,"formats":["rpp","otio","json"]},
+    "whisper-base-metal-vad": {"returncode":0,"exports_passed":true,"formats":["rpp","otio","json"]}
+  },
+  "skipped": {
+    "qwen3-asr-06b-metal-vad":"Device lacks the Apple7 SIMD-group matrix support required by the pinned Qwen Metal encoder"
+  },
+  "metal": {
+    "device":"Apple Paravirtual device",
+    "available":true,
+    "simdgroup_matrix":false,
+    "inference_verified_models":["whisper-base"],
+    "coverage_complete":false
+  },
+  "scope":"CI virtual Apple Silicon GPU, not the complete physical-Mac model matrix. Anime Whisper default is covered by Qt tests and package provenance, not by native Mac inference in this run."
+}

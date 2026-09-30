@@ -1,0 +1,127 @@
+"""Release contracts for unmodified upstreams and replaceable model runtimes."""
+from pathlib import Path
+import json
+import threading
+import pytest
+from asr2rpp.catalog import load_catalog
+from asr2rpp.whisper_io import region_executable
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+def test_all_added_model_definitions_are_pinned_and_valid():
+    catalog,errors=load_catalog(ROOT/'models')
+    assert not errors
+    for name in ('qwen3-asr-06b','reazonspeech-k2'):
+        model=catalog[name]
+        assert model.schema_version==2
+        assert len(model.source['revision'])==40
+        assert all(len(model.source['sha256'][f])==64 for f in model.source['files'])
+    assert catalog['reazonspeech-k2'].defaults['device']=='cpu'
+
+
+def test_region_helper_is_only_selected_for_supported_options(tmp_path,monkeypatch):
+    monkeypatch.delenv('ASR2RPP_WHISPER_IO',raising=False)
+    cli=tmp_path/'whisper-cli.exe';cli.write_bytes(b'CLI')
+    helper=tmp_path/'asr2rpp-whisper-regions.exe';helper.write_bytes(b'API')
+    assert region_executable(cli,{'no_timestamps':True,'max_context':0,'vad_threshold':.5})==helper
+    assert region_executable(cli,{'grammar':'x'})==cli
+    assert region_executable(cli,{'future_option':1})==cli
+    monkeypatch.setenv('ASR2RPP_WHISPER_IO','legacy')
+    assert region_executable(cli,{})==cli
+
+
+def test_no_upstream_cli_source_patch_is_called_by_builder():
+    builder=(ROOT/'tools/build_native.py').read_text()
+    assert 'patch_whisper(' not in builder
+    assert 'ASR2RPP_WHISPER_SOURCE' in builder
+    worker=(ROOT/'native/whisper_regions.cpp').read_text()
+    assert '#include "whisper.h"' in worker
+    assert '#include "cli.cpp"' not in worker
+    lock=json.loads((ROOT/'native/versions.json').read_text())
+    assert 'qwen3_asr' in lock['audio_cpp']['models']
+    assert 'sense_asr' in lock['audio_cpp']['models']
+
+
+def test_gui_preflight_failure_stops_before_model_download(tmp_path,monkeypatch):
+    pytest.importorskip('PySide6')
+    from asr2rpp import gui_dcc,providers
+    from asr2rpp.catalog import Model
+    from asr2rpp.pipeline import Stage
+    from asr2rpp.preprocessing import Settings
+    model=Model('not-installed','audio_cpp','asr',{'path':str(tmp_path/'weights')},family='missing')
+    calls=[]
+    monkeypatch.setattr(gui_dcc,'resolve_model',lambda *a,**kw:calls.append('download'))
+    def unsupported(*args,**kwargs):
+        raise ValueError('Unsupported compiled family')
+    monkeypatch.setattr(providers,'preflight',unsupported)
+    worker=gui_dcc.Worker([],Settings(Stage(model.id)),{model.id:model})
+    with pytest.raises(ValueError,match='Unsupported compiled family'):
+        worker._prepare_models()
+    assert not calls
+
+
+def test_verified_digest_does_not_trust_unchanged_metadata(tmp_path,monkeypatch):
+    import hashlib
+    from asr2rpp.catalog import verified_digest
+    path=tmp_path/'asset';path.write_bytes(b'first')
+    original=Path.stat
+    frozen=path.stat()
+    monkeypatch.setattr(Path,'stat',lambda self,*a,**kw: frozen if self==path else original(self,*a,**kw))
+    assert verified_digest(path,threading.Event())==hashlib.sha256(b'first').hexdigest()
+    path.write_bytes(b'other')
+    assert verified_digest(path,threading.Event())==hashlib.sha256(b'other').hexdigest()
+
+
+def test_incomplete_native_words_keep_whole_native_segment():
+    from types import SimpleNamespace as N
+    from asr2rpp.provider_worker import faster_units
+    segment=N(start=1.0,end=3.0,text='two words',words=[N(start=1.0,end=2.0,word='two'),N(start=2.0,end=2.0,word=' words')])
+    units=faster_units(segment)
+    assert [(u.start,u.end,u.text,u.granularity) for u in units]==[(1.0,3.0,'two words','segment')]
+    segment.words[1].end=3.0
+    assert len(faster_units(segment))==2
+    segment.words=[];segment.end=segment.start
+    with pytest.raises(ValueError,match='no complete interval'):
+        faster_units(segment)
+
+
+def test_packaging_rejects_inconsistent_runtime_copy(tmp_path):
+    import hashlib
+    from tools.portable_runtime import verify_manifests
+    directory=tmp_path/'engines/worker';directory.mkdir(parents=True)
+    binary=directory/'worker.exe';binary.write_bytes(b'original')
+    (directory/'build-manifest.json').write_text(json.dumps({'files':{'worker.exe':hashlib.sha256(b'original').hexdigest()}}))
+    assert verify_manifests(tmp_path)==1
+    binary.write_bytes(b'modified')
+    with pytest.raises(ValueError,match='Runtime integrity'):
+        verify_manifests(tmp_path)
+
+
+def test_faster_units_accept_numpy_reals_and_emit_plain_floats():
+    import numpy as np
+    from types import SimpleNamespace as N
+    from asr2rpp.provider_worker import faster_units
+    segment=N(start=np.float64(0),end=np.float64(1),text='speech',
+              words=[N(start=np.float64(.1),end=np.float32(.9),word='speech')])
+    units=faster_units(segment)
+    assert units[0].granularity=='word'
+    assert type(units[0].start) is type(units[0].end) is float
+    json.dumps([dict(start=u.start,end=u.end) for u in units])
+
+
+def test_diar_request_sequence_omits_language_and_text(tmp_path,monkeypatch):
+    from asr2rpp.catalog import Model
+    from asr2rpp.providers import Request
+    from asr2rpp import native_batches
+    source=tmp_path/'speech.wav';source.write_bytes(b'fixture')
+    model=Model('diar','audio_cpp','diar',{'path':str(source)},family='nemotron_3_diar')
+    monkeypatch.setattr(native_batches,'executable',lambda *a:Path('audiocpp_cli.exe'))
+    def execute(args,*unused):
+        sequence=json.loads(Path(args[args.index('--request-sequence')+1]).read_text(encoding='utf-8'))
+        assert sequence['requests']==[{'id':'q0','audio':str(source.resolve()),'options':{}}]
+        output=Path(args[args.index('--turns-out')+1]);output.with_name('native_q0.json').write_text('[{"start":0,"end":1,"speaker":"A"}]')
+    monkeypatch.setattr(native_batches,'run_process',execute)
+    result=native_batches.audio_many(model,source,[Request('q0',source)],tmp_path/'work',
+        {'device':'cpu','language':'ja'},threading.Event(),lambda _:None,1024)
+    assert not result.errors and result.results['q0'].units[0].speaker=='A'

@@ -1,0 +1,21 @@
+schema_version = 2
+provider = "whisper_cpp"
+task = "asr"
+name = "Whisper Large v3 · Q5_0"
+sample_rate = 16000
+description = "多言語。Large v3の量子化版。必要メモリは重みサイズより大きくなります。"
+
+[capabilities]
+timestamps = "segment"
+speakers = false
+
+[source]
+repo = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+files = ["ggml-large-v3-q5_0.bin"]
+
+[source.sha256]
+"ggml-large-v3-q5_0.bin" = "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1"
+
+[defaults]
+language = "ja"

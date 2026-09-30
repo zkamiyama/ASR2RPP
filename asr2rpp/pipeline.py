@@ -1,6 +1,6 @@
 """Qt-free pipeline; native audio is never split or modified for RPP export."""
 from __future__ import annotations
-from dataclasses import dataclass, asdict, replace
+from dataclasses import dataclass, asdict, replace, field
 from pathlib import Path
 import copy
 import hashlib
@@ -15,9 +15,11 @@ from .catalog import Model, checkpoint, cache_root, resolve_model, digest, defin
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
 from .transcript import clean_bounds, group_units, has_alignable_text, assign_speakers, safe_label
 from .rpp_export import write_reference
+from .outputs import validate_formats, FORMATS, snapshot, export_results
 from .media import full_reference_duration
 from .alignment import align_segments
 from .inference_policy import policy_for
+from .timing import TimingSettings, plan_for, prepare_run, stage_options
 from .adapters import split_engine_parameters, validate_model_parameter_constraints
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
@@ -62,8 +64,15 @@ class Settings:
     ffmpeg: str = ''
     clip_start: float = 0.0
     clip_duration: float = 0.0
+    timing: TimingSettings = field(default_factory=TimingSettings, kw_only=True)
+    queue_window_items: int = field(default=16, kw_only=True)
+    runtime_provenance: dict = field(default_factory=dict, kw_only=True)
+    output_formats: tuple[str, ...] = field(default=('rpp',), kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
+        validate_formats(self.output_formats)
+        if type(self.queue_window_items) is not int or not 1 <= self.queue_window_items <= 4096:
+            raise ValueError('Queue window must be 1..4096 items')
         if not self.same_directory and not self.output_directory.strip():
             raise ValueError('Same directory is OFF: specify Output directory.')
         if not all(math.isfinite(x) and x >= 0 for x in (self.clip_start, self.clip_duration)):
@@ -76,8 +85,8 @@ class Settings:
                     raise ValueError(f'{task}: select an available model')
                 if catalog[stage.model_id].task != task:
                     raise ValueError(f'Wrong model task for {task}')
-                if stage.device not in {'cpu', 'auto', 'cuda', 'vulkan', 'metal'}:
-                    raise ValueError('Unsupported device')
+                from .platforms import validate_backend
+                validate_backend(stage.device)
                 model = catalog[stage.model_id]
                 request, session = split_engine_parameters(model, stage.parameters or {})
                 validate_model_parameter_constraints(model, request, session)
@@ -85,19 +94,23 @@ class Settings:
                     from .vad import VadOptions
                     VadOptions.from_parameters(request, policy_for(model).max_segment_seconds)
 
-        if policy_for(catalog[self.asr.model_id]).requires_alignment and self.align is None:
-            raise ValueError('TOML inference policy requires forced alignment: enable --align or choose timestamp_source=vad in the model definition.')
+        plan_for(catalog[self.asr.model_id], self.timing, self.align is not None)
+        if self.timing.speaker_source == 'diarizer' and self.diar is None:
+            raise ValueError('Diarizer speaker source requires an enabled diarization model')
+        if self.timing.speaker_source in ('native','none') and self.diar is not None:
+            raise ValueError('Disable diarization or choose automatic / diarizer speaker source')
 
 
 def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
+    formats = validate_formats(settings.output_formats)
     parent = source.parent if settings.same_directory else Path(settings.output_directory).expanduser().resolve()
     parent.mkdir(parents=True, exist_ok=True)
     for index in range(1, 100000):
         suffix = '' if index == 1 else f'_{index}'
         base = compact_output_stem(source.stem, MAX_OUTPUT_STEM_CHARS - len(suffix))
         stem = base + suffix
-        output, report = parent / f'{stem}.rpp', parent / f'{stem}.asr2rpp'
-        siblings = [parent / f'{stem}{extra}' for extra in sibling_suffixes]
+        output, report = parent / f'{stem}.{formats[0]}', parent / f'{stem}.asr2rpp'
+        siblings = [parent / f'{stem}{extra}' for extra in (*sibling_suffixes, *('.'+f for f in FORMATS))]
         if output.exists() or any(path.exists() for path in siblings):
             continue
         try:
@@ -139,7 +152,8 @@ def export_rpp(source: Path, output: Path, units: list[Unit], offset: float,
 
 @profiled
 def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel: threading.Event, progress, *, _analysis_report: Path | None = None) -> Path:
-    settings = copy.deepcopy(settings)
+    settings.validate(catalog)
+    settings, catalog, timing_plan = prepare_run(settings, catalog)
     settings.validate(catalog)
     source = source.expanduser().resolve()
     if not source.is_file() or source.suffix.lower() not in MEDIA_EXTENSIONS:
@@ -203,26 +217,34 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('ASR — transcribing')
         asr = infer_persist(
             asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
-            dict(settings.asr.options(), alignment_requested=settings.align is not None))
+            stage_options(settings))
         units = clean_bounds(asr.units, duration, warnings)
+        snapshot(report, 'asr_normalized', units)
+        (report/'asr').mkdir(exist_ok=True)
+        if not (report/'asr/raw.json').exists():
+            json_write(report/'asr/raw.json', asr.raw)
         if not units:
             raise ValueError('No timed speech was returned; raw engine output is retained')
         if any(u.method == 'emission_frame' for u in units):
             warnings.append('ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
-        units = group_units(units)
-        units = [replace(u, speaker=None) for u in units]
+        # Keep the finest native intervals until speaker assignment is complete.
+        if settings.diar is not None or settings.timing.speaker_source == 'none':
+            units = [replace(u, speaker=None) for u in units]
+        if settings.timing.speaker_source == 'native' and not any(u.speaker for u in units):
+            raise ValueError('The ASR did not return native speaker labels')
         if settings.align is not None:
             align_model = catalog[settings.align.model_id]
             alignment_pcm, _ = pcm(align_model.sample_rate)
             engine_dir = work / 'alignment'
             try:
                 units = align_segments(
-                    align_model, weights['align'], settings.align, units,
+                    align_model, weights['align'], settings.align, group_units(units),
                     alignment_pcm, duration, engine_dir, cancel, progress, warnings)
             finally:
                 # Never copy temporary audio slices into the user's report.
                 if engine_dir.exists():
                     persist_tree(engine_dir, report / 'align')
+            snapshot(report, 'aligned', units)
         if settings.diar is not None:
             model = catalog[settings.diar.model_id]
             audio, _ = pcm(model.sample_rate)
@@ -230,18 +252,26 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             result = infer_persist(
                 model, weights['diar'], audio, work / 'diar', report / 'diar',
                 settings.diar.options())
-            units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
+            turns = clean_bounds(result.units, duration, warnings)
+            snapshot(report, 'diarization_turns', turns)
+            (report/'diar').mkdir(exist_ok=True)
+            if not (report/'diar/raw.json').exists():
+                json_write(report/'diar/raw.json', result.raw)
+            units = assign_speakers(units, turns, warnings)
         if any(u.method == 'vad_segment' for u in units):
             warnings.append('VAD region timestamps used: approximate speech intervals, not word boundaries.')
-        manifest['timestamp_source'] = ('forced_alignment' if settings.align else
-                                        'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr')
+        manifest['timestamp_source'] = timing_plan.timestamp_source
+        manifest['timing_plan'] = asdict(timing_plan)
+        fine_units = list(units)
+        snapshot(report, 'speaker_assigned', fine_units)
         units = group_units(units)
         if not units:
             raise ValueError('No valid intervals remain after normalization')
         checkpoint(cancel)
-        progress('RPP — writing non-destructive references')
+        progress('Export — ' + ', '.join(settings.output_formats))
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
-                   'units': [asdict(u) for u in units], 'warnings': warnings})
+                   'units': [asdict(u) for u in units], 'fine_units': [asdict(u) for u in fine_units],
+                   'warnings': warnings})
         if digest(source) != manifest['source_sha256']:
             raise ValueError('Original input changed while processing')
         if _analysis_report is not None:
@@ -251,10 +281,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             return report
         reference_length = full_reference_duration(
             source, settings, duration, work, cancel, progress)
-        export_rpp(source, output, units, settings.clip_start, settings.diar is not None,
-                   reference_length)
-        manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
-                                      'duration_seconds': float(reference_length)}
+        export_results(source, source, units, fine_units, settings, output, report, manifest,
+                       duration, 0.0, reference_length, warnings=warnings, cancel=cancel)
         manifest.update(status='completed', elapsed_seconds=time.monotonic() - started,
                         source_unchanged=True, warnings=warnings,
                         output=str(output))

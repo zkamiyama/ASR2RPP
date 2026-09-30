@@ -1,0 +1,21 @@
+schema_version = 2
+provider = "whisper_cpp"
+task = "asr"
+name = "Whisper Tiny"
+sample_rate = 16000
+description = "多言語・小型。導入確認や軽い処理向け。"
+
+[capabilities]
+timestamps = "segment"
+speakers = false
+
+[source]
+repo = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+files = ["ggml-tiny.bin"]
+
+[source.sha256]
+"ggml-tiny.bin" = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+
+[defaults]
+language = "ja"

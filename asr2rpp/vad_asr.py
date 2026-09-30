@@ -82,6 +82,8 @@ def _prepare_vad_whisper(model, weights, audio, work, options, cancel, progress)
     if type(threads) is not int or not 1 <= threads <= 128:
         raise ValueError('Threads must be an integer in 1..128')
     binary = executable(model.runtime, device, options.get('executable', ''))
+    from .whisper_io import region_executable
+    binary = region_executable(binary, parameters)
     if session:
         raise ValueError('whisper.cpp VAD inference does not accept audio.cpp session options')
     work = Path(work)

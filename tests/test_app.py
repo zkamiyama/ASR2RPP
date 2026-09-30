@@ -229,7 +229,8 @@ def test_pipeline_options_disabled(tmp_path, monkeypatch):
         calls.append(model.task)
         return Result([Unit(0, 0.8, 'テスト', 'built-in-speaker')], {})
     monkeypatch.setattr('asr2rpp.pipeline.infer', fake_infer)
-    output = run_job(source, Settings(Stage('test')), {'test': model}, threading.Event(), lambda x: None)
+    from asr2rpp.timing import TimingSettings
+    output = run_job(source, Settings(Stage('test'),timing=TimingSettings(speaker_source='none')), {'test': model}, threading.Event(), lambda x: None)
     assert calls == ['asr']
     assert 'built-in-speaker' not in output.read_text(encoding='utf-8')
     manifest = json.loads((tmp_path / 'sample.asr2rpp/manifest.json').read_text())
@@ -276,13 +277,14 @@ def test_native_engine_work_isolated_from_unicode_report_path(tmp_path, monkeypa
 def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypatch):
     engines = tmp_path / 'engines'
     suffix = '.exe' if sys.platform == 'win32' else ''
-    vulkan = engines / 'whisper_cpp-vulkan' / ('whisper-cli' + suffix)
+    from asr2rpp.platforms import preferred_gpu
+    vulkan = engines / ('whisper_cpp-' + preferred_gpu()) / ('whisper-cli' + suffix)
     cpu = engines / 'whisper_cpp-cpu' / ('whisper-cli' + suffix)
     vulkan.parent.mkdir(parents=True)
     cpu.parent.mkdir(parents=True)
     vulkan.write_bytes(b'vulkan')
     cpu.write_bytes(b'cpu')
-    monkeypatch.setattr(adapters, 'assets_root', lambda: tmp_path)
+    monkeypatch.setattr('asr2rpp.catalog.assets_root', lambda: tmp_path)
     assert adapters.executable('whisper_cpp', 'auto') == vulkan
     assert adapters.executable('whisper_cpp', 'cpu') == cpu
 

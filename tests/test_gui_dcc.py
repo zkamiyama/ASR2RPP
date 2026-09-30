@@ -78,7 +78,7 @@ def test_parameter_specs_surface_cpp_controls():
     constrained_keys = {x["key"] for x in specs_for(constrained)}
     assert "initial_prompt" not in constrained_keys
     assert "carry_initial_prompt" not in constrained_keys
-    assert "initial_prompt" in keys  # Generic Whisper keeps an empty prompt control.
+    assert "initial_prompt" in keys
     prompt = next(spec for spec in specs_for(whisper) if spec["key"] == "initial_prompt")
     assert prompt["default"] == ""
     diar = Model("d", "audio_cpp", "diar", {"path": "x"}, family="nemotron_3_diar")
@@ -142,7 +142,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     app.processEvents()
 
     assert window.windowTitle() == "ASR2RPP"
-    assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
+    from asr2rpp.platforms import preferred_gpu, backends
+    assert window.runtime_defaults == {"whisper_cpp": preferred_gpu(), "audio_cpp": preferred_gpu()}
     assert window.run_button.text() == "GO"
     assert isinstance(window.run_button, QPushButton)
     assert window.run_button.icon().isNull()
@@ -172,7 +173,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.asr.model_label.text() == "モデル"
     assert window.asr.backend_label.text() == "実行環境"
     assert window.asr.language_label.text() == "言語"
-    assert window.preprocess.reference_label.text() == "RPP音声"
+    assert window.preprocess.reference_label.text() == "参照音声"
     labels = [
         window.preprocess.model_label, window.preprocess.backend_label,
         window.preprocess.language_label, window.preprocess.reference_label,
@@ -189,8 +190,6 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert inspector_scroll is not None
     assert inspector_scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     window.asr.model.setCurrentIndex(window.asr.model.findData("whisper-base"))
-    # Disabled optional stages collapse to their header only. Explicitly
-    # switch them off because earlier GUI migration tests may persist settings.
     window.preprocess.toggle.setChecked(False)
     window.align.toggle.setChecked(False)
     window.diar.toggle.setChecked(False)
@@ -207,14 +206,12 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert "キューを実行" not in visible_buttons
     assert "選択モデルを準備" not in visible_buttons
 
-    # Queue has no permanent add toolbar; files are accepted directly.
     sample = tmp_path / "meeting.wav"
     sample.write_bytes(b"x")
     window.add_paths([str(sample)])
     assert len(window.entries) == 1
     assert window.run_button.isEnabled()
 
-    # A model change drops saved values disabled by that model TOML.
     anime_index = window.asr.model.findData("anime-whisper")
     whisper_index = window.asr.model.findData("whisper-base")
     if anime_index >= 0 and whisper_index >= 0:
@@ -236,10 +233,9 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
         assert whisper_params.controls["initial_prompt"][0].text() == ""
         whisper_params.close()
 
-    # Runtime selectors are deliberately limited to Default / CPU / Vulkan.
     for panel in (window.preprocess, window.asr, window.align, window.diar):
         devices = [panel.device.itemData(i) for i in range(panel.device.count())]
-        assert devices == ["default", "cpu", "vulkan"]
+        assert devices == ["default", *backends()]
 
     reports = Path("reports")
     reports.mkdir(exist_ok=True)
@@ -251,22 +247,22 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.table.horizontalHeaderItem(0).text() == "Input"
     assert window.table.item(0, 1).text() == "Queued"
     model_labels = [window.asr.model.itemText(i) for i in range(window.asr.model.count())]
-    assert all("実験的" not in x and "Experimental" not in x and "軽量" not in x and "Lightweight" not in x and "Large" not in x for x in model_labels)
+    assert all("実験的" not in x and "Experimental" not in x and "軽量" not in x and "Lightweight" not in x for x in model_labels)
     assert window.asr.model_label.text() == "MODEL"
     assert window.asr.backend_label.text() == "BACKEND"
     assert window.asr.language_label.text() == "LANG"
-    assert window.preprocess.reference_label.text() == "RPP AUDIO"
+    assert window.preprocess.reference_label.text() == "REFERENCE"
     assert window.preprocess.reference.itemText(0) == "Original"
     window.grab().save(str(reports / "gui-dcc-en.png"))
 
     dialog = PreferencesDialog(window)
     dialog.show()
     app.processEvents()
-    assert dialog.nav.count() == 3
+    assert dialog.nav.count() == 4
     assert dialog.model_dir.placeholderText()
     assert dialog.temp_dir.placeholderText()
-    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == ["cpu", "vulkan"]
-    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == ["cpu", "vulkan"]
+    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == list(backends())
+    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == list(backends())
     dialog.grab().save(str(reports / "settings-dcc.png"))
     dialog.close()
     window.close()

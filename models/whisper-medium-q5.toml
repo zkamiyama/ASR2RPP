@@ -1,0 +1,21 @@
+schema_version = 2
+provider = "whisper_cpp"
+task = "asr"
+name = "Whisper Medium · Q5_0"
+sample_rate = 16000
+description = "多言語。Mediumの量子化版。"
+
+[capabilities]
+timestamps = "segment"
+speakers = false
+
+[source]
+repo = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+files = ["ggml-medium-q5_0.bin"]
+
+[source.sha256]
+"ggml-medium-q5_0.bin" = "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f"
+
+[defaults]
+language = "ja"

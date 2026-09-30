@@ -14,55 +14,15 @@ import threading
 import time
 from .catalog import Model, checkpoint, assets_root
 
-@dataclass
-class Unit:
-    start: float
-    end: float
-    text: str = ''
-    speaker: str | None = None
-    granularity: str = 'segment'
-    method: str = 'native_interval'
-    owner_start: float | None = None
-    owner_end: float | None = None
-
-@dataclass
-class Result:
-    units: list[Unit]
-    raw: object
-    text: str = ''
-    warnings: list[str] | None = None
+from .domain import Unit, Result
 
 
 from .performance import timed
 
 def executable(runtime: str, device: str, custom: str = '') -> Path:
-    if custom:
-        path = Path(custom).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f'Executable not found: {path}')
-        return path
-    name = {'whisper_cpp': 'whisper-cli', 'audio_cpp': 'audiocpp_cli'}[runtime]
-    suffix = '.exe' if sys.platform == 'win32' else ''
-    if device == 'auto':
-        if sys.platform == 'win32':
-            devices = ['vulkan', 'cpu']
-        elif sys.platform == 'darwin':
-            devices = ['metal', 'cpu']
-        else:
-            devices = ['cuda', 'vulkan', 'cpu']
-    else:
-        devices = [device]
-    for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
-        directories = [root / f'{runtime}-{candidate}' for candidate in devices] + [root / runtime]
-        for directory in directories:
-            if directory.exists():
-                matches = sorted(directory.rglob(name + suffix))
-                if matches:
-                    return matches[0]
-    found = shutil.which(name)
-    if found:
-        return Path(found)
-    raise FileNotFoundError(f'{runtime} ({device}) is not installed. Select its executable in Runtime settings.')
+    from .runtime_registry import resolve
+    return resolve(runtime, device, custom)
+
 
 
 def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
@@ -75,6 +35,10 @@ def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
     found = shutil.which('ffmpeg')
     if found:
         return found
+    if sys.platform == 'darwin':
+        for location in ('/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'):
+            if Path(location).is_file():
+                return location
 
     # Existing portable/development layouts remain supported, but new releases
     # do not redistribute FFmpeg inside the application ZIP.
@@ -89,7 +53,7 @@ def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
     installed = installed_ffmpeg()
     if installed:
         return str(installed)
-    if sys.platform == 'win32':
+    if sys.platform in {'win32', 'darwin'}:
         return str(ensure_ffmpeg(progress=progress, cancel=cancel))
     raise FileNotFoundError('FFmpeg not found in PATH or ASR2RPP user runtime data.')
 
@@ -101,9 +65,17 @@ def process_environment(binary: Path) -> dict:
     else:
         env.pop('LD_LIBRARY_PATH', None)
     env['OMP_NUM_THREADS'] = env.get('ASR2RPP_THREADS', '4')
+    if sys.platform == 'darwin':
+        # PyInstaller's process-local library environment must not leak into native tools.
+        for key in ('DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH'):
+            original = env.get(key + '_ORIG')
+            if original is None:
+                env.pop(key, None)
+            else:
+                env[key] = original
     # Never add generic /usr/lib: it can contain incompatible system libraries.
     # Only explicitly recognize libraries belonging to a native speech executable.
-    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:
+    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'asr2rpp-whisper-regions', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:
         for directory in (binary.resolve().parent, binary.resolve().parent.parent / 'lib'):
             if list(directory.glob('libggml*.so*')):
                 env['LD_LIBRARY_PATH'] = str(directory)
@@ -318,15 +290,22 @@ def whisper_parameter_args(parameters: dict) -> list[str]:
 
 
 def split_engine_parameters(model: Model, overrides: dict | None) -> tuple[dict, dict]:
-    request = dict(model.defaults.get('request', {}))
-    session = dict(model.defaults.get('session', {}))
+    request, session = {}, {}
+    for key, spec in model.parameters.items():
+        target, name = (session, key[8:]) if key.startswith('session.') else (request, key)
+        target[name] = spec['default']
+    request.update(model.defaults.get('request', {}))
+    session.update(model.defaults.get('session', {}))
     for key, value in (overrides or {}).items():
         if key.startswith('session.'):
             session[key[len('session.'):]] = value
         else:
             request[key] = value
     from .inference_policy import constrain_parameters
-    return constrain_parameters(model, request), session
+    from .model_schema import validate_parameters
+    request = constrain_parameters(model, request)
+    validate_parameters(model, request, session)
+    return request, session
 
 
 def validate_model_parameter_constraints(model: Model, request: dict, session: dict | None = None) -> None:
@@ -354,6 +333,14 @@ def audio_session_args(model: Model, session: dict) -> list[str]:
 def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
           cancel: threading.Event, progress, transcript: str = '') -> Result:
     work.mkdir(parents=True, exist_ok=True)
+    if model.task == 'asr' and model.runtime != 'whisper_cpp' and 'timing' in options:
+        from .timing import TimingSettings, plan_for
+        if plan_for(model, TimingSettings(**options['timing']), options.get('alignment_requested', False)).segmented:
+            from .region_asr import infer_regions
+            return infer_regions(model, weights, audio, work, options, cancel, progress)
+    if model.runtime in {'sherpa_onnx', 'faster_whisper', 'external_json'}:
+        from .worker_client import infer_requests
+        return infer_requests(model, weights, [{'id':'single', 'audio':audio}], work, options, cancel, progress)['single']
     device = options.get('device', 'cpu')
     binary = executable(model.runtime, device, options.get('executable', ''))
     language = options.get('language', model.defaults.get('language', 'ja'))
@@ -369,7 +356,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
             return infer_vad_whisper(model, weights, audio, work, options, cancel, progress)
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
-                '-t', str(threads), '-ojf', '-of', str(prefix), '-np']
+                '-t', str(threads), '-ojf', '-of', str(prefix)]
         if device == 'cpu':
             argv.append('-ng')
         elif device not in {'auto', 'vulkan', 'cuda', 'metal'}:
@@ -378,25 +365,17 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         run_process(argv, cancel, progress, work / 'engine.log')
         result = parse_whisper(json.loads(prefix.with_suffix('.json').read_text(encoding='utf-8-sig')))
     else:
-        output = work / 'timed.json'
-        # Nemotron's offline encoder builds a full-context attention graph whose
-        # memory grows quadratically with long audio. Its native streaming session
-        # keeps a bounded cache and still returns token timestamps, so use it for
-        # all Nemotron ASR requests rather than risking multi-gigabyte graph OOM.
-        mode = 'streaming' if model.task == 'asr' and model.family == 'nemotron_asr' else 'offline'
+        from .native_profile import profile, request_fields
+        contract = profile(model)
+        output = work / ('text.txt' if contract.output == 'text' else 'timed.json')
         argv = [str(binary), '--task', model.task, '--family', model.family,
                 '--model', str(weights), '--backend', 'best' if device == 'auto' else device,
-                '--mode', mode, '--audio', str(audio), '--threads', str(threads)]
-        if model.task == 'diar':
-            argv += ['--turns-out', str(output)]
-        else:
-            argv += ['--language', language]
-            if model.task == 'align':
-                argv += ['--text', transcript, '--words-out', str(output)]
-            elif model.family == 'vibevoice_asr':
-                argv += ['--segments-out', str(output), '--text-out', str(work / 'text.txt')]
-            else:
-                argv += ['--words-out', str(output), '--text-out', str(work / 'text.txt')]
+                '--mode', contract.mode, '--audio', str(audio), '--threads', str(threads)]
+        for key, value in request_fields(model, options, transcript).items():
+            argv += ['--' + key, value]
+        flag = {'text': '--text-out', 'words': '--words-out',
+                'segments': '--segments-out', 'turns': '--turns-out'}[contract.output]
+        argv += [flag, str(output)]
         for key, value in parameters.items():
             if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
                 raise ValueError('Invalid parameter name')
@@ -405,7 +384,11 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         run_process(argv, cancel, progress, work / 'engine.log')
         if not output.exists():
             raise ValueError('Engine did not produce timestamps. Use a supported timed model; no times were fabricated.')
-        result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
+        if contract.output == 'text':
+            from .text_requests import checked_text
+            text = checked_text(output)
+            result = Result([], {'text': text}, text)
+        else:
+            result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
     (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in result.units], ensure_ascii=False, indent=2), encoding='utf-8')
     return result
-

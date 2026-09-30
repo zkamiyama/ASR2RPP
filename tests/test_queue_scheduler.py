@@ -7,7 +7,7 @@ import threading
 from asr2rpp import catalog
 from asr2rpp.catalog import Model, resolve_model
 from asr2rpp.pipeline import Stage
-from asr2rpp.queue_runner import _chunks_by_size, _chunks_for_command, _audio_batch, QueueJob
+from asr2rpp.queue_runner import _chunks_by_size, _audio_batch, QueueJob
 
 
 class FakeResponse(io.BytesIO):
@@ -148,7 +148,8 @@ def test_whisper_command_chunking_caps_item_count(tmp_path):
             self.path = tmp_path / f'{n}.wav'
 
     items = [Item(i) for i in range(7)]
-    chunks = list(_chunks_for_command(items, lambda x: x.path, max_chars=99999, max_items=3))
+    from asr2rpp.vad_asr import command_batches
+    chunks = list(command_batches(['whisper'], [(x.path, x.path.with_suffix('')) for x in items], max_items=3))
     assert [len(chunk) for chunk in chunks] == [3, 3, 1]
 
 
@@ -178,7 +179,7 @@ def test_nemotron_stage_major_asr_uses_streaming_per_file(tmp_path, monkeypatch)
         ))
 
     commands = []
-    monkeypatch.setattr(queue_runner, 'executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
+    monkeypatch.setattr('asr2rpp.native_batches.executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
 
     def fake_run(argv, _cancel, _progress, log, timeout=7200):
         commands.append(list(argv))
@@ -188,7 +189,7 @@ def test_nemotron_stage_major_asr_uses_streaming_per_file(tmp_path, monkeypatch)
         }), encoding='utf-8')
         Path(log).write_text('streaming ok', encoding='utf-8')
 
-    monkeypatch.setattr(queue_runner, 'run_process', fake_run)
+    monkeypatch.setattr('asr2rpp.native_batches.run_process', fake_run)
     statuses = []
     result = _audio_batch(
         model, weights, Stage('nemotron-asr', device='vulkan', language='ja-JP', threads=4),

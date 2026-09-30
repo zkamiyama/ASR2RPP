@@ -1,8 +1,8 @@
 name: ASR2RPP application
 on:
   push:
-    branches: [main, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance, fix/restart-catalog]
-    paths: ['asr2rpp/**', 'native/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
+    branches: [main, feat/provider-timing-runtime, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance, fix/restart-catalog]
+    paths: ['asr2rpp/**', 'native/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'README.ja.md', '.gitattributes', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0 fonts-noto-cjk
-      - run: python -m pip install pytest PySide6==6.8.3 numpy safetensors
+      - run: python -m pip install pytest PySide6==6.8.3 numpy safetensors opentimelineio==0.18.1
       - name: Native PCM protocol and numeric equivalence tests
         run: |
           cmake -S native -B build/pcm-tests
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install PySide6==6.8.3 pyinstaller==6.22.3 pytest numpy safetensors
+      - run: python -m pip install ".[dev,workers]"
       - name: Windows native PCM protocol tests
         run: |
           cmake -S native -B build/pcm-tests
@@ -60,27 +60,25 @@ jobs:
           ctest --test-dir build/pcm-tests -C Release --output-on-failure
       - run: python -m pytest tests -v --junitxml=reports/windows-tests.xml
         env:
-          # Use the native Windows QPA for screenshots. The offscreen plugin on
-          # GitHub's Windows runner renders text as tofu boxes, making the GUI
-          # artifacts unusable for visual review.
           QT_QPA_PLATFORM: windows
       - uses: actions/cache@v4
         id: native
         with:
           path: |
-            engines/
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-vulkan/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-vulkan/
             build/native/whisper_cpp/samples/
-          key: win-native-cpu-vulkan-v1-${{ hashFiles('tools/build_native.py', 'tools/patch_whisper.py', 'native/**') }}
-          restore-keys: win-native-cpu-vulkan-v1-
+          key: win-native-vulkan-only-v3-${{ hashFiles('tools/build_native.py', 'native/**') }}
+          restore-keys: win-native-vulkan-only-v3-
       - name: Install Vulkan SDK for native runtime builds
-        if: steps.native.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           choco install vulkan-sdk --version=1.4.350 -y --no-progress
           "VULKAN_SDK=C:\VulkanSDK\1.4.350.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "C:\VulkanSDK\1.4.350.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - if: steps.native.outputs.cache-hit != 'true'
-        run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan
+      - run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan
         env:
           ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
       - run: python tools/package_windows.py
@@ -100,6 +98,85 @@ jobs:
           name: windows-reports-${{ github.run_id }}
           path: reports/
           retention-days: 7
+  macos-arm64:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]') || contains(github.event.head_commit.message, '[mac-build]')
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      ASR2RPP_HOME: ${{ github.workspace }}/build/runtime-home
+      QT_QPA_PLATFORM: offscreen
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      CMAKE_GENERATOR: Ninja
+      ASR2RPP_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Confirm native Apple Silicon toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          xcrun --find metal || xcodebuild -downloadComponent MetalToolchain
+          command -v ffmpeg || brew install ffmpeg
+          command -v ninja || brew install ninja
+      - run: python -m pip install ".[dev,workers]"
+      - name: Python and native PCM regression tests
+        run: |
+          python -m pytest tests -v --junitxml=reports/macos-tests.xml
+          cmake -S native -B build/pcm-tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/pcm-tests
+          ctest --test-dir build/pcm-tests --output-on-failure
+      - uses: actions/cache@v4
+        id: mac-native
+        with:
+          path: |
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-metal/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-metal/
+          key: mac-arm64-metal-v1-${{ hashFiles('tools/build_native.py', 'native/**') }}
+      - name: Build stock CLI and public-API helpers for CPU and Metal
+        run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:metal audio_cpp:cpu audio_cpp:metal
+        env:
+          ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
+      - name: Preserve verified native build before package tests
+        if: steps.mac-native.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-metal/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-metal/
+          key: mac-arm64-metal-v1-${{ hashFiles('tools/build_native.py', 'native/**') }}
+      - name: Freeze, ad-hoc sign and relocate-test the complete app
+        run: python tools/package_macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASR2RPP-macOS-arm64-${{ github.run_id }}
+          path: |
+            dist/ASR2RPP-macOS-arm64.zip
+            dist/SHA256SUMS-macOS.txt
+          retention-days: 14
+          compression-level: 0
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-reports-${{ github.run_id }}
+          path: |
+            reports/*.xml
+            reports/*.json
+            reports/*.png
+            reports/exports/summary.json
+            reports/exports/*.log
+            reports/macos-portable/summary.json
+            reports/macos-portable/*.log
+            reports/macos-portable/lifecycle/summary.json
+          retention-days: 7
   linux-native:
     needs: test
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]')
@@ -115,12 +192,13 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
+      - run: python -m pip install .
       - run: python tools/build_native.py whisper_cpp
       - run: python -m asr2rpp.cli models install whisper-base
       - run: |
           mkdir -p reports
           espeak-ng -v en-us -w reports/synthetic.wav 'This is a short test of the audio conversion application.'
-          python -m asr2rpp.cli run reports/synthetic.wav --asr-device cpu --asr-language en --output-dir reports/output
+          python -m asr2rpp.cli run reports/synthetic.wav --asr whisper-base --asr-device cpu --asr-language en --format rpp,otio,json --output-dir reports/output
           python -c "import pathlib; assert list(pathlib.Path('reports/output').glob('*.rpp'))"
       - name: Stage-major two-file native Whisper smoke
         shell: python
@@ -134,28 +212,15 @@ jobs:
           from asr2rpp.pipeline import Stage
           from asr2rpp.preprocessing import Settings
           from asr2rpp.queue_runner import run_queue
-
           reports = Path('reports')
-          a = reports / 'batch-a.wav'
-          b = reports / 'batch-b.wav'
-          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(a),
-                          'First file for one model load queue validation.'], check=True)
-          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(b),
-                          'Second file for one model load queue validation.'], check=True)
+          a, b = reports/'batch-a.wav', reports/'batch-b.wav'
+          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(a), 'First file for one model load queue validation.'], check=True)
+          subprocess.run(['espeak-ng', '-v', 'en-us', '-w', str(b), 'Second file for one model load queue validation.'], check=True)
           catalog, errors = load_catalog()
           assert not errors, errors
-          settings = Settings(
-              asr=Stage('whisper-base', device='cpu', language='en', threads=2),
-              same_directory=False,
-              output_directory=str(reports / 'stage-output'),
-          )
+          settings = Settings(asr=Stage('whisper-base', device='cpu', language='en', threads=2), same_directory=False, output_directory=str(reports/'stage-output'))
           events = []
-          outputs = run_queue(
-              [(0, str(a)), (1, str(b))],
-              settings, catalog, threading.Event(), print,
-              lambda index, status, detail: events.append((index, status, detail)),
-              256,
-          )
+          outputs = run_queue([(0, str(a)), (1, str(b))], settings, catalog, threading.Event(), print, lambda index, status, detail: events.append((index, status, detail)), 256)
           assert set(outputs) == {0, 1}, (outputs, events)
           assert all(path.is_file() for path in outputs.values())
           assert sum(1 for _i, status, _d in events if status == '完了') == 2
@@ -173,47 +238,3 @@ jobs:
           name: linux-native-reports-${{ github.run_id }}
           path: reports/
           retention-days: 7
-
-  release:
-    needs: [test, windows, linux-native]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: ASR2RPP-Windows-x64-${{ github.run_id }}
-          path: release-files
-      - name: Verify the exact tested ZIP before publishing
-        shell: python
-        run: |
-          import hashlib, json, os, pathlib, zipfile
-          root = pathlib.Path('release-files')
-          archive = root / 'ASR2RPP-Windows-x64.zip'
-          expected = (root / 'SHA256SUMS.txt').read_text().split()[0]
-          with archive.open('rb') as handle:
-              assert hashlib.file_digest(handle, 'sha256').hexdigest() == expected
-          with zipfile.ZipFile(archive) as package:
-              meta = json.loads(package.read('ASR2RPP/version.json'))
-              assert meta['commit'] == os.environ['GITHUB_SHA']
-              assert not meta['ffmpeg_bundled']
-              assert 'ASR2RPP/models/anime-whisper.toml' in package.namelist()
-              assert not any('/model-templates/' in n or '/_internal/models/' in n for n in package.namelist())
-      - name: Publish immutable commit-tagged preview ZIP
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          tag="preview-${GITHUB_SHA:0:12}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'Release already exists; leaving published assets unchanged.'
-          else
-            gh release create "$tag" release-files/ASR2RPP-Windows-x64.zip release-files/SHA256SUMS.txt \
-              --target "$GITHUB_SHA" --prerelease --title "ASR2RPP Windows ${GITHUB_SHA:0:12}" \
-              --notes-file docs/release-notes.md
-          fi

@@ -1,89 +1,82 @@
-[English](README.md) | [日本語](README.ja.md)
+<p align="center"><img src="assets/branding/app.svg" width="96" height="96" alt="ASR2RPP: speech into an editable timeline"></p>
 
 # ASR2RPP
 
-**Turn audio or video into an editable REAPER project.**
+**Local speech recognition. Editable timelines. Your original media stays untouched.**
 
-ASR2RPP transcribes speech and creates an `.rpp` project with the text attached to
-items that reference your audio. You can also remove background audio, refine
-speech timing, and organize speech by speaker. Your original recording is not modified.
+[日本語](README.ja.md) · [Download](https://github.com/zkamiyama/ASR2RPP/releases/latest) · [Models](docs/models.md)
 
-## Get started on Windows
+Turn audio or video into a **REAPER project, OpenTimelineIO timeline, or reusable JSON**.
+Optional background removal, alignment and speaker labels all work before export, so the selected formats share the same edit decisions.
 
-1. Download **ASR2RPP-Windows-x64.zip** from the newest [release](https://github.com/zkamiyama/ASR2RPP/releases).
-2. Extract **the entire ZIP** to a new folder. Do not run it inside the ZIP or move only the EXE.
-3. Open **ASR2RPP.exe**. Drag your audio or video files into the queue.
-4. Choose a speech-recognition model and press **GO**. For a first test, select **Whisper Base** and leave the optional steps OFF.
-5. Open the resulting **`.rpp` file in REAPER**. By default it is saved next to the input file. Double-click a completed queue row to open its output folder.
+## Start in four steps
 
-The Windows build is for x64 PCs with AVX2 support. REAPER is needed to open the
-project; it is not included. Python and PyTorch do not need to be installed.
-The app is currently unsigned, so Windows may display a warning. Use a ZIP from
-this repository and check the published SHA-256 when verifying a download.
+1. Download your OS's **complete ZIP** from Releases and extract it into a **new folder**.
+2. Open `ASR2RPP.exe` on Windows or `ASR2RPP.app` on Mac. Keep the other files together.
+3. Drop a recording into the window. For a first test, use the included `examples/sample.wav`, **Whisper Base**, language **en**, optional stages OFF, and **Settings → Timing → Automatic**.
+4. Press **GO**. Selected model weights and a missing FFmpeg are acquired on first use. Double-click a completed row to open the output folder.
 
-The first run needs internet access to download the selected models. Large models
-can take time and several gigabytes of disk space. FFmpeg is used to read media;
-if it is not already available, the app downloads a verified build automatically.
-Existing downloads are reused. Each model has its own license and use conditions.
+The first-run ASR is **Anime Whisper / ja** in both GUI and CLI. Saved GUI model/language choices are preserved. The included sample is English, so select Whisper Base / en explicitly for that sample. Anime Whisper is a larger, experimental Japanese conversion; its initial download is not the lightweight sample setup.
 
-## Choose what to run
+For your own recordings, choose the appropriate language. The default destination is beside the input. The gear opens settings; the globe switches English/Japanese. Downloads require a network connection. Once dependencies are present, recognition stays on your computer.
 
-| Step | What it does |
+## Choose your output
+
+The main window starts with **Format: `RPP ×` `+`**. Click **+** to add OTIO or JSON; click a chip's **×** to remove it. The menu offers only unselected formats. An empty selection shows an error and does **not** start inference. Your selection is remembered.
+
+| Format | Use it for |
 |---|---|
-| Speech recognition | Turns speech into text. This step is always enabled. |
-| Background removal | Helps isolate speech from music and other audio. Optional. |
-| Forced alignment | Matches the recognized text to the audio for finer timing. Optional, unless required by the model. |
-| Speaker diarization | Assigns speech to speaker tracks. It does not separate overlapping voices into different recordings. |
+| **RPP** | Open directly in REAPER. |
+| **OTIO** | Exchange a timeline with an OpenTimelineIO-capable editor or adapter. |
+| **JSON** | Keep raw stage results, corrected units, model provenance, media paths and an explicit edit timeline for your own converters. |
 
-For **Anime Whisper**, the app detects speech regions and recognizes them
-independently. With alignment OFF, each item uses the time range of its speech
-region—not an exact word boundary. Turn alignment ON for finer timing.
-Recognition and speaker labels can be wrong; review the result before editing or publishing.
+RPP and OTIO contain a full-length, **muted ORIGINAL** reference track, followed by transcript or speaker tracks. Gaps stay in place. Overlapping clips from one speaker use additional lanes. Media is **referenced, not embedded**. OTIO writes `enabled=false` for the muted track and clip; the receiving editor must honor this property. Check its import behavior before production use.
 
-Use **CPU** if Vulkan is unavailable or fails on your computer. The settings button
-at the bottom right lets you change output folders, model storage and execution settings.
-Japanese systems start in Japanese; other systems start in English. Use the language
-button, or **Ctrl+Shift+L**, to switch. Your selection is remembered.
+Background removal can save a continuous `*_vocals.wav`; choose **Reference audio → Processed** to edit against it. Otherwise the timeline references the original media. Existing outputs are never overwritten. The adjacent `.asr2rpp` folder holds diagnostics; JSON also includes the result data needed for conversion without that folder. **Both can contain private text and paths.**
 
-## Stop and continue
+[Output structure, JSON schema and conversion examples →](docs/outputs.md)
 
-Press **STOP** and wait for cancellation to finish. When **GO** becomes available,
-press it again to retry stopped or failed items and process waiting items.
-Completed items are left alone and are not generated a second time. To process a
-completed file again, remove its queue row and add the file again.
+## Models and timing
 
-An error is shown in the selectable, copyable log at the bottom of the window.
-Check the message, adjust the settings or file, then press GO to retry.
+The ZIP contains **20 model definitions, not 20 sets of weights**. Only selected weights are downloaded. The [model table](docs/models.md) lists languages, sizes and validation scope. Canary and Moonshine's included models are English-oriented, not Japanese ASR.
 
-## Understand the output
+Choose timing under **Settings → Timing**:
 
-The top track, **ORIGINAL**, contains the complete reference audio as one item,
-including silence. It starts **muted** so it does not double the sound from the
-edited tracks. To compare, unmute ORIGINAL and mute the other tracks, or solo ORIGINAL.
+| Setting | Meaning |
+|---|---|
+| **Automatic** | Use native model intervals when available, otherwise VAD speech regions. An enabled aligner takes precedence. Legacy TOML defaults are supported. |
+| **Native model intervals** | Use intervals returned by the ASR. Not available for text-only models. |
+| **VAD speech regions** | Locate utterances and recognize each region. **These are not word boundaries.** |
+| **Forced alignment** | Align the recognized text to the audio. Select the aligner in the main window; use VAD before alignment for long/coarse segments. |
 
-Below it are a **Transcript** track or speaker tracks. Items reference the original
-media; the app does not save a separate audio file for every phrase. Keep the
-referenced media with the project. Moving or deleting it can make REAPER report missing files.
+Recognition, timing and speaker labels can be wrong. Alignment does not fix a wrong transcript. Speaker labeling does not separate overlapping voices into separate recordings.
 
-When background removal is enabled, **RPP Audio → Processed** saves a continuous
-`*_vocals.wav` next to the project and uses it as the reference instead.
-Existing output files are not overwritten; a numeric suffix is added when needed.
-The adjacent `.asr2rpp` folder contains diagnostics and recognized text. It may
-contain private information: do not post it publicly without reviewing it.
+## Requirements
 
-## Updating and model definitions
+| OS | Supported package | GPU |
+|---|---|---|
+| **Windows** | x64 CPU with AVX2 | Vulkan only; a compatible GPU driver is required |
+| **macOS** | Apple Silicon, macOS 14+; not Intel | Metal only |
 
-Extract an update into a **new folder**. Your downloaded models and settings are
-normally kept under `%LOCALAPPDATA%\ASR2RPP` and can be reused.
+CPU is available on both. The bundled ReazonSpeech K2 worker is CPU-only.
 
-The app reads the **`models` folder next to the EXE directly**. It does not copy
-these TOML definitions into a temporary folder. Most users do not need to edit them.
-For a custom model, use **Settings → Advanced → Open custom TOML** and give the
-TOML a unique filename. Do not reuse a built-in model's filename. Definitions are
-reloaded before GO; invalid or conflicting definitions are reported instead of
-silently selecting a different model.
+**Included:** Python runtime, Qt/PySide6, NumPy, safetensors, OpenTimelineIO, whisper.cpp, audio.cpp and a CPU sherpa-onnx worker.
+**Acquired separately on first use:** selected model weights and, when missing, checksum-verified FFmpeg. A custom FFmpeg path can be set in **Settings → Advanced**.
+**Not needed:** a separate Python install, PyTorch, CUDA Toolkit, Vulkan SDK or Xcode. CUDA, CTranslate2 and faster-whisper are not bundled.
 
-For model setup details, see the [model guide](docs/inference-policy.md).
-[Development notes](docs/development.md) and technical history are separate from this guide.
+REAPER is only needed to open RPP; it is not needed to generate JSON or OTIO. Windows executables are unsigned; the Mac app is ad-hoc signed, not Apple-notarized. Verify the release source and checksum. Dependency/model terms are separate from the app's [MIT license](LICENSE); see [third-party notices](THIRD_PARTY.md).
 
-[License](LICENSE) · [Third-party notices](THIRD_PARTY.md)
+## Automate and customize
+
+```powershell
+.\asr2rpp-cli.exe run recording.wav --asr whisper-base --asr-device vulkan --format rpp,otio,json --output-dir exports
+.\asr2rpp-cli.exe convert exports\recording.json --format otio --output-dir converted
+```
+
+`--format` may be repeated; omission means RPP only. Conversion from JSON does not run or download ASR models. On Mac the CLI is inside `ASR2RPP.app/Contents/MacOS/asr2rpp-cli`. [CLI reference →](docs/outputs.md#command-line)
+
+Add a unique `.toml` under **Settings → Advanced → Open custom TOML**; do not modify the signed `.app`. Definitions reload before GO. **TOML adds checkpoints for architectures supported by an installed runtime; it cannot implement an unknown architecture.** [Model and runtime examples →](docs/provider-models.md)
+
+Press **STOP** and wait for cleanup. GO retries waiting/stopped/failed items, not completed items. To redo a completed input, remove and re-add it. Save model/cache locations under **Settings → General**. Updates go into a new folder; unchanged model definitions reuse verified cached weights.
+
+[Model catalog](docs/models.md) · [Development and upstream updates](docs/development.md) · [Output schema](docs/outputs.md) · [Validation](docs/implementation-stages.md)

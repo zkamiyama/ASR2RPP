@@ -1,4 +1,4 @@
-"""Render the checked-in Material SVGs to multi-resolution Windows icons.
+"""Render the original checked-in SVG brand marks to multi-resolution Windows icons.
 
 No downloaded fonts or image libraries are needed. Source SVGs and license are
 version controlled; ICO generation is part of the release, never first startup.

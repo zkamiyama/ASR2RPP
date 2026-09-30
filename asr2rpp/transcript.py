@@ -1,6 +1,6 @@
 """Transcript interval operations; never invent speech times or split words."""
 from dataclasses import replace
-from .adapters import Unit
+from .domain import Unit
 from .text_join import join_timed
 
 

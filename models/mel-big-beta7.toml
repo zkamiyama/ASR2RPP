@@ -17,6 +17,8 @@ entry = "big_beta7-f16.gguf"
 [source.sha256]
 "big_beta7.ckpt" = "9d68b9a8689a3500c45d3418a7811934e557760db07285f483088a0965b0eb88"
 
+"big_beta7.yaml" = "a2ad8056dfdb394422d62dd823f7a02b7f17f6be12870da913bd84b962f2e7c9"
+
 [source.convert]
 kind = "mel_band_roformer_ckpt_to_gguf"
 checkpoint = "big_beta7.ckpt"

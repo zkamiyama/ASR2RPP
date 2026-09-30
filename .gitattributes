@@ -1,0 +1,2 @@
+# Model provenance is byte-exact across Windows, macOS and Linux checkouts.
+models/*.toml text eol=lf

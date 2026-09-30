@@ -1,0 +1,38 @@
+schema_version = 2
+provider = "audio_cpp"
+task = "asr"
+family = "fun_asr_nano"
+name = "Fun-ASR-Nano 2512 · Q8"
+sample_rate = 16000
+description = "日本語・中国語・英語。時刻はVADまたは強制アライメント。モデル固有ライセンスを確認してください。"
+
+[capabilities]
+timestamps = "none"
+speakers = false
+
+[execution]
+mode = "offline"
+output = "text"
+max_batch_items = 16
+max_audio_seconds = 28
+
+[source]
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
+files = ["Fun-ASR-Nano-2512-GGUF/fun-asr-nano-2512-q8_0.gguf"]
+
+[source.sha256]
+"Fun-ASR-Nano-2512-GGUF/fun-asr-nano-2512-q8_0.gguf" = "4d727357574b079b7f43336b2930f39da086ca02f5d8d50872090b4c1c3d5e0a"
+
+[defaults]
+language = "ja"
+
+[defaults.request]
+audio_chunk_mode = "none"
+enable_itn = true
+
+[parameters.enable_itn]
+type = "bool"
+default = true
+ja = "数値などの表記を正規化"
+en = "Inverse text normalization"

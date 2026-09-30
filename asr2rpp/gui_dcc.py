@@ -32,350 +32,15 @@ from .run_state import RETRYABLE, TERMINAL, RunLedger
 from .pipeline import MEDIA_EXTENSIONS, Stage
 from .preprocessing import Settings, run_job
 from .queue_runner import run_queue
+from .gui_formats import FormatSelector
+from .outputs import validate_formats
 from .parameter_specs import specs_for
+from .platforms import backends, preferred_gpu, validate_backend
+from .timing import TimingSettings, plan_for as timing_plan_for
 from .adapters import executable as runtime_executable, ffmpeg_path
 
 
-STYLE = r"""
-* {
-    font-size: 11px;
-    color: #d7dde6;
-}
-QMainWindow, QDialog, QWidget { background: #1b1f24; }
-QLabel, QCheckBox { background: transparent; }
-QToolTip {
-    background: #111419;
-    color: #e6ebf2;
-    border: 1px solid #3a424d;
-    padding: 5px 7px;
-}
-QSplitter::handle { background: #111419; width: 1px; }
-QFrame#inspector, QFrame#statusBar { background: #20252b; }
-QFrame#logPanel { background: #1b1f24; border-top: 1px solid #303741; }
-QFrame#stage {
-    background: #242a31;
-    border: 1px solid #313944;
-    border-radius: 4px;
-}
-QFrame#stage[disabledStage="true"] { background: #20252a; }
-QWidget#stageBody { background: transparent; }
-QLabel#section {
-    color: #eef2f6;
-    background: transparent;
-    font-size: 10px;
-    font-weight: 700;
-}
-QLabel#muted { color: #8993a0; }
-QLabel#status { color: #aeb7c4; }
-QTableWidget {
-    background: #171b20;
-    alternate-background-color: #1a1f25;
-    border: none;
-    gridline-color: #272e37;
-    selection-background-color: #334b68;
-    selection-color: #ffffff;
-}
-QTableWidget::item { padding: 4px 6px; border-bottom: 1px solid #252c34; }
-QHeaderView::section {
-    background: #20252b;
-    color: #9fa9b6;
-    border: none;
-    border-right: 1px solid #2c333d;
-    border-bottom: 1px solid #343c47;
-    padding: 5px 6px;
-    font-weight: 600;
-}
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
-    background: #181d22;
-    color: #dce2ea;
-    border: 1px solid #3a424d;
-    border-radius: 2px;
-    padding: 0 4px;
-    min-height: 18px;
-    max-height: 18px;
-    selection-background-color: #3f6f9f;
-}
-
-QFrame#editablePreset {
-    background: #181d22;
-    border: 1px solid #3a424d;
-    border-radius: 2px;
-    min-height: 18px; max-height: 18px;
-}
-QFrame#editablePreset QLineEdit {
-    background: transparent; border: none; padding: 0 4px;
-    min-height: 18px; max-height: 18px;
-}
-QFrame#editablePreset QToolButton {
-    background: #20262c; border: none; border-left: 1px solid #303842;
-    border-radius: 0; padding: 0; min-width: 18px; max-width: 18px;
-    min-height: 18px; max-height: 18px;
-}
-QFrame#editablePreset QToolButton:hover { background: #252b32; }
-QPlainTextEdit {
-    background: #15191e;
-    color: #dce2ea;
-    border: 1px solid #3a424d;
-    border-radius: 2px;
-    padding: 5px;
-    selection-background-color: #3f6f9f;
-}
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
-    color: #68717d;
-    background: #1b2026;
-    border-color: #2a3139;
-}
-QComboBox::drop-down {
-    border: none;
-    border-left: 1px solid #303842;
-    width: 18px;
-    background: #20262c;
-}
-QComboBox QLineEdit, QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {
-    background: transparent;
-    border: none;
-    padding: 0 3px;
-    min-height: 16px;
-    max-height: 16px;
-}
-QComboBox QAbstractItemView {
-    background: #20252b;
-    color: #dce2ea;
-    border: 1px solid #444d59;
-    selection-background-color: #365c83;
-}
-QPushButton, QToolButton {
-    background: #2a3038;
-    color: #dce2ea;
-    border: 1px solid #3a424d;
-    border-radius: 2px;
-    padding: 0 6px;
-    min-height: 18px;
-    max-height: 18px;
-}
-QPushButton:hover, QToolButton:hover { background: #333b45; border-color: #53606e; }
-QPushButton:pressed, QToolButton:pressed { background: #20262d; }
-QPushButton:disabled, QToolButton:disabled { color: #626c78; background: #23282e; border-color: #2d343d; }
-QToolButton#stageToggle {
-    min-width: 30px; max-width: 30px; min-height: 16px; max-height: 16px;
-    padding: 0; font-weight: 700; color: #7f8995; background: #191d22;
-}
-QToolButton#stageToggle:checked { color: #ffffff; background: #2f76b7; border-color: #4b8cca; }
-QToolButton#iconButton { min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; padding: 0; }
-QToolButton#footerIcon, QToolButton#languageButton {
-    min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0;
-}
-QPushButton#runButton {
-    min-width: 76px; max-width: 76px; min-height: 24px; max-height: 24px;
-    padding: 0; text-align: center; font-weight: 800; letter-spacing: 1px;
-    color: #ffffff; background: #247f5d; border-color: #319b75;
-}
-QPushButton#runButton:hover { background: #2b906a; }
-QPushButton#runButton[running="true"] { background: #a84343; border-color: #ca5c5c; }
-QPushButton#runButton[running="true"]:hover { background: #ba4b4b; }
-QCheckBox { spacing: 7px; }
-QCheckBox::indicator {
-    width: 13px; height: 13px; border-radius: 2px;
-    background: #15191e; border: 1px solid #596472;
-}
-QCheckBox::indicator:checked { background: #347fbd; border-color: #5597cd; }
-QCheckBox::indicator:disabled { background: #20252b; border-color: #353d47; }
-QProgressBar {
-    border: none; background: #13171b; min-height: 3px; max-height: 3px;
-}
-QProgressBar::chunk { background: #3d8ed0; }
-QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical { background: #181c21; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #404955; min-height: 24px; border-radius: 4px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QListWidget {
-    background: #171b20; border: none; border-right: 1px solid #303741; outline: none;
-}
-QListWidget::item { padding: 7px 9px; color: #9ca6b2; }
-QListWidget::item:selected { background: #29323c; color: #ffffff; border-left: 2px solid #4b91ca; }
-QMenu {
-    background: #20252b; color: #dce2ea; border: 1px solid #3a424d; padding: 4px;
-}
-QMenu::item { padding: 5px 26px 5px 24px; }
-QMenu::item:selected { background: #355c82; }
-QMenu::separator { height: 1px; background: #343c46; margin: 4px 7px; }
-"""
-STYLE += '\nQComboBox::down-arrow { image: url("' + (assets_root() / "assets" / "icons" / "arrow_drop_down.svg").as_posix() + '"); width: 14px; height: 14px; }'
-STYLE += '\nQCheckBox::indicator:checked { image: url("' + (assets_root() / "assets" / "icons" / "check.svg").as_posix() + '"); }'
-
-
-TEXT = {
-    "ja": {
-        "queue_name": "入力",
-        "queue_status": "状態",
-        "queue_size": "サイズ",
-        "queue_output": "出力",
-        "drop": "音声・動画をここへドロップ",
-        "add_files": "ファイルを追加",
-        "add_folder": "フォルダーから追加",
-        "remove": "選択を削除",
-        "retry": "失敗・中断を再試行",
-        "open_output": "出力先を開く",
-        "clear": "キューをクリア",
-        "sep": "背景音除去",
-        "asr": "音声認識",
-        "align": "強制アライメント",
-        "diar": "話者ダイアライゼーション",
-        "model": "モデル",
-        "backend": "実行環境",
-        "language": "言語",
-        "parameters": "パラメータ",
-        "rpp_audio": "RPP音声",
-        "original": "元メディア",
-        "processed": "処理済み",
-        "output": "出力",
-        "same_dir": "入力ファイルと同じ場所",
-        "location": "出力先",
-        "custom_dir": "指定フォルダー",
-        "choose": "選択",
-        "ready": "準備完了",
-        "settings": "設定",
-        "ui_language": "UI言語を切替",
-        "general": "一般",
-        "runtime": "実行環境",
-        "advanced": "詳細",
-        "model_dir": "モデル保存先",
-        "temp_dir": "一時ファイル先",
-        "queue_order": "キュー処理順",
-        "stage_major": "ステージ優先",
-        "file_major": "ファイル優先",
-        "batch_limit": "audio.cppバッチ上限",
-        "threads": "CPUスレッド",
-        "whisper_backend": "whisper.cpp",
-        "audio_backend": "audio.cpp",
-        "keep_source": "変換成功後も元チェックポイントを保持",
-        "prepare_models": "選択モデルを準備",
-        "open_models": "モデル保存先を開く",
-        "open_toml": "同梱TOMLを開く",
-        "open_custom_toml": "独自TOMLを開く",
-        "reload_toml": "モデル定義を再読込",
-        "exe_override": "実行ファイル上書き",
-        "save": "保存",
-        "cancel": "キャンセル",
-        "reset": "既定値へ戻す",
-        "apply": "適用",
-        "default": "既定",
-        "cpu": "CPU",
-        "vulkan": "Vulkan",
-        "waiting": "待機",
-        "running": "実行中",
-        "done": "完了",
-        "failed": "失敗",
-        "stopped": "中断",
-        "preparing": "モデル準備中",
-        "select_output": "出力先を選択",
-        "no_params": "このモデルには追加の公開推論パラメータがありません。",
-        "run_log": "実行ログ",
-        "ffmpeg_auto": "自動取得 / PATH",
-        "bundled_path": "同梱 / PATH",
-    },
-    "en": {
-        "queue_name": "Input",
-        "queue_status": "Status",
-        "queue_size": "Size",
-        "queue_output": "Output",
-        "drop": "Drop audio or video files here",
-        "add_files": "Add files",
-        "add_folder": "Add folder",
-        "remove": "Remove selected",
-        "retry": "Retry failed/stopped",
-        "open_output": "Open output folder",
-        "clear": "Clear queue",
-        "sep": "BACKGROUND REMOVAL",
-        "asr": "ASR",
-        "align": "FORCED ALIGN",
-        "diar": "DIARIZATION",
-        "model": "MODEL",
-        "backend": "BACKEND",
-        "language": "LANG",
-        "parameters": "Parameters",
-        "rpp_audio": "RPP AUDIO",
-        "original": "Original",
-        "processed": "Processed",
-        "output": "OUTPUT",
-        "same_dir": "Same as input",
-        "location": "LOCATION",
-        "custom_dir": "Custom directory",
-        "choose": "Browse",
-        "ready": "Ready",
-        "settings": "Settings",
-        "ui_language": "Switch UI language",
-        "general": "General",
-        "runtime": "Runtime",
-        "advanced": "Advanced",
-        "model_dir": "Model directory",
-        "temp_dir": "Temporary directory",
-        "queue_order": "Queue order",
-        "stage_major": "Stage-major",
-        "file_major": "File-major",
-        "batch_limit": "audio.cpp batch limit",
-        "threads": "CPU threads",
-        "whisper_backend": "whisper.cpp",
-        "audio_backend": "audio.cpp",
-        "keep_source": "Keep source checkpoint after conversion",
-        "prepare_models": "Prepare selected models",
-        "open_models": "Open model directory",
-        "open_toml": "Open bundled TOML",
-        "open_custom_toml": "Open custom TOML",
-        "reload_toml": "Reload model definitions",
-        "exe_override": "Executable overrides",
-        "save": "Save",
-        "cancel": "Cancel",
-        "reset": "Reset defaults",
-        "apply": "Apply",
-        "default": "Default",
-        "cpu": "CPU",
-        "vulkan": "Vulkan",
-        "waiting": "Queued",
-        "running": "Running",
-        "done": "Done",
-        "failed": "Failed",
-        "stopped": "Stopped",
-        "preparing": "Preparing models",
-        "select_output": "Choose output directory",
-        "no_params": "This model exposes no additional inference parameters.",
-        "run_log": "Run Log",
-        "ffmpeg_auto": "Auto-download / PATH",
-        "bundled_path": "Bundled / PATH",
-    },
-}
-
-MODEL_TEXT = {
-    "anime-whisper": {
-        "ja": ("Anime Whisper", "GGML変換版。配布者から認識異常の注意があります。"),
-        "en": ("Anime Whisper", "Experimental GGML conversion; the distributor warns of possible recognition anomalies."),
-    },
-    "mel-big-beta7": {
-        "ja": ("Mel-Band RoFormer big beta7 · F16", "背景音除去。元CKPTをローカルで検証し、PyTorchなしでaudio.cpp F16 GGUFへ変換します。"),
-        "en": ("Mel-Band RoFormer big beta7 · F16", "Background removal. The exact source checkpoint is verified and converted locally to audio.cpp F16 GGUF without PyTorch."),
-    },
-    "nemotron-asr": {
-        "ja": ("Nemotron 3.5 ASR · Q8", "token emission frame由来の時刻。精密な境界にはForced Alignmentを併用できます。"),
-        "en": ("Nemotron 3.5 ASR · Q8", "Timing is derived from token emission frames. Forced Alignment can refine edit boundaries."),
-    },
-    "nemotron-diarization": {
-        "ja": ("Nemotron 3 Diarization · BF16", "最大8話者の話者推定。音源分離は行いません。"),
-        "en": ("Nemotron 3 Diarization · BF16", "Speaker diarization for up to eight speakers. It does not perform source separation."),
-    },
-    "qwen-forced-aligner": {
-        "ja": ("Qwen3 Forced Aligner · Q8", "認識テキストと対応音声を再整列します。"),
-        "en": ("Qwen3 Forced Aligner · Q8", "Re-aligns recognized transcript text to the corresponding audio."),
-    },
-    "vibevoice-asr": {
-        "ja": ("VibeVoice ASR · Q8", "長時間向けオフライン統合ASR。メモリ使用量が大きいモデルです。"),
-        "en": ("VibeVoice ASR · Q8", "Long-form offline integrated ASR with comparatively high memory usage."),
-    },
-    "whisper-base": {
-        "ja": ("Whisper Base", "標準Whisper Base。既定モデル・動作確認向け。"),
-        "en": ("Whisper Base", "Standard Whisper Base, used as the default and smoke-test model."),
-    },
-}
-
+from .gui_theme import STYLE, TEXT, MODEL_TEXT
 
 def model_text(model, lang: str) -> tuple[str, str]:
     localized = MODEL_TEXT.get(model.id, {}).get(lang)
@@ -811,8 +476,8 @@ class StagePanel(QFrame):
         self.device.blockSignals(True)
         self.device.clear()
         self.device.addItem(tr["default"], "default")
-        self.device.addItem("CPU", "cpu")
-        self.device.addItem("Vulkan", "vulkan")
+        for device in backends():
+            self.device.addItem({'auto':'Auto', 'cpu':'CPU', 'vulkan':'Vulkan', 'metal':'Metal', 'cuda':'CUDA'}[device], device)
         if selected:
             idx = self.device.findData(selected)
             if idx >= 0:
@@ -839,9 +504,8 @@ class StagePanel(QFrame):
         if not model:
             raise ValueError(f"No model selected for {self.task}")
         requested = self.device.currentData() or "default"
-        device = runtime_defaults.get(model.runtime, "vulkan") if requested == "default" else requested
-        if device not in {"cpu", "vulkan"}:
-            device = "vulkan"
+        device = runtime_defaults.get(model.runtime, model.defaults.get("device", "auto")) if requested == "default" else requested
+        validate_backend(device)
         executable = runtime_paths.get(f"{model.runtime}:{device}", "")
         return Stage(model_id, device, executable, self.language.currentText().strip(),
                      threads, ui_parameters(model, copy.deepcopy(self.parameters)))
@@ -876,6 +540,10 @@ class Worker(QThread):
                 continue
             seen.add(stage.model_id)
             model = self.catalog[stage.model_id]
+            from .providers import preflight
+            plan = timing_plan_for(self.catalog[self.settings.asr.model_id], self.settings.timing, self.settings.align is not None)
+            info = preflight(model, stage, self.cancel, segmented=stage is self.settings.asr and plan.segmented)
+            self.settings.runtime_provenance[model.task] = {k:v for k,v in info.items() if k != 'capabilities'}
             if 'path' in model.source and not self.prepare_only:
                 from .catalog import local_model_path
                 local_model_path(model)
@@ -884,10 +552,12 @@ class Worker(QThread):
             else:
                 resolve_model(model, self.cancel, self.progress.emit,
                               download=True, keep_source=self.keep_sources)
-            if policy_for(model).segmentation == 'vad':
+            if (stage is self.settings.asr and
+                    timing_plan_for(model, self.settings.timing, self.settings.align is not None).segmented):
                 from .vad import vad_model
                 from .adapters import split_engine_parameters
                 request, _ = split_engine_parameters(model, stage.parameters or {})
+                request.update(self.settings.timing.parameters())
                 vad_model(model, request, self.cancel, self.progress.emit)
 
     def emit_item(self, index, status, detail=''):
@@ -968,7 +638,7 @@ class PreferencesDialog(QDialog):
         content.setContentsMargins(0, 0, 0, 0)
         self.nav = QListWidget()
         self.nav.setFixedWidth(112)
-        for key in ("general", "runtime", "advanced"):
+        for key in ("general", "timing", "runtime", "advanced"):
             self.nav.addItem(tr[key])
         content.addWidget(self.nav)
 
@@ -1006,12 +676,53 @@ class PreferencesDialog(QDialog):
         form.addRow(tr["threads"], self.threads)
         self.pages.addWidget(general)
 
+        timing_page = QWidget()
+        timing_form = QFormLayout(timing_page)
+        timing_form.setContentsMargins(10, 10, 10, 10)
+        ja = self.lang == 'ja'
+        self.timing_mode = QComboBox()
+        self.timing_mode.setObjectName('timingMode')
+        for key, en, jp in [('auto', 'Automatic', '自動'),
+                            ('native', 'Native model timestamps', 'モデルの時刻'),
+                            ('vad', 'VAD speech regions', 'VADの発話区間'),
+                            ('alignment', 'Forced alignment', '強制アライメント')]:
+            self.timing_mode.addItem(jp if ja else en, key)
+        self.timing_mode.setCurrentIndex(self.timing_mode.findData(owner.timing_settings.mode))
+        timing_form.addRow('時刻の取得方法' if ja else 'Timestamp source', self.timing_mode)
+        self.vad_maximum = QDoubleSpinBox()
+        self.vad_maximum.setRange(2, 28)
+        self.vad_maximum.setSuffix(' s')
+        self.vad_maximum.setValue(owner.timing_settings.max_seconds)
+        timing_form.addRow('VAD区間の最大長' if ja else 'Maximum VAD window', self.vad_maximum)
+        self.vad_threshold = QDoubleSpinBox()
+        self.vad_threshold.setRange(.01, 1)
+        self.vad_threshold.setSingleStep(.05)
+        self.vad_threshold.setValue(owner.timing_settings.threshold)
+        timing_form.addRow('VADしきい値' if ja else 'VAD threshold', self.vad_threshold)
+        self.vad_silence = QSpinBox()
+        self.vad_silence.setRange(50, 2000)
+        self.vad_silence.setSuffix(' ms')
+        self.vad_silence.setValue(owner.timing_settings.min_silence_ms)
+        timing_form.addRow('最小無音長' if ja else 'Minimum silence', self.vad_silence)
+        self.vad_presegment = QCheckBox('アライメント前にVAD分割する' if ja else 'VAD segmentation before alignment')
+        self.vad_presegment.setChecked(owner.timing_settings.segment_before_alignment)
+        timing_form.addRow('', self.vad_presegment)
+        note = QLabel(('VADは発話区間の概略時刻です。単語の境界ではありません。'
+                       '強制アライメントを選ぶと、メイン画面のアライメント工程が有効になります。'
+                       '時刻を返せないモデルでは、モデルの時刻は選べません。') if ja else
+                      ('VAD gives coarse speech-region times, not word boundaries. '
+                       'Forced alignment enables the alignment stage in the main window. '
+                       'Native timing is unavailable for models that do not return timestamps.'))
+        note.setWordWrap(True)
+        timing_form.addRow(note)
+        self.pages.addWidget(timing_page)
+
         self.whisper_backend = QComboBox()
         self.audio_backend = QComboBox()
         for combo, value in ((self.whisper_backend, owner.runtime_defaults["whisper_cpp"]),
                              (self.audio_backend, owner.runtime_defaults["audio_cpp"])):
-            combo.addItem("CPU", "cpu")
-            combo.addItem("Vulkan", "vulkan")
+            for device in backends():
+                combo.addItem({'auto':'Automatic', 'cpu':'CPU', 'vulkan':'Vulkan', 'metal':'Metal', 'cuda':'CUDA'}[device], device)
             combo.setCurrentIndex(max(0, combo.findData(value)))
         runtime = QWidget()
         runtime_form = QFormLayout(runtime)
@@ -1059,8 +770,9 @@ class PreferencesDialog(QDialog):
         title.setObjectName("section")
         advanced_layout.addWidget(title)
         self.runtime_fields = {}
-        for key in ("ffmpeg", "whisper_cpp:cpu", "whisper_cpp:vulkan",
-                    "audio_cpp:cpu", "audio_cpp:vulkan"):
+        keys = ['ffmpeg'] + [f'{runtime}:{device}' for runtime in ('whisper_cpp', 'audio_cpp')
+                             for device in backends() if device != 'auto']
+        for key in keys:
             line = QLineEdit(owner.runtime_paths.get(key, ""))
             line.setPlaceholderText(tr["ffmpeg_auto"] if key == "ffmpeg" else tr["bundled_path"])
             advanced_layout.addLayout(self._file_row(key, line))
@@ -1116,7 +828,7 @@ class PreferencesDialog(QDialog):
 
     def _runtime_status(self, runtime):
         values = []
-        for device in ("cpu", "vulkan"):
+        for device in (d for d in backends() if d != 'auto'):
             try:
                 path = runtime_executable(runtime, device,
                     self.owner.runtime_paths.get(f"{runtime}:{device}", ""))
@@ -1140,30 +852,38 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(920, 600)
 
         self.preferences = preferences if preferences is not None else QSettings("ASR2RPP", "ASR2RPP")
-        # The legacy preview defaulted native runtimes to CPU. The DCC UI changes the
-        # product default to Vulkan, so migrate once; later explicit CPU choices persist.
-        if not self.preferences.value("runtime_defaults_v2", False, type=bool):
-            self.preferences.setValue("runtime_default/whisper_cpp", "vulkan")
-            self.preferences.setValue("runtime_default/audio_cpp", "vulkan")
-            self.preferences.setValue("runtime_defaults_v2", True)
+        # Migrate unavailable backend selections once; preserve explicit CPU/auto choices.
+        if not self.preferences.value("runtime_defaults_v3", False, type=bool):
+            for runtime in ('whisper_cpp', 'audio_cpp'):
+                key = 'runtime_default/' + runtime
+                old = self.preferences.value(key, None)
+                if old not in backends():
+                    self.preferences.setValue(key, preferred_gpu())
+            self.preferences.setValue('runtime_defaults_v2', True)
+            self.preferences.setValue('runtime_defaults_v3', True)
             self.preferences.sync()
         saved_language = self.preferences.value("ui/language", None)
         self.ui_lang = str(saved_language) if saved_language else detect_ui_language()
         if self.ui_lang not in TEXT:
             self.ui_lang = detect_ui_language()
         self.runtime_defaults = {
-            "whisper_cpp": str(self.preferences.value("runtime_default/whisper_cpp", "vulkan")),
-            "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", "vulkan")),
+            "whisper_cpp": str(self.preferences.value("runtime_default/whisper_cpp", preferred_gpu())),
+            "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", preferred_gpu())),
         }
         for key in self.runtime_defaults:
-            if self.runtime_defaults[key] not in {"cpu", "vulkan"}:
-                self.runtime_defaults[key] = "vulkan"
+            if self.runtime_defaults[key] not in backends():
+                self.runtime_defaults[key] = preferred_gpu()
         try:
             self.runtime_paths = json.loads(self.preferences.value("runtime_paths", "{}"))
             if not isinstance(self.runtime_paths, dict) or any(not isinstance(v, str) for v in self.runtime_paths.values()):
                 raise ValueError('Invalid runtime path preferences')
         except (ValueError, TypeError):
             self.runtime_paths = {}
+        try:
+            self.timing_settings = TimingSettings(**json.loads(self.preferences.value('timing/settings', '{}')))
+            self.timing_settings.validate()
+        except (ValueError, TypeError):
+            self.timing_settings = TimingSettings()
         self.model_storage_dir = str(self.preferences.value("storage/model_dir", "")).strip()
         self.temp_storage_dir = str(self.preferences.value("storage/temp_dir", "")).strip()
         self.keep_model_sources = self.preferences.value(
@@ -1265,6 +985,23 @@ class MainWindow(QMainWindow):
         path_row.addWidget(self.output_browse)
         output_grid.addWidget(self.output_path_row, 1, 1)
         out_layout.addLayout(output_grid)
+        formats_row = QHBoxLayout()
+        formats_row.setSpacing(4)
+        self.output_format_label = QLabel()
+        self.output_format_label.setObjectName('muted')
+        try:
+            formats = json.loads(self.preferences.value('output/formats', '["rpp"]'))
+            if formats:
+                validate_formats(formats)
+            elif not isinstance(formats, list):
+                raise ValueError('Invalid output format preferences')
+        except (ValueError, TypeError):
+            formats = ['rpp']
+        self.output_formats = FormatSelector(formats, self.ui_lang)
+        self.output_formats.changed.connect(self.output_formats_changed)
+        formats_row.addWidget(self.output_format_label)
+        formats_row.addWidget(self.output_formats, 1)
+        out_layout.addLayout(formats_row)
         inspector_layout.addWidget(output)
         inspector_layout.addStretch()
 
@@ -1339,7 +1076,7 @@ class MainWindow(QMainWindow):
         self.restore_stage_preferences()
         self.apply_language()
         self.output_changed()
-        if sys.platform == "win32" and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
+        if sys.platform in {"win32", "darwin"} and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
             self.start_ffmpeg_bootstrap()
 
     def start_ffmpeg_bootstrap(self):
@@ -1432,6 +1169,8 @@ class MainWindow(QMainWindow):
             self.preprocess.reference.setCurrentIndex(idx)
 
     def save_preferences(self):
+        from dataclasses import asdict
+        self.preferences.setValue("timing/settings", json.dumps(asdict(self.timing_settings)))
         self.preferences.setValue("ui/language", self.ui_lang)
         self.preferences.setValue("runtime_paths", json.dumps(self.runtime_paths))
         self.preferences.setValue("storage/model_dir", self.model_storage_dir)
@@ -1442,6 +1181,7 @@ class MainWindow(QMainWindow):
         self.preferences.setValue("threads", self.threads)
         for runtime, value in self.runtime_defaults.items():
             self.preferences.setValue(f"runtime_default/{runtime}", value)
+        self.preferences.setValue("output/formats", json.dumps(self.output_formats.formats()))
         self.preferences.setValue("output/same", self.output_mode.currentData() == "same")
         self.preferences.setValue("output/directory", self.output_dir.text().strip())
         for key, panel in (("preprocess", self.preprocess), ("asr", self.asr),
@@ -1464,6 +1204,8 @@ class MainWindow(QMainWindow):
         for panel in (self.preprocess, self.asr, self.align, self.diar):
             panel.apply_language(self.ui_lang)
         self.output_title.setText(tr["output"])
+        self.output_format_label.setText('形式' if self.ui_lang == 'ja' else 'Format')
+        self.output_formats.set_language(self.ui_lang)
         self.output_location_label.setText(tr["location"])
         selected_output_mode = self.output_mode.currentData()
         self.output_mode.blockSignals(True)
@@ -1489,7 +1231,7 @@ class MainWindow(QMainWindow):
             self.asr.model_label, self.asr.backend_label, self.asr.language_label,
             self.align.model_label, self.align.backend_label, self.align.language_label,
             self.diar.model_label, self.diar.backend_label,
-            self.output_location_label,
+            self.output_location_label, self.output_format_label,
         ]
         width = max(label.fontMetrics().horizontalAdvance(label.text()) for label in labels) + 8
         for label in labels:
@@ -1618,6 +1360,10 @@ class MainWindow(QMainWindow):
         self.output_browse.setEnabled(custom)
         self.update_state()
 
+    def output_formats_changed(self):
+        self.preferences.setValue('output/formats', json.dumps(self.output_formats.formats()))
+        self.update_state()
+
     def current_settings(self):
         preprocess = self.preprocess.stage(self.runtime_paths, self.threads, self.runtime_defaults)
         return Settings(
@@ -1630,6 +1376,8 @@ class MainWindow(QMainWindow):
             clip_start=0.0,
             clip_duration=0.0,
             preprocess=preprocess,
+            timing=self.timing_settings,
+            output_formats=self.output_formats.formats(),
             reference_audio=(self.preprocess.reference.currentData() or "original")
                 if preprocess else "original",
         )
@@ -1638,7 +1386,7 @@ class MainWindow(QMainWindow):
         stages = []
         if self.preprocess.enabled_stage():
             stages.append(self.tr("sep"))
-        stages.append(self.tr("asr"))
+        stages.append(self.tr("asr") + " [" + self.timing_settings.mode + "]")
         if self.align.enabled_stage():
             stages.append(self.tr("align"))
         if self.diar.enabled_stage():
@@ -1647,7 +1395,8 @@ class MainWindow(QMainWindow):
 
     def update_state(self):
         model = self.catalog.get(self.asr.model.currentData()) if hasattr(self, 'catalog') else None
-        required = bool(model and policy_for(model).requires_alignment)
+        required = (self.timing_settings.mode == 'alignment' or
+                    (self.timing_settings.mode == 'auto' and bool(model and policy_for(model).requires_alignment)))
         was_forced = getattr(self, '_alignment_forced', False)
         if required and not was_forced:
             self._alignment_previous = self.align.toggle.isChecked()
@@ -1658,7 +1407,7 @@ class MainWindow(QMainWindow):
             self.align.toggle.setChecked(getattr(self, '_alignment_previous', False))
         self.align.toggle.setEnabled(not required)
         if required:
-            self.align.toggle.setToolTip(policy_notice(model, self.ui_lang))
+            self.align.toggle.setToolTip("設定 → 時刻付与で変更 / Change in Settings → Timing")
         if self.worker is None:
             self.status_label.setText(
                 f"{self.tr('ready')}   {self.pipeline_text()}   "
@@ -1676,6 +1425,7 @@ class MainWindow(QMainWindow):
         self.table.setEnabled(not busy)
         for panel in (self.preprocess, self.asr, self.align, self.diar):
             panel.setEnabled(not busy)
+        self.output_formats.setEnabled(not busy)
         self.output_mode.setEnabled(not busy)
         custom = self.output_mode.currentData() == "custom"
         self.output_dir.setEnabled(not busy and custom)
@@ -1701,6 +1451,7 @@ class MainWindow(QMainWindow):
             validation = copy.deepcopy(settings)
             if prepare_only:
                 validation.same_directory = True
+                validation.output_formats = ('rpp',)
             validation.validate(self.catalog)
             jobs = [] if prepare_only else [(i, e["path"]) for i, e in enumerate(self.entries)
                     if e["status"] in RETRYABLE]
@@ -1823,6 +1574,14 @@ class MainWindow(QMainWindow):
                 "whisper_cpp": dialog.whisper_backend.currentData(),
                 "audio_cpp": dialog.audio_backend.currentData(),
             }
+            from dataclasses import replace
+            self.timing_settings = replace(self.timing_settings,
+                mode=dialog.timing_mode.currentData(), max_seconds=dialog.vad_maximum.value(),
+                threshold=dialog.vad_threshold.value(), min_silence_ms=dialog.vad_silence.value(),
+                segment_before_alignment=dialog.vad_presegment.isChecked())
+            if self.timing_settings.mode in ('native', 'vad'):
+                self._alignment_previous = False
+                self.align.toggle.setChecked(False)
             self.keep_model_sources = dialog.keep_source.isChecked()
             self.runtime_paths = {
                 key: edit.text().strip() for key, edit in dialog.runtime_fields.items()
@@ -1830,7 +1589,7 @@ class MainWindow(QMainWindow):
             }
             self.save_preferences()
             self.update_state()
-            if sys.platform == "win32" and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
+            if sys.platform in {"win32", "darwin"} and not os.getenv("ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP"):
                 self.start_ffmpeg_bootstrap()
             if prepare["value"]:
                 self.start_work(True)

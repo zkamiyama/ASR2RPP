@@ -131,6 +131,41 @@ def exercise(destination, cases=None):
                 assert window.completed == 3-len(successful) and not window.run_button.isEnabled()
             window.close(); app.processEvents(); window = None
             results.append({'case': mode, 'passed': True})
+        # The same checks run inside the frozen GUI, using isolated preferences.
+        prefs = QSettings(str(root/'formats.ini'), QSettings.Format.IniFormat)
+        window = gui.MainWindow(preferences=prefs)
+        window.show()
+        selector = window.output_formats
+        assert selector.formats() == ('rpp',)
+        assert [a.data() for a in selector.menu.actions()] == ['otio', 'json']
+        selector.menu.actions()[0].trigger()
+        selector.menu.actions()[0].trigger()
+        assert selector.formats() == ('rpp', 'otio', 'json')
+        assert not selector.menu.actions() and not selector.add_button.isEnabled()
+        app.processEvents()
+        window.grab().save(str(root/'formats.png'))
+        for button in list(selector.buttons.values()):
+            assert not button.icon().pixmap(12, 12).isNull()
+            button.click()
+        source = root/'format-fixture.wav'
+        source.write_bytes(b'never decoded')
+        window.add_paths([str(source)])
+        warnings = []
+        original_warning = gui.QMessageBox.warning
+        gui.QMessageBox.warning = lambda *args: warnings.append(args[-1])
+        try:
+            window.run_button.click()
+            assert warnings and window.worker is None
+            assert window.entries[0]['status'] == 'waiting'
+        finally:
+            gui.QMessageBox.warning = original_warning
+        window.save_preferences()
+        assert json.loads(prefs.value('output/formats')) == []
+        window.close(); app.processEvents()
+        window = gui.MainWindow(preferences=prefs)
+        assert window.output_formats.formats() == ()
+        window.close(); app.processEvents(); window = None
+        results.append({'case': 'format-chips-empty-selection-and-persistence', 'passed': True})
         report = {'passed': True, 'window_icon_valid': True, 'cases': results, 'model_directory': str(model_directory()),
                   'inference': 'deterministic stubs; native execution tested separately'}
         (root/'summary.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
