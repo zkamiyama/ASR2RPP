@@ -178,7 +178,7 @@ def test_nemotron_stage_major_asr_uses_streaming_per_file(tmp_path, monkeypatch)
         ))
 
     commands = []
-    monkeypatch.setattr(queue_runner, 'executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
+    monkeypatch.setattr('asr2rpp.native_batches.executable', lambda *_args, **_kwargs: tmp_path / 'audiocpp_cli.exe')
 
     def fake_run(argv, _cancel, _progress, log, timeout=7200):
         commands.append(list(argv))
@@ -188,7 +188,7 @@ def test_nemotron_stage_major_asr_uses_streaming_per_file(tmp_path, monkeypatch)
         }), encoding='utf-8')
         Path(log).write_text('streaming ok', encoding='utf-8')
 
-    monkeypatch.setattr(queue_runner, 'run_process', fake_run)
+    monkeypatch.setattr('asr2rpp.native_batches.run_process', fake_run)
     statuses = []
     result = _audio_batch(
         model, weights, Stage('nemotron-asr', device='vulkan', language='ja-JP', threads=4),

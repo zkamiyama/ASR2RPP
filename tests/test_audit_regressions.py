@@ -92,7 +92,7 @@ def jobs_at(tmp_path):
 def mock_audio_batch(tmp_path, monkeypatch, mode):
     jobs, paths = jobs_at(tmp_path)
     model = Model('audit', 'audio_cpp', 'asr', {'path': 'unused'}, family='vibevoice_asr', sample_rate=24000)
-    monkeypatch.setattr(queue_runner, 'executable', lambda *args: tmp_path / 'audiocpp_cli')
+    monkeypatch.setattr('asr2rpp.native_batches.executable', lambda *args: tmp_path / 'audiocpp_cli')
     def execute(argv, cancel, progress, log):
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text('diagnostic: this output must survive failure')
@@ -101,7 +101,7 @@ def mock_audio_batch(tmp_path, monkeypatch, mode):
         base = Path(argv[argv.index('--segments-out') + 1])
         (base.parent / f'{base.stem}_{jobs[0].key}.json').write_text(json.dumps({'segments': [{'start': 0, 'end': 1, 'text': 'ok'}]}))
         (base.parent / f'{base.stem}_{jobs[1].key}.json').write_text('{broken')
-    monkeypatch.setattr(queue_runner, 'run_process', execute)
+    monkeypatch.setattr('asr2rpp.native_batches.run_process', execute)
     results = queue_runner._audio_batch(model, tmp_path / 'weights', Stage('audit'), jobs, paths,
                 tmp_path / 'work', threading.Event(), lambda _: None, lambda *args: None, 'asr', 1024 * 1024)
     return jobs, results

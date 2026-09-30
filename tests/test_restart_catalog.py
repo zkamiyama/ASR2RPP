@@ -132,7 +132,7 @@ def test_actual_queue_cancel_preserves_terminal_manifests(tmp_path, monkeypatch,
     def asr(model,weights,stage,jobs,*a,**kw):
         if where=='asr': stop.set(); catalog.checkpoint(stop)
         return {j.key:Result([Unit(.5,1,'test')],{}) for j in jobs}
-    monkeypatch.setattr(queue,'_whisper_batch',asr)
+    monkeypatch.setattr(queue,'_asr_batch',asr)
     def interrupt(*a,**kw): stop.set();catalog.checkpoint(stop)
     monkeypatch.setattr(queue,'_align_batch',interrupt)
     monkeypatch.setattr(queue,'_audio_batch',interrupt)

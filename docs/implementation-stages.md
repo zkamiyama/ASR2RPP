@@ -21,3 +21,25 @@ regression cases. RTX 4080 / WSL native smoke on a 25-second Japanese clip:
 VAD mode created 8 speech-region items; forced alignment created 8 grouped items
 with forced-alignment provenance. Both RPPs were generated and all intervals were
 inside the audio. This is a functionality check, not an accuracy benchmark.
+
+## Stage 3 contract
+
+The stage-major GUI path and CLI use the same bounded queue scheduler. Provider implementations
+encapsulate native CLI differences; a version-1 JSONL worker interface supports
+isolated sherpa-onnx, faster-whisper and explicitly selected external executables.
+Model schema 2 supports multiple asset roles, directory entries, declarative
+parameter controls and execution capabilities. Model files never import modules,
+register executables or install software. User runtime registration is separate,
+requires explicit trust and checks the executable hash; it is not an OS sandbox
+or a DLL supply-chain verifier. Keep registered runtime folders read-only.
+
+Native speaker labels survive normalization/alignment unless the user selects
+external diarization or disables speakers. Fine timestamps are kept until export.
+The previously tested Stage 2 GUI is retained; the proposed GUI module split was
+not published because a source-write operation was blocked.
+
+The new Qwen3-ASR 0.6B Q8_0 native CUDA runtime was built on the authorized RTX 4080
+host. A 25-second private Japanese fixture produced nonempty text successfully
+(exit 0, 5.04 seconds including process/model setup). Only these aggregate
+measurements are recorded; neither the audio nor transcript is published. This
+is a native functionality smoke, not a recognition accuracy benchmark.

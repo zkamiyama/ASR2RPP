@@ -14,55 +14,15 @@ import threading
 import time
 from .catalog import Model, checkpoint, assets_root
 
-@dataclass
-class Unit:
-    start: float
-    end: float
-    text: str = ''
-    speaker: str | None = None
-    granularity: str = 'segment'
-    method: str = 'native_interval'
-    owner_start: float | None = None
-    owner_end: float | None = None
-
-@dataclass
-class Result:
-    units: list[Unit]
-    raw: object
-    text: str = ''
-    warnings: list[str] | None = None
+from .domain import Unit, Result
 
 
 from .performance import timed
 
 def executable(runtime: str, device: str, custom: str = '') -> Path:
-    if custom:
-        path = Path(custom).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f'Executable not found: {path}')
-        return path
-    name = {'whisper_cpp': 'whisper-cli', 'audio_cpp': 'audiocpp_cli'}[runtime]
-    suffix = '.exe' if sys.platform == 'win32' else ''
-    if device == 'auto':
-        if sys.platform == 'win32':
-            devices = ['vulkan', 'cpu']
-        elif sys.platform == 'darwin':
-            devices = ['metal', 'cpu']
-        else:
-            devices = ['cuda', 'vulkan', 'cpu']
-    else:
-        devices = [device]
-    for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
-        directories = [root / f'{runtime}-{candidate}' for candidate in devices] + [root / runtime]
-        for directory in directories:
-            if directory.exists():
-                matches = sorted(directory.rglob(name + suffix))
-                if matches:
-                    return matches[0]
-    found = shutil.which(name)
-    if found:
-        return Path(found)
-    raise FileNotFoundError(f'{runtime} ({device}) is not installed. Select its executable in Runtime settings.')
+    from .runtime_registry import resolve
+    return resolve(runtime, device, custom)
+
 
 
 def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
@@ -318,15 +278,22 @@ def whisper_parameter_args(parameters: dict) -> list[str]:
 
 
 def split_engine_parameters(model: Model, overrides: dict | None) -> tuple[dict, dict]:
-    request = dict(model.defaults.get('request', {}))
-    session = dict(model.defaults.get('session', {}))
+    request, session = {}, {}
+    for key, spec in model.parameters.items():
+        target, name = (session, key[8:]) if key.startswith('session.') else (request, key)
+        target[name] = spec['default']
+    request.update(model.defaults.get('request', {}))
+    session.update(model.defaults.get('session', {}))
     for key, value in (overrides or {}).items():
         if key.startswith('session.'):
             session[key[len('session.'):]] = value
         else:
             request[key] = value
     from .inference_policy import constrain_parameters
-    return constrain_parameters(model, request), session
+    from .model_schema import validate_parameters
+    request = constrain_parameters(model, request)
+    validate_parameters(model, request, session)
+    return request, session
 
 
 def validate_model_parameter_constraints(model: Model, request: dict, session: dict | None = None) -> None:
@@ -359,6 +326,9 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         if plan_for(model, TimingSettings(**options['timing']), options.get('alignment_requested', False)).segmented:
             from .region_asr import infer_regions
             return infer_regions(model, weights, audio, work, options, cancel, progress)
+    if model.runtime in {'sherpa_onnx', 'faster_whisper', 'external_json'}:
+        from .worker_client import infer_requests
+        return infer_requests(model, weights, [{'id':'single', 'audio':audio}], work, options, cancel, progress)['single']
     device = options.get('device', 'cpu')
     binary = executable(model.runtime, device, options.get('executable', ''))
     language = options.get('language', model.defaults.get('language', 'ja'))

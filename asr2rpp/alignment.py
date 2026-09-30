@@ -23,6 +23,7 @@ class AlignmentInput:
     text: str
     owner_start: float | None = None
     owner_end: float | None = None
+    speaker: str | None = None
 
 
 from .performance import timed
@@ -114,7 +115,8 @@ def aligned_units(result, request, warnings):
         midpoint = (start + end) / 2
         if request.owner_start is not None and not request.owner_start <= midpoint < request.owner_end:
             continue
-        output.append(replace(unit, start=start, end=end, owner_start=None, owner_end=None))
+        output.append(replace(unit, start=start, end=end, owner_start=None, owner_end=None,
+                              speaker=getattr(request,'speaker',None)))
     return output
 
 
@@ -135,7 +137,7 @@ def align_segments(model, weights, stage, units, pcm, duration, root, cancel, pr
         file = Path(root) / 'slices' / f'{key}.wav'
         length = slice_pcm(pcm, file, begin, length, cancel)
         requests.append(AlignmentInput(key, file, begin, length, segment.text,
-                                       segment.owner_start, segment.owner_end))
+                                       segment.owner_start, segment.owner_end, segment.speaker))
     results = infer_requests(model, weights, stage, requests, root, cancel, progress)
     for req in requests:
         aligned.extend(aligned_units(results[req.key], req, warnings))

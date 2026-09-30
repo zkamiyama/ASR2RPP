@@ -229,7 +229,8 @@ def test_pipeline_options_disabled(tmp_path, monkeypatch):
         calls.append(model.task)
         return Result([Unit(0, 0.8, 'テスト', 'built-in-speaker')], {})
     monkeypatch.setattr('asr2rpp.pipeline.infer', fake_infer)
-    output = run_job(source, Settings(Stage('test')), {'test': model}, threading.Event(), lambda x: None)
+    from asr2rpp.timing import TimingSettings
+    output = run_job(source, Settings(Stage('test'),timing=TimingSettings(speaker_source='none')), {'test': model}, threading.Event(), lambda x: None)
     assert calls == ['asr']
     assert 'built-in-speaker' not in output.read_text(encoding='utf-8')
     manifest = json.loads((tmp_path / 'sample.asr2rpp/manifest.json').read_text())
@@ -282,7 +283,7 @@ def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypa
     cpu.parent.mkdir(parents=True)
     vulkan.write_bytes(b'vulkan')
     cpu.write_bytes(b'cpu')
-    monkeypatch.setattr(adapters, 'assets_root', lambda: tmp_path)
+    monkeypatch.setattr('asr2rpp.catalog.assets_root', lambda: tmp_path)
     assert adapters.executable('whisper_cpp', 'auto') == vulkan
     assert adapters.executable('whisper_cpp', 'cpu') == cpu
 

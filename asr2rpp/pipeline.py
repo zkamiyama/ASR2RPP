@@ -64,8 +64,11 @@ class Settings:
     clip_start: float = 0.0
     clip_duration: float = 0.0
     timing: TimingSettings = field(default_factory=TimingSettings, kw_only=True)
+    queue_window_items: int = field(default=16, kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
+        if type(self.queue_window_items) is not int or not 1 <= self.queue_window_items <= 4096:
+            raise ValueError('Queue window must be 1..4096 items')
         if not self.same_directory and not self.output_directory.strip():
             raise ValueError('Same directory is OFF: specify Output directory.')
         if not all(math.isfinite(x) and x >= 0 for x in (self.clip_start, self.clip_duration)):
@@ -88,6 +91,10 @@ class Settings:
                     VadOptions.from_parameters(request, policy_for(model).max_segment_seconds)
 
         plan_for(catalog[self.asr.model_id], self.timing, self.align is not None)
+        if self.timing.speaker_source == 'diarizer' and self.diar is None:
+            raise ValueError('Diarizer speaker source requires an enabled diarization model')
+        if self.timing.speaker_source in ('native','none') and self.diar is not None:
+            raise ValueError('Disable diarization or choose automatic / diarizer speaker source')
 
 
 def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
@@ -212,7 +219,10 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         if any(u.method == 'emission_frame' for u in units):
             warnings.append('ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
         # Keep the finest native intervals until speaker assignment is complete.
-        units = [replace(u, speaker=None) for u in units]
+        if settings.diar is not None or settings.timing.speaker_source == 'none':
+            units = [replace(u, speaker=None) for u in units]
+        if settings.timing.speaker_source == 'native' and not any(u.speaker for u in units):
+            raise ValueError('The ASR did not return native speaker labels')
         if settings.align is not None:
             align_model = catalog[settings.align.model_id]
             alignment_pcm, _ = pcm(align_model.sample_rate)
@@ -253,7 +263,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             return report
         reference_length = full_reference_duration(
             source, settings, duration, work, cancel, progress)
-        export_rpp(source, output, units, settings.clip_start, settings.diar is not None,
+        export_rpp(source, output, units, settings.clip_start, settings.diar is not None or any(u.speaker for u in units),
                    reference_length)
         manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
                                       'duration_seconds': float(reference_length)}

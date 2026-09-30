@@ -102,12 +102,18 @@ class Model:
     definition: Path | None = None
     definition_sha256: str = ''
     capabilities: dict = field(default_factory=dict)
+    schema_version: int = 1
+    artifacts: dict = field(default_factory=dict)
+    execution: dict = field(default_factory=dict)
+    parameters: dict = field(default_factory=dict)
 
     @property
     def label(self) -> str:
         return self.name or self.id
 
     def validate(self):
+        from .model_schema import PROVIDERS, validate_extensions
+        validate_extensions(self)
         if not isinstance(self.capabilities, dict):
             raise ValueError('capabilities must be a table')
         if self.capabilities.get('timestamps', 'segment') not in {'none', 'token', 'word', 'segment'}:
@@ -116,8 +122,10 @@ class Model:
             raise ValueError('Unknown model capability')
         if 'speakers' in self.capabilities and type(self.capabilities['speakers']) is not bool:
             raise ValueError('capabilities.speakers must be boolean')
-        if self.runtime not in {'whisper_cpp', 'audio_cpp'}:
-            raise ValueError('runtime must be whisper_cpp or audio_cpp')
+        if self.runtime not in PROVIDERS:
+            raise ValueError('Unsupported provider: ' + str(self.runtime))
+        if self.runtime in {'sherpa_onnx', 'faster_whisper', 'external_json'} and self.task != 'asr':
+            raise ValueError('This provider currently supports ASR only')
         if self.task not in {'asr', 'diar', 'align', 'sep'}:
             raise ValueError('task must be asr, diar, align or sep')
         if self.runtime == 'whisper_cpp' and self.task != 'asr':
@@ -129,10 +137,13 @@ class Model:
         if 'path' not in self.source:
             repo_id(self.source.get('repo', ''))
             files = self.source.get('files', [])
-            if not files:
-                raise ValueError('source.files must contain the runtime-ready weights')
+            if not isinstance(files, list) or not files or any(not isinstance(f, str) for f in files):
+                raise ValueError('source.files must list runtime-ready model assets')
+            if len({f.casefold() for f in files}) != len(files):
+                raise ValueError('Duplicate source filename')
             for name in files:
-                safe_relative(name)
+                if safe_relative(name) == '.':
+                    raise ValueError('source.files must contain filenames, not directories')
             if 'entry' in self.source:
                 safe_relative(str(self.source['entry']))
             recipe = self.source.get('convert')
@@ -172,6 +183,8 @@ class Model:
 
 
 def safe_relative(value: str) -> str:
+    if not isinstance(value, str) or not value or any(c in value for c in '\x00\r\n'):
+        raise ValueError('Invalid relative filename')
     path = PurePosixPath(value)
     if path.is_absolute() or '..' in path.parts or '\\' in value or ':' in value:
         raise ValueError(f'Unsafe relative filename: {value}')
@@ -206,7 +219,13 @@ def load_catalog(directory: Path | None = None) -> tuple[dict[str, Model], list[
             claimed[key] = file
             payload = file.read_bytes()
             data = tomllib.loads(payload.decode('utf-8-sig'))
-            allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description', 'capabilities'}
+            if 'provider' in data:
+                if 'runtime' in data:
+                    raise ValueError('Use provider or runtime, not both')
+                data['runtime'] = data.pop('provider')
+            if 'id' in data and data.pop('id') != file.stem:
+                raise ValueError('Model id must match the TOML filename stem')
+            allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description', 'capabilities', 'schema_version', 'artifacts', 'execution', 'parameters'}
             unknown = set(data) - allowed
             if unknown:
                 raise ValueError(f'Unknown fields: {sorted(unknown)}')
@@ -271,7 +290,9 @@ def _installed_valid(model, directory, state, cancel):
     required = set(model.source['files'])
     recipe = model.source.get('convert') or {}
     entry = safe_relative(model.source.get('entry', model.source['files'][0]))
-    if not isinstance(files, dict) or not required.issubset(files) or not (directory / entry).is_file():
+    target = directory / entry
+    if (not isinstance(files, dict) or not required.issubset(files) or
+            not target.exists() or not target.resolve().is_relative_to(directory.resolve())):
         return False
     for name, info in files.items():
         if info.get('retained', True) is False:
@@ -279,13 +300,15 @@ def _installed_valid(model, directory, state, cancel):
                 return False
             continue
         path = directory / safe_relative(name)
+        if not path.resolve().is_relative_to(directory.resolve()):
+            return False
         if (not path.is_file() or path.stat().st_size != info.get('size') or
                 verified_digest(path, cancel) != info.get('sha256')):
             return False
         expected = model.source.get('sha256', {}).get(name)
         if expected and info['sha256'] != expected:
             return False
-    return entry in files
+    return target.is_dir() or entry in files
 
 
 @timed('model_resolution')
@@ -293,7 +316,25 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
     checkpoint(cancel)
     if 'path' in model.source:
         path = local_model_path(model)
-        return path, {'local_path': str(path), 'sha256': verified_digest(path, cancel) if path.is_file() else None,
+        from .model_schema import artifact_paths
+        artifact_paths(model, path)
+        if path.is_file():
+            files = {path.name: verified_digest(path, cancel)}
+        else:
+            names = sorted(set(model.source.get('files', [])) | set(model.artifacts.values()))
+            if not names:
+                names = sorted(str(f.relative_to(path)).replace('\\', '/') for f in path.rglob('*') if f.is_file())
+            if not names or len(names) > 10000:
+                raise ValueError('Model directory is empty or has too many files')
+            files = {}
+            for name in names:
+                checkpoint(cancel)
+                file = (path / safe_relative(name)).resolve()
+                if not file.is_relative_to(path) or not file.is_file():
+                    raise ValueError('Missing or unsafe local model asset')
+                files[name] = verified_digest(file, cancel)
+        sha = files[path.name] if path.is_file() else hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+        return path, {'local_path': str(path), 'sha256': sha, 'files': files,
                       'verification': 'sha256 (process-local stat-identity memoization)'}
     identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
     lock = weights_root() / model.id / (identity + '.lock')
@@ -334,6 +375,8 @@ def _resolve_remote_model(model, cancel, progress, download=False, keep_source=F
         checkpoint(cancel)
         filename = safe_relative(filename)
         destination = directory / filename
+        if not destination.resolve().is_relative_to(directory.resolve()):
+            raise ValueError('Model asset escapes its installation directory')
         destination.parent.mkdir(parents=True, exist_ok=True)
         expected = model.source.get('sha256', {}).get(filename)
         if destination.is_file() and expected and digest(destination) == expected:

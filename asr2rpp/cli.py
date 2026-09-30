@@ -8,6 +8,7 @@ from .catalog import load_catalog, resolve_model
 from .pipeline import Stage
 from .timing import TimingSettings
 from .preprocessing import Settings, run_job
+from .queue_runner import run_queue
 
 
 def main(argv=None):
@@ -17,11 +18,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='asr2rpp')
     sub = parser.add_subparsers(dest='command', required=True)
     models = sub.add_parser('models', help='list/install TOML model definitions')
-    models.add_argument('action', choices=['list', 'install'])
+    models.add_argument('action', choices=['list', 'install', 'verify'])
     models.add_argument('ids', nargs='*')
     models.add_argument('--json', dest='as_json', action='store_true', help='include the authoritative TOML path and hash')
     models.add_argument('--keep-source', action='store_true', help='keep original source checkpoints after a successful conversion')
-    run = sub.add_parser('run', help='convert files sequentially to non-destructive RPP')
+    run = sub.add_parser('run', help='convert files through the shared stage scheduler')
     run.add_argument('files', nargs='+', type=Path)
     run.add_argument('--asr', default='whisper-base')
     run.add_argument('--diar', help='omit to disable diarization')
@@ -40,17 +41,42 @@ def main(argv=None):
     run.add_argument('--vad-threshold', type=float, default=0.5)
     run.add_argument('--vad-min-silence-ms', type=int, default=250)
     run.add_argument('--vad-before-alignment', action='store_true')
+    run.add_argument('--speaker-source', choices=['auto','native','diarizer','none'],default='auto')
+    run.add_argument('--queue-window-items',type=int,default=16)
     for stage in ['asr', 'diar', 'align', 'preprocess']:
-        run.add_argument('--' + stage + '-device', default='vulkan', choices=['auto', 'cpu', 'vulkan', 'cuda', 'metal'])
+        run.add_argument('--' + stage + '-device', default='auto', choices=['auto', 'cpu', 'vulkan', 'cuda', 'metal'])
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
         run.add_argument('--' + stage + '-params', default='{}', help='JSON object of scalar request parameters')
+    runtimes = sub.add_parser('runtimes',help='inspect or explicitly register trusted runtime binaries')
+    runtimes.add_argument('action',choices=['list','probe','register','rollback'])
+    runtimes.add_argument('--provider',default='whisper_cpp')
+    runtimes.add_argument('--device',default='cpu',choices=['auto','cpu','cuda','vulkan','metal'])
+    runtimes.add_argument('--exe',default='')
+    runtimes.add_argument('--trust',action='store_true',help='explicitly trust the selected executable code')
     sub.add_parser('doctor', help='verify packaged runtimes and model-converter dependencies')
     sub.add_parser('gui')
     args = parser.parse_args(argv)
     if args.command == 'gui':
         from .gui_dcc import main as gui_main
         return gui_main()
+    if args.command == 'runtimes':
+        from . import runtime_registry as registry
+        try:
+            if args.action == 'list':
+                value = registry.entries()
+            elif args.action == 'probe':
+                value = registry.probe(args.provider,args.device,args.exe)
+            elif args.action == 'register':
+                value = registry.register(args.provider,args.device,args.exe,trust=args.trust)
+            else:
+                registry.rollback(args.provider,args.device)
+                value = registry.entries()
+            print(json.dumps(value,ensure_ascii=False,indent=2))
+            return 0
+        except Exception as exc:
+            print(str(exc),file=sys.stderr)
+            return 2
     if args.command == 'doctor':
         failures = []
         try:
@@ -109,9 +135,10 @@ def main(argv=None):
                     if model_id not in catalog:
                         raise ValueError(f'Unknown model: {model_id}')
                     model = catalog[model_id]
-                    resolve_model(model, cancel, progress, download=True, keep_source=args.keep_source)
+                    resolve_model(model, cancel, progress, download=args.action == 'install', keep_source=args.keep_source)
                     from .inference_policy import policy_for
-                    if policy_for(model).segmentation == 'vad':
+                    from .timing import native_timestamps
+                    if model.task == 'asr' and not native_timestamps(model):
                         from .vad import vad_model
                         from .adapters import split_engine_parameters
                         parameters, _ = split_engine_parameters(model, None)
@@ -134,16 +161,25 @@ def main(argv=None):
         settings = Settings(stage('asr'), stage('diar'), stage('align'), not bool(args.output_dir), args.output_dir,
                             args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio,
                             timing=TimingSettings(args.timing, args.vad_max_seconds, args.vad_threshold,
-                                min_silence_ms=args.vad_min_silence_ms, segment_before_alignment=args.vad_before_alignment))
+                                min_silence_ms=args.vad_min_silence_ms, segment_before_alignment=args.vad_before_alignment,
+                                speaker_source=args.speaker_source),queue_window_items=args.queue_window_items)
         settings.validate(catalog)
-        failed = 0
-        for source in args.files:
-            try:
-                print(run_job(source, settings, catalog, cancel, progress))
-            except Exception as error:
-                failed += 1
-                progress(f'{source}: {error}')
-        return 1 if failed else 0
+        from .providers import preflight
+        from .timing import plan_for
+        timing_plan = plan_for(catalog[settings.asr.model_id],settings.timing,settings.align is not None)
+        for selected in (settings.preprocess,settings.asr,settings.align,settings.diar):
+            if selected is not None:
+                preflight(catalog[selected.model_id],selected,cancel,
+                          segmented=selected is settings.asr and timing_plan.segmented)
+        events = []
+        outputs = run_queue(list(enumerate(args.files)),settings,catalog,cancel,progress,
+            lambda index,status,detail: events.append((index,status,detail)))
+        for output in outputs.values():
+            print(output)
+        for index,status,detail in events:
+            if status == '失敗':
+                progress(f'{args.files[index]}: {detail}')
+        return 0 if len(outputs) == len(args.files) else 1
     except KeyboardInterrupt:
         cancel.set()
         return 130

@@ -17,6 +17,7 @@ class TimingSettings:
     pad_ms: int = 200
     overlap: float = 0.2
     segment_before_alignment: bool = False
+    speaker_source: str = 'auto'
 
     def parameters(self):
         return dict(vad_threshold=self.threshold,
@@ -26,6 +27,8 @@ class TimingSettings:
                     vad_max_speech_duration_s=self.max_seconds)
 
     def validate(self):
+        if self.speaker_source not in ('auto','native','diarizer','none'):
+            raise ValueError('Speaker source must be auto, native, diarizer or none')
         if self.mode not in MODES:
             raise ValueError('Timing must be auto, native, vad or alignment')
         if (type(self.max_seconds) not in (int, float) or
@@ -69,6 +72,8 @@ def plan_for(model, timing, alignment_enabled=False):
     if mode in ('native', 'vad') and alignment_enabled:
         raise ValueError('Disable the alignment stage or choose automatic / forced-alignment timing')
     segmented = mode == 'vad' or (mode == 'alignment' and (not native or timing.segment_before_alignment))
+    if segmented and timing.speaker_source == 'native':
+        raise ValueError('Native speaker labels require native ASR intervals; choose native timing or an external diarizer')
     return TimingPlan(mode, segmented, mode == 'alignment',
                       'forced_alignment' if mode == 'alignment' else 'vad' if segmented else 'native_asr')
 

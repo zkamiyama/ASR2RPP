@@ -18,7 +18,8 @@ def infer_text_requests(model, weights, requests, work, options, cancel, progres
     if not requests:
         return {}
     if model.runtime != 'audio_cpp':
-        raise ValueError('Text request provider is not installed for ' + model.runtime)
+        from .worker_client import infer_requests
+        return infer_requests(model, weights, requests, work, dict(options, _text_only=True), cancel, progress)
     binary = executable(model.runtime, options.get('device', 'cpu'), options.get('executable', ''))
     params, session = split_engine_parameters(model, options.get('parameters', {}))
     validate_model_parameter_constraints(model, params, session)
@@ -27,8 +28,10 @@ def infer_text_requests(model, weights, requests, work, options, cancel, progres
     work = Path(work)
     results = {}
     # Bound command metadata and native batch buffering. Audio windows are <=28s.
-    for batch_no, offset in enumerate(range(0, len(requests), 128)):
-        chunk = requests[offset:offset + 128]
+    from .native_profile import profile
+    maximum = profile(model).max_batch_items
+    for batch_no, offset in enumerate(range(0, len(requests), maximum)):
+        chunk = requests[offset:offset + maximum]
         folder = work / f'text-{batch_no}'
         folder.mkdir(parents=True, exist_ok=True)
         payload = {'requests': [dict(id=r['id'], audio=str(r['audio'].resolve()),

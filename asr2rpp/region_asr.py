@@ -28,7 +28,10 @@ def infer_regions(model, weights, audio, work, options, cancel, progress):
                 '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', str(audio),
                 '-af', 'aresample=16000:async=1:first_pts=0', '-ac', '1', '-ar', '16000',
                 '-c:a', 'pcm_s16le', '-y', str(vad_pcm)], cancel, progress, work / 'vad-decode.log')
-        windows, record = detect_windows(model, timing.parameters(), vad_pcm, work, None,
+        vad_parameters = timing.parameters()
+        if options.get('parameters', {}).get('vad_model'):
+            vad_parameters['vad_model'] = options['parameters']['vad_model']
+        windows, record = detect_windows(model, vad_parameters, vad_pcm, work, None,
             cancel, progress, timing.max_seconds, context_overlap=plan.align)
         requests = []
         for i, window in enumerate(windows):
