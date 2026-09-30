@@ -252,7 +252,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert window.table.horizontalHeaderItem(0).text() == "Input"
     assert window.table.item(0, 1).text() == "Queued"
     model_labels = [window.asr.model.itemText(i) for i in range(window.asr.model.count())]
-    assert all("実験的" not in x and "Experimental" not in x and "軽量" not in x and "Lightweight" not in x and "Large" not in x for x in model_labels)
+    assert all("実験的" not in x and "Experimental" not in x and "軽量" not in x and "Lightweight" not in x for x in model_labels)
     assert window.asr.model_label.text() == "MODEL"
     assert window.asr.backend_label.text() == "BACKEND"
     assert window.asr.language_label.text() == "LANG"

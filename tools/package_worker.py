@@ -12,6 +12,22 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ('sherpa-onnx', 'sherpa-onnx-core')
 EXCLUDED = ('faster_whisper', 'ctranslate2', 'nvidia', 'onnxruntime', 'av', 'tokenizers', 'huggingface_hub')
 
+def remove_excluded_metadata(destination):
+    """PyInstaller may collect version metadata even for excluded modules.
+
+    Remove only that metadata from the copied worker, never the build venv.
+    Otherwise capabilities() can advertise an engine whose code was excluded.
+    """
+    excluded = {name.replace('_', '-').lower() for name in EXCLUDED}
+    for path in Path(destination).rglob('*.dist-info'):
+        name = path.name.removesuffix('.dist-info').rsplit('-', 1)[0].replace('_', '-').lower()
+        if name in excluded:
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+
+
 def build_worker(icon=None):
     args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
             '--console', '--name', 'asr2rpp-worker',
@@ -34,6 +50,7 @@ def build_worker(icon=None):
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(source,destination,symlinks=True)
+    remove_excluded_metadata(destination)
     licenses = destination/'licenses'
     licenses.mkdir()
     for name in PACKAGES:

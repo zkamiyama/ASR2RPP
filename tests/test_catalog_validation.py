@@ -40,3 +40,18 @@ def test_invalid_native_matrix_result_fails(tmp_path, case):
     (report / 'transcript.json').write_text(json.dumps({'units': units}))
     with pytest.raises(ValueError):
         validate_output(tmp_path, 'asr', True, 'abc', 5.)
+
+
+def test_excluded_version_metadata_does_not_leak_from_build_environment(tmp_path):
+    from tools.package_worker import remove_excluded_metadata
+    worker = tmp_path / 'worker'
+    for name in ('faster_whisper-1.2.1', 'ctranslate2-4.6', 'sherpa_onnx-1.13.8', 'numpy-2.5'):
+        path = worker / '_internal' / (name + '.dist-info')
+        path.mkdir(parents=True)
+        (path / 'METADATA').write_text('metadata')
+    external = tmp_path / 'venv/faster_whisper-1.2.1.dist-info'
+    external.mkdir(parents=True)
+    remove_excluded_metadata(worker)
+    names = {p.name for p in worker.rglob('*.dist-info')}
+    assert names == {'sherpa_onnx-1.13.8.dist-info', 'numpy-2.5.dist-info'}
+    assert external.is_dir()
