@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install ".[dev,workers,cuda-worker]"
+      - run: python -m pip install ".[dev,workers]"
       - name: Windows native PCM protocol tests
         run: |
           cmake -S native -B build/pcm-tests
@@ -68,31 +68,23 @@ jobs:
         id: native
         with:
           path: |
-            engines/
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-vulkan/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-vulkan/
             build/native/whisper_cpp/samples/
-          key: win-native-portable-v2-${{ hashFiles('tools/build_native.py', 'native/**') }}
-          restore-keys: win-native-portable-v2-
+          key: win-native-vulkan-only-v3-${{ hashFiles('tools/build_native.py', 'native/**') }}
+          restore-keys: win-native-vulkan-only-v3-
       - name: Install Vulkan SDK for native runtime builds
-        if: steps.native.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           choco install vulkan-sdk --version=1.4.350 -y --no-progress
           "VULKAN_SDK=C:\VulkanSDK\1.4.350.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "C:\VulkanSDK\1.4.350.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: CUDA toolkit for portable GPU runtimes
-        if: steps.native.outputs.cache-hit != 'true'
-        uses: Jimver/cuda-toolkit@95b5a29a2823ef87666dcd45ec236fc4f82498d0
-        with:
-          cuda: '12.8.1'
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration"]'
-      - if: steps.native.outputs.cache-hit != 'true'
-        run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan whisper_cpp:cuda audio_cpp:cuda
+      - run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan
         env:
           ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
-          ASR2RPP_CUDA_HOST_COMPAT: '1'
       - run: python tools/package_windows.py
-        env:
-          ASR2RPP_REQUIRE_CUDA: '1'
       - name: Frozen optional stages and ORIGINAL track
         run: python tools/smoke_optional_stages.py
       - uses: actions/upload-artifact@v4
@@ -109,6 +101,73 @@ jobs:
           name: windows-reports-${{ github.run_id }}
           path: reports/
           retention-days: 7
+  macos-arm64:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]')
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      ASR2RPP_HOME: ${{ github.workspace }}/build/runtime-home
+      QT_QPA_PLATFORM: offscreen
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      CMAKE_GENERATOR: Ninja
+      ASR2RPP_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: arm64
+      - name: Confirm native Apple Silicon toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          xcrun --find metal || xcodebuild -downloadComponent MetalToolchain
+          command -v ffmpeg || brew install ffmpeg
+          command -v ninja || brew install ninja
+      - run: python -m pip install ".[dev,workers]"
+      - name: Python and native PCM regression tests
+        run: |
+          python -m pytest tests -v --junitxml=reports/macos-tests.xml
+          cmake -S native -B build/pcm-tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/pcm-tests
+          ctest --test-dir build/pcm-tests --output-on-failure
+      - uses: actions/cache@v4
+        with:
+          path: |
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-metal/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-metal/
+          key: mac-arm64-metal-v1-${{ hashFiles('tools/build_native.py', 'native/**') }}
+      - name: Build stock CLI and public-API helpers for CPU and Metal
+        run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:metal audio_cpp:cpu audio_cpp:metal
+        env:
+          ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
+      - name: Freeze, ad-hoc sign and relocate-test the complete app
+        run: python tools/package_macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASR2RPP-macOS-arm64-${{ github.run_id }}
+          path: |
+            dist/ASR2RPP-macOS-arm64.zip
+            dist/SHA256SUMS-macOS.txt
+          retention-days: 14
+          compression-level: 0
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-reports-${{ github.run_id }}
+          path: |
+            reports/*.xml
+            reports/*.json
+            reports/*.png
+            reports/macos-portable/summary.json
+            reports/macos-portable/*.log
+            reports/macos-portable/lifecycle/summary.json
+          retention-days: 7
+
   linux-native:
     needs: test
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]')
@@ -184,7 +243,7 @@ jobs:
           retention-days: 7
 
   release:
-    needs: [test, windows, linux-native]
+    needs: [test, windows, macos-arm64, linux-native]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
@@ -196,6 +255,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ASR2RPP-Windows-x64-${{ github.run_id }}
+          path: release-files
+      - uses: actions/download-artifact@v4
+        with:
+          name: ASR2RPP-macOS-arm64-${{ github.run_id }}
           path: release-files
       - name: Verify the exact tested ZIP before publishing
         shell: python
@@ -212,6 +275,14 @@ jobs:
               assert not meta['ffmpeg_bundled']
               assert 'ASR2RPP/models/anime-whisper.toml' in package.namelist()
               assert not any('/model-templates/' in n or '/_internal/models/' in n for n in package.namelist())
+      - name: Verify the signed macOS archive checksum
+        shell: python
+        run: |
+          import hashlib, pathlib
+          root = pathlib.Path('release-files')
+          archive = root/'ASR2RPP-macOS-arm64.zip'
+          with archive.open('rb') as stream:
+              assert hashlib.file_digest(stream, 'sha256').hexdigest() == (root/'SHA256SUMS-macOS.txt').read_text().split()[0]
       - name: Publish immutable commit-tagged preview ZIP
         env:
           GH_TOKEN: ${{ github.token }}
@@ -222,7 +293,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Release already exists; leaving published assets unchanged.'
           else
-            gh release create "$tag" release-files/ASR2RPP-Windows-x64.zip release-files/SHA256SUMS.txt \
-              --target "$GITHUB_SHA" --prerelease --title "ASR2RPP Windows ${GITHUB_SHA:0:12}" \
+            gh release create "$tag" release-files/ASR2RPP-Windows-x64.zip release-files/ASR2RPP-macOS-arm64.zip release-files/SHA256SUMS*.txt \
+              --target "$GITHUB_SHA" --prerelease --title "ASR2RPP Windows + macOS ${GITHUB_SHA:0:12}" \
               --notes-file docs/release-notes.md
           fi

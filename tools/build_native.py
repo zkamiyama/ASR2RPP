@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,8 +23,9 @@ def recipe_digest():
     h = hashlib.sha256()
     for path in paths:
         h.update(path.read_bytes())
-    for key in ('ASR2RPP_CUDA_ARCHS', 'CMAKE_GENERATOR', 'ASR2RPP_MSVC_TOOLSET'):
+    for key in ('ASR2RPP_CUDA_ARCHS', 'CMAKE_GENERATOR', 'ASR2RPP_MSVC_TOOLSET', 'MACOSX_DEPLOYMENT_TARGET'):
         h.update((key + '=' + os.getenv(key, '')).encode())
+    h.update((sys.platform + '/' + platform.machine()).encode())
     return h.hexdigest()
 
 
@@ -53,6 +55,9 @@ def preserve_restored_samples(source: Path):
 
 
 def build(name, backend='cpu'):
+    allowed = {'cpu', 'metal'} if sys.platform == 'darwin' else {'cpu', 'vulkan'} if os.name == 'nt' else {'cpu', 'vulkan', 'cuda'}
+    if backend not in allowed:
+        raise ValueError(f'Unsupported packaged backend {backend} on {sys.platform}')
     repo, revision, target = SOURCES[name]
     extension = recipe_digest()
     destination = ENGINES / (name + '-' + backend)
@@ -101,14 +106,18 @@ def build(name, backend='cpu'):
     dirty = subprocess.check_output(['git', 'diff', '--name-only'], cwd=source, text=True).strip()
     if dirty:
         raise RuntimeError('Upstream source must be unmodified; use a clean build directory: ' + dirty)
-    if backend not in {'cpu', 'vulkan', 'cuda'}:
-        raise ValueError(f'Unsupported packaged backend: {backend}')
     output = source / ('build-' + backend + ('-' + os.environ['ASR2RPP_BUILD_SUFFIX'] if os.getenv('ASR2RPP_BUILD_SUFFIX') else ''))
     vulkan = 'ON' if backend == 'vulkan' else 'OFF'
     cuda = 'ON' if backend == 'cuda' else 'OFF'
+    metal = 'ON' if backend == 'metal' else 'OFF'
     flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CCACHE=OFF',
              '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
-             f'-DGGML_CUDA={cuda}', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
+             f'-DGGML_CUDA={cuda}', f'-DGGML_METAL={metal}', f'-DGGML_VULKAN={vulkan}']
+    if sys.platform == 'darwin':
+        flags += ['-DCMAKE_OSX_ARCHITECTURES=arm64',
+                  '-DCMAKE_OSX_DEPLOYMENT_TARGET=' + os.getenv('MACOSX_DEPLOYMENT_TARGET', '14.0'),
+                  '-DBUILD_SHARED_LIBS=OFF', '-DGGML_METAL_EMBED_LIBRARY=ON',
+                  '-DGGML_OPENMP=OFF', '-DENGINE_ENABLE_OPENMP=OFF']
     if backend == 'cuda':
         flags.append('-DCMAKE_CUDA_ARCHITECTURES=' + os.getenv('ASR2RPP_CUDA_ARCHS', '86;89'))
         if os.name == 'nt' and os.getenv('ASR2RPP_CUDA_HOST_COMPAT') == '1':
@@ -118,7 +127,7 @@ def build(name, backend='cpu'):
                   '-DAUDIOCPP_MODEL_SET=custom',
                   '-DAUDIOCPP_MODELS=' + ','.join(LOCK['audio_cpp']['models']),
                   '-DENGINE_ENABLE_NATIVE_CPU=OFF',
-                  f'-DENGINE_ENABLE_CUDA={cuda}', f'-DENGINE_ENABLE_VULKAN={vulkan}',
+                  f'-DENGINE_ENABLE_CUDA={cuda}', f'-DENGINE_ENABLE_VULKAN={vulkan}', f'-DENGINE_ENABLE_METAL={metal}',
                   '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
                   '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
     else:
@@ -167,18 +176,10 @@ def build(name, backend='cpu'):
     for suffix in ('*.dll', '*.so', '*.so.*', '*.dylib'):
         for library in output.rglob(suffix):
             shutil.copy2(library, destination / library.name)
-    if os.name == 'nt' and backend == 'cuda':
-        cuda_root = Path(os.environ['CUDA_PATH'])
-        for pattern in ('cublas64_*.dll', 'cublasLt64_*.dll', 'cudart64_*.dll'):
-            matches = list((cuda_root/'bin').glob(pattern))
-            if not matches: raise RuntimeError('Missing CUDA redistributable: ' + pattern)
-            for dll in matches: shutil.copy2(dll, destination/dll.name)
-        for file in (cuda_root/'EULA.txt', cuda_root/'doc/EULA.txt'):
-            if file.is_file(): shutil.copy2(file, destination/'NVIDIA-CUDA-EULA.txt')
     licenses = destination / 'licenses'
     licenses.mkdir(exist_ok=True)
     for file in source.rglob('*'):
-        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and 'build' not in file.relative_to(source).parts:
+        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and not any(part.startswith('build') or part == '.git' for part in file.relative_to(source).parts):
             if file.suffix.lower() in {'', '.txt', '.md', '.rst'}:
                 target_license = licenses / file.relative_to(source)
                 target_license.parent.mkdir(parents=True, exist_ok=True)
@@ -188,19 +189,19 @@ def build(name, backend='cpu'):
             shutil.copy2(source / filename, destination / filename)
     if name == 'audio_cpp' and (source / 'model_specs').exists():
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
-    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {},
+    metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'platform': sys.platform, 'architecture': platform.machine(), 'files': {},
                 'build_recipe_sha256': extension, 'upstream_modified': False,
                 'pcm_plan_version': 1 if name == 'whisper_cpp' else None,
                 'cuda_architectures': os.getenv('ASR2RPP_CUDA_ARCHS', '86;89') if backend == 'cuda' else None,
                 'cmake_flags': flags}
+    if name == 'audio_cpp':
+        data = subprocess.check_output([str(destination / binary.name), '--list-loaders', '--json'], text=True, encoding='utf-8')
+        (destination/'capabilities.json').write_text(data, encoding='utf-8')
     for file in destination.rglob('*'):
         if file.is_file() and file != destination / 'build-manifest.json':
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()
     (destination / 'build-manifest.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     run(destination / binary.name, '--help')
-    if name == 'audio_cpp':
-        data = subprocess.check_output([str(destination / binary.name), '--list-loaders', '--json'], text=True, encoding='utf-8')
-        (destination/'capabilities.json').write_text(data, encoding='utf-8')
 
 
 if __name__ == '__main__':

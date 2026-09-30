@@ -35,6 +35,10 @@ def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
     found = shutil.which('ffmpeg')
     if found:
         return found
+    if sys.platform == 'darwin':
+        for location in ('/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'):
+            if Path(location).is_file():
+                return location
 
     # Existing portable/development layouts remain supported, but new releases
     # do not redistribute FFmpeg inside the application ZIP.
@@ -61,10 +65,14 @@ def process_environment(binary: Path) -> dict:
     else:
         env.pop('LD_LIBRARY_PATH', None)
     env['OMP_NUM_THREADS'] = env.get('ASR2RPP_THREADS', '4')
-    if os.name == 'nt':
-        shared = binary.resolve().parent.parent / 'cuda_runtime'
-        if shared.is_dir():
-            env['PATH'] = str(shared) + os.pathsep + env.get('PATH', '')
+    if sys.platform == 'darwin':
+        # PyInstaller's process-local library environment must not leak into native tools.
+        for key in ('DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH'):
+            original = env.get(key + '_ORIG')
+            if original is None:
+                env.pop(key, None)
+            else:
+                env[key] = original
     # Never add generic /usr/lib: it can contain incompatible system libraries.
     # Only explicitly recognize libraries belonging to a native speech executable.
     if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'asr2rpp-whisper-regions', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:

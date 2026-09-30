@@ -142,7 +142,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     app.processEvents()
 
     assert window.windowTitle() == "ASR2RPP"
-    assert window.runtime_defaults == {"whisper_cpp": "vulkan", "audio_cpp": "vulkan"}
+    from asr2rpp.platforms import preferred_gpu, backends
+    assert window.runtime_defaults == {"whisper_cpp": preferred_gpu(), "audio_cpp": preferred_gpu()}
     assert window.run_button.text() == "GO"
     assert isinstance(window.run_button, QPushButton)
     assert window.run_button.icon().isNull()
@@ -239,7 +240,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     # Runtime choices are explicit; availability is checked before execution.
     for panel in (window.preprocess, window.asr, window.align, window.diar):
         devices = [panel.device.itemData(i) for i in range(panel.device.count())]
-        assert devices == ["default", "cpu", "vulkan", "cuda", "auto", "metal"]
+        assert devices == ["default", *backends()]
 
     reports = Path("reports")
     reports.mkdir(exist_ok=True)
@@ -265,8 +266,8 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     assert dialog.nav.count() == 4
     assert dialog.model_dir.placeholderText()
     assert dialog.temp_dir.placeholderText()
-    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == ["cpu", "vulkan", "cuda", "auto", "metal"]
-    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == ["cpu", "vulkan", "cuda", "auto", "metal"]
+    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == list(backends())
+    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == list(backends())
     dialog.grab().save(str(reports / "settings-dcc.png"))
     dialog.close()
     window.close()

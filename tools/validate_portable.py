@@ -42,6 +42,8 @@ def main():
     env['PATH']=str(Path(env.get('SystemRoot','C:/Windows'))/'System32')
     if args.weights_dir:
         env['ASR2RPP_WEIGHTS_DIR']=str(args.weights_dir.resolve())
+    from portable_runtime import audit_lightweight
+    audit_lightweight(package)
     original=digest(fixture)
     results={'fixture_sha256':original,'package_commit':json.loads((package/'version.json').read_text())['commit'],
              'gpu_requested':args.gpu,'installed_python_or_toolkit_path_used':False,'cases':{}}
@@ -56,7 +58,7 @@ def main():
                 process.wait(timeout=15)
                 code=-1
         return {'returncode':code,'elapsed_seconds':round(time.monotonic()-start,4)}
-    models=['whisper-base','faster-whisper-base','reazonspeech-k2','qwen3-asr-06b','qwen-forced-aligner']
+    models=['whisper-base','reazonspeech-k2','qwen3-asr-06b','qwen-forced-aligner']
     if args.install:
         acquisition=invoke('install',['models','install',*models],timeout=1200)
         results['acquisition']=acquisition
@@ -64,17 +66,12 @@ def main():
             raise RuntimeError('Model acquisition failed; see install.log')
     cases=[('whisper-cpu-native','whisper-base','cpu','native',[]),
            ('whisper-cpu-vad','whisper-base','cpu','vad',[]),
-           ('reazon-cpu-vad','reazonspeech-k2','cpu','vad',[]),
-           ('faster-cpu-native','faster-whisper-base','cpu','native',[])]
+           ('reazon-cpu-vad','reazonspeech-k2','cpu','vad',[])]
     if args.gpu:
-        cases += [('whisper-cuda-vad','whisper-base','cuda','vad',[]),
-                  ('whisper-vulkan-vad','whisper-base','vulkan','vad',[]),
-                  ('qwen-cuda-vad','qwen3-asr-06b','cuda','vad',[]),
+        cases += [('whisper-vulkan-vad','whisper-base','vulkan','vad',[]),
                   ('qwen-vulkan-vad','qwen3-asr-06b','vulkan','vad',[]),
-                  ('faster-cuda-native','faster-whisper-base','cuda','native',[]),
-                  ('faster-cuda-batch','faster-whisper-base','cuda','native',['--asr-params','{"batch_size":4}']),
-                  ('qwen-cuda-alignment','qwen3-asr-06b','cuda','alignment',[
-                      '--align','qwen-forced-aligner','--align-device','cuda','--align-language','Japanese'])]
+                  ('qwen-vulkan-alignment','qwen3-asr-06b','vulkan','alignment',[
+                      '--align','qwen-forced-aligner','--align-device','vulkan','--align-language','Japanese'])]
     for name,model,device,timing,extra in cases:
         output=report/name
         command=['run',fixture,'--asr',model,'--asr-device',device,'--timing',timing,
@@ -105,11 +102,11 @@ def main():
             gpu_lines=[]
             for path in manifests[0].parent.rglob('*.log'):
                 for line in path.read_text(encoding='utf-8',errors='replace').splitlines():
-                    if any(token in line for token in ('using CUDA0 backend','CUDA graph warmup','NVIDIA GeForce RTX','Vulkan0')):
+                    if any(token in line for token in ('ggml_vulkan:', 'Vulkan0')):
                         gpu_lines.append(line[:250])
             record['gpu_evidence']=list(dict.fromkeys(gpu_lines))[:8]
-            if device=='cuda':
-                record['passed'] &= ('cuda' in record['worker_devices'] or bool(record['gpu_evidence']))
+            if device=='vulkan':
+                record['passed'] &= bool(record['gpu_evidence'])
         results['cases'][name]=record
         (report/'summary.json').write_text(json.dumps(results,indent=2,ensure_ascii=False),encoding='utf-8')
         print(name,json.dumps(record,ensure_ascii=False),flush=True)

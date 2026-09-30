@@ -1,4 +1,4 @@
-"""Deduplicate CUDA DLLs without changing code and record shared dependencies."""
+"""Strict lightweight distribution assembly; stale optional engines never leak in."""
 from pathlib import Path
 import hashlib
 import json
@@ -8,42 +8,6 @@ import shutil
 def sha(path):
     with path.open('rb') as handle:
         return hashlib.file_digest(handle,'sha256').hexdigest()
-
-
-def collect_cuda(package):
-    engines = Path(package)/'engines'
-    shared = engines/'cuda_runtime'
-    moved = {}
-    for path in sorted(engines.rglob('*.dll')):
-        if shared in path.parents:
-            continue
-        name = path.name.lower()
-        if not name.startswith(('cublas64_', 'cublaslt64_', 'cudart64_', 'cudnn')):
-            continue
-        shared.mkdir(exist_ok=True)
-        destination = shared/path.name
-        checksum = sha(path)
-        if destination.exists():
-            if sha(destination) != checksum:
-                raise ValueError('Conflicting CUDA runtime DLL: ' + path.name)
-            path.unlink()
-        else:
-            shutil.move(str(path),str(destination))
-        moved[path.relative_to(engines).as_posix()] = dict(file=path.name,sha256=checksum)
-    for manifest in engines.rglob('build-manifest.json'):
-        meta = json.loads(manifest.read_text(encoding='utf-8'))
-        dependencies = {}
-        for name in list(meta.get('files',{})):
-            key = (manifest.parent/Path(name.replace('\\','/'))).relative_to(engines).as_posix()
-            if key in moved:
-                dependencies[name] = moved[key]
-                del meta['files'][name]
-        if dependencies:
-            meta['shared_cuda_runtime'] = dependencies
-            manifest.write_text(json.dumps(meta,indent=2),encoding='utf-8')
-    if moved:
-        (shared/'manifest.json').write_text(json.dumps({'files':{p.name:sha(p) for p in shared.glob('*.dll')}},indent=2),encoding='utf-8')
-    return moved
 
 
 def verify_manifests(package):
@@ -57,8 +21,51 @@ def verify_manifests(package):
             if not path.is_relative_to(manifest.parent.resolve()) or not path.is_file() or sha(path) != expected:
                 raise ValueError('Runtime integrity check failed: ' + str(path))
             count += 1
-        for info in metadata.get('shared_cuda_runtime',{}).values():
-            path = (engines/'cuda_runtime'/info['file']).resolve()
-            if not path.is_relative_to((engines/'cuda_runtime').resolve()) or not path.is_file() or sha(path) != info['sha256']:
-                raise ValueError('Shared CUDA dependency integrity check failed')
     return count
+
+
+def runtime_packs(platform):
+    if platform not in ('win32', 'darwin'):
+        raise ValueError('No standard distribution for this platform')
+    gpu = 'metal' if platform == 'darwin' else 'vulkan'
+    return tuple(f'{runtime}-{device}' for runtime in ('whisper_cpp', 'audio_cpp')
+                 for device in ('cpu', gpu)) + ('python_worker',)
+
+
+def copy_runtime_packs(source, package, platform):
+    """Copy only allowed packs into a fresh destination; never delete source caches."""
+    destination = Path(package)/'engines'
+    if destination.exists():
+        raise ValueError('Runtime staging directory must be fresh')
+    destination.mkdir(parents=True)
+    for name in runtime_packs(platform):
+        src = Path(source)/name
+        if not (src/'build-manifest.json').is_file():
+            raise ValueError('Missing runtime manifest: ' + name)
+        shutil.copytree(src, destination/name, symlinks=True)
+    verify_manifests(package)
+    audit_lightweight(package)
+
+
+def audit_lightweight(package):
+    """Fail packaging if CUDA/CT2/faster-whisper artifacts or fonts appear."""
+    forbidden = ('cublas', 'cudnn', 'cudart', 'ggml-cuda', 'ctranslate2', 'faster_whisper', 'faster-whisper', 'nvidia')
+    count = 0
+    for path in Path(package).rglob('*'):
+        if not path.is_file():
+            continue
+        name = path.name.casefold()
+        parts = [part.casefold() for part in path.relative_to(package).parts]
+        heavy_package = any(part in {'ctranslate2', 'faster_whisper', 'nvidia'} or part.startswith(('ctranslate2-', 'faster_whisper-')) and part.endswith('.dist-info') for part in parts)
+        if (heavy_package or name.endswith(('.ttf', '.otf', '.ttc', '.woff', '.woff2')) or
+                ('engines' in path.parts and (any(name.startswith(x) for x in forbidden)
+                 or any('cuda' in part.lower() for part in path.relative_to(package).parts)))):
+            raise ValueError('Forbidden standard-distribution artifact: ' + str(path))
+        count += 1
+    worker = Path(package)/'engines/python_worker/build-manifest.json'
+    if worker.is_file():
+        packages = json.loads(worker.read_text(encoding='utf-8')).get('packages', {})
+        if set(packages) != {'sherpa-onnx', 'sherpa-onnx-core'}:
+            raise ValueError('Standard worker must contain sherpa-onnx only')
+    return {'files_checked': count, 'cuda_bundled': False, 'ctranslate2_bundled': False,
+            'faster_whisper_bundled': False}

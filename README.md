@@ -95,3 +95,17 @@ Settings → Timing selects automatic, native, VAD speech-region or forced-align
 timing without editing model TOMLs. Qwen3-ASR, ReazonSpeech K2 and faster-whisper
 model definitions are included. See the [provider/model guide](docs/provider-models.md)
 for custom models, isolated workers and independently replaceable runtimes.
+
+## 0.2.1: lightweight Windows Vulkan and Apple Silicon Metal
+
+Windows supports CPU and Vulkan only. CUDA/cuDNN/cuBLAS, CTranslate2 and
+faster-whisper are excluded from the standard ZIP and from automatic GPU selection.
+Extract updates into a fresh folder. Previous CUDA preferences migrate to Vulkan.
+
+The macOS ZIP contains **ASR2RPP.app** for **Apple Silicon, macOS 14+** (not Intel
+or universal2). It includes CPU/Metal native engines and the CPU sherpa worker.
+Install FFmpeg separately; select its path in Settings if it is not detected.
+The app is ad-hoc signed, **not notarized**. Verify its origin/checksum before
+allowing it in Privacy & Security. Add custom TOMLs through Settings, outside the
+signed .app. CI checks relocation, architecture, signatures and native execution.
+Metal execution is recorded separately from compilation when a CI VM has no GPU.

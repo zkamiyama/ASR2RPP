@@ -52,10 +52,21 @@ def cache_root() -> Path:
     return _configured_root('ASR2RPP_CACHE_DIR', data_root() / 'cache')
 
 
+def package_root() -> Path:
+    """Distribution assets outside _MEIPASS; macOS models live in app Resources."""
+    if not getattr(sys, 'frozen', False):
+        return assets_root()
+    directory = Path(sys.executable).resolve().parent
+    if (sys.platform == 'darwin' and directory.name == 'MacOS'
+            and directory.parent.name == 'Contents'
+            and directory.parent.parent.suffix == '.app'):
+        return directory.parent / 'Resources'
+    return directory
+
+
 def model_directory() -> Path:
     """Authoritative shipped definitions, read in place (never from _MEIPASS)."""
-    root = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else assets_root()
-    return root / 'models'
+    return package_root() / 'models'
 
 
 def custom_model_directory() -> Path:

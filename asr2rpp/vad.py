@@ -73,7 +73,9 @@ def vad_model(model, parameters, cancel, progress):
 
 def vad_executable(asr_binary=None):
     name = 'whisper-vad-speech-segments' + ('.exe' if sys.platform == 'win32' else '')
-    roots = [Path(sys.executable).parent / 'engines' / 'whisper_cpp-cpu',
+    from .catalog import package_root
+    roots = [package_root() / 'engines' / 'whisper_cpp-cpu',
+             Path(sys.executable).parent / 'engines' / 'whisper_cpp-cpu',
              assets_root() / 'engines' / 'whisper_cpp-cpu']
     if asr_binary:
         roots.append(Path(asr_binary).parent)

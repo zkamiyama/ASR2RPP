@@ -9,8 +9,9 @@ import sys
 import threading
 from .atomic import json_replace
 from .model_schema import PROVIDERS
+from .platforms import backends, validate_backend, automatic_devices
 
-BACKENDS = ('auto', 'cpu', 'cuda', 'vulkan', 'metal')
+BACKENDS = backends()
 WORKER_PROVIDERS = frozenset(('sherpa_onnx', 'faster_whisper', 'external_json'))
 _PROBES = {}
 
@@ -32,7 +33,7 @@ def register(runtime, device, binary, *, trust=False):
     """Explicit host action, never called from model loading/downloads."""
     if not trust:
         raise ValueError('Registering a runtime permits executable code. Explicit trust is required.')
-    if runtime not in PROVIDERS or device not in BACKENDS:
+    if runtime not in PROVIDERS or device not in backends():
         raise ValueError('Invalid runtime or backend')
     from .catalog import digest
     from .atomic import file_lock
@@ -77,16 +78,15 @@ def _registered(runtime, device):
 
 
 def resolve(runtime, device, custom=''):
-    from .catalog import assets_root
-    if runtime not in PROVIDERS or device not in BACKENDS:
+    from .catalog import assets_root, package_root
+    if runtime not in PROVIDERS or device not in backends():
         raise ValueError('Unsupported runtime or backend')
     if custom:
         path = Path(custom).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError('Executable not found: ' + str(path))
         return path
-    devices = ([device] if device != 'auto' else
-               ['metal', 'cpu'] if sys.platform == 'darwin' else ['cuda', 'vulkan', 'cpu'])
+    devices = [device] if device != 'auto' else list(automatic_devices())
     if runtime in WORKER_PROVIDERS:
         devices = [device] + [d for d in devices if d != device]
     for candidate in devices:
@@ -95,9 +95,9 @@ def resolve(runtime, device, custom=''):
             return registered
     suffix = '.exe' if sys.platform == 'win32' else ''
     name = {'whisper_cpp':'whisper-cli', 'audio_cpp':'audiocpp_cli'}.get(runtime, 'asr2rpp-worker')
-    for root in [Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
+    for root in [package_root() / 'engines', Path(sys.executable).parent / 'engines', assets_root() / 'engines']:
         directories = [root / f'{runtime}-{candidate}' for candidate in devices]
-        if runtime in WORKER_PROVIDERS and runtime != 'external_json':
+        if runtime == 'sherpa_onnx':
             directories += [root / 'python_worker']
         directories += [root / runtime]
         for directory in directories:

@@ -15,6 +15,7 @@ def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if stream is not None and hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8', errors='replace')
+    from .platforms import backends
     parser = argparse.ArgumentParser(prog='asr2rpp')
     sub = parser.add_subparsers(dest='command', required=True)
     models = sub.add_parser('models', help='list/install TOML model definitions')
@@ -44,14 +45,14 @@ def main(argv=None):
     run.add_argument('--speaker-source', choices=['auto','native','diarizer','none'],default='auto')
     run.add_argument('--queue-window-items',type=int,default=16)
     for stage in ['asr', 'diar', 'align', 'preprocess']:
-        run.add_argument('--' + stage + '-device', default='auto', choices=['auto', 'cpu', 'vulkan', 'cuda', 'metal'])
+        run.add_argument('--' + stage + '-device', default='auto', choices=backends())
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
         run.add_argument('--' + stage + '-params', default='{}', help='JSON object of scalar request parameters')
     runtimes = sub.add_parser('runtimes',help='inspect or explicitly register trusted runtime binaries')
     runtimes.add_argument('action',choices=['list','probe','register','rollback'])
     runtimes.add_argument('--provider',default='whisper_cpp')
-    runtimes.add_argument('--device',default='cpu',choices=['auto','cpu','cuda','vulkan','metal'])
+    runtimes.add_argument('--device',default='cpu',choices=backends())
     runtimes.add_argument('--exe',default='')
     runtimes.add_argument('--trust',action='store_true',help='explicitly trust the selected executable code')
     sub.add_parser('doctor', help='verify packaged runtimes and model-converter dependencies')

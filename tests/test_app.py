@@ -277,7 +277,8 @@ def test_native_engine_work_isolated_from_unicode_report_path(tmp_path, monkeypa
 def test_auto_runtime_finds_packaged_vulkan_then_explicit_cpu(tmp_path, monkeypatch):
     engines = tmp_path / 'engines'
     suffix = '.exe' if sys.platform == 'win32' else ''
-    vulkan = engines / 'whisper_cpp-vulkan' / ('whisper-cli' + suffix)
+    from asr2rpp.platforms import preferred_gpu
+    vulkan = engines / ('whisper_cpp-' + preferred_gpu()) / ('whisper-cli' + suffix)
     cpu = engines / 'whisper_cpp-cpu' / ('whisper-cli' + suffix)
     vulkan.parent.mkdir(parents=True)
     cpu.parent.mkdir(parents=True)

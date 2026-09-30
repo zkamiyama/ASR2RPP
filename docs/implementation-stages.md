@@ -62,3 +62,15 @@ within bounded request groups, not promised to remain resident between GO runs.
 Optional future work includes cross-run resident workers and corpus-level CER,
 word-boundary and diarization quality benchmarks. Native updates still require
 capability/contract tests even though they no longer patch CLI source text.
+
+
+## 0.2.1 platform distribution follow-up
+
+User requested Vulkan-only Windows GPUs and a Metal macOS CI path. Source edits
+and regression tests were prepared in the assistant VM, not the user's desktop.
+Standard packs now allowlist CPU/Vulkan (Windows) or CPU/Metal (Apple Silicon)
+and a sherpa-only worker. CUDA/CT2/faster-whisper cannot leak in from old engine
+caches or an installed development dependency. Heavy examples moved out of models/.
+macOS packaging checks signatures, arm64 slices and library references after
+relocation; Metal hardware/inference is measured separately from build success.
+CI outcomes and new archive sizes will be recorded after the jobs finish.

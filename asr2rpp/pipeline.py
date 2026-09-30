@@ -82,8 +82,8 @@ class Settings:
                     raise ValueError(f'{task}: select an available model')
                 if catalog[stage.model_id].task != task:
                     raise ValueError(f'Wrong model task for {task}')
-                if stage.device not in {'cpu', 'auto', 'cuda', 'vulkan', 'metal'}:
-                    raise ValueError('Unsupported device')
+                from .platforms import validate_backend
+                validate_backend(stage.device)
                 model = catalog[stage.model_id]
                 request, session = split_engine_parameters(model, stage.parameters or {})
                 validate_model_parameter_constraints(model, request, session)

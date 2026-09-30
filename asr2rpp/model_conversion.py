@@ -354,7 +354,8 @@ def _run(argv: list[str], cancel: threading.Event, progress, timeout=7200) -> st
 def find_audio_cpp_tool(name: str, assets_root: Path) -> Path:
     suffix = '.exe' if sys.platform == 'win32' else ''
     filename = name + suffix
-    roots = [Path(sys.executable).parent / 'engines', assets_root / 'engines']
+    from .catalog import package_root
+    roots = [package_root() / 'engines', Path(sys.executable).parent / 'engines', assets_root / 'engines']
     for root in roots:
         for backend in ('audio_cpp-cpu', 'audio_cpp-vulkan', 'audio_cpp'):
             candidate = root / backend / filename

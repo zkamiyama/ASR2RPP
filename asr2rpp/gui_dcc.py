@@ -33,6 +33,7 @@ from .pipeline import MEDIA_EXTENSIONS, Stage
 from .preprocessing import Settings, run_job
 from .queue_runner import run_queue
 from .parameter_specs import specs_for
+from .platforms import backends, preferred_gpu, validate_backend
 from .timing import TimingSettings, plan_for as timing_plan_for
 from .adapters import executable as runtime_executable, ffmpeg_path
 
@@ -814,11 +815,8 @@ class StagePanel(QFrame):
         self.device.blockSignals(True)
         self.device.clear()
         self.device.addItem(tr["default"], "default")
-        self.device.addItem("CPU", "cpu")
-        self.device.addItem("Vulkan", "vulkan")
-        self.device.addItem("CUDA", "cuda")
-        self.device.addItem("Auto", "auto")
-        self.device.addItem("Metal", "metal")
+        for device in backends():
+            self.device.addItem({'auto':'Auto', 'cpu':'CPU', 'vulkan':'Vulkan', 'metal':'Metal', 'cuda':'CUDA'}[device], device)
         if selected:
             idx = self.device.findData(selected)
             if idx >= 0:
@@ -846,8 +844,7 @@ class StagePanel(QFrame):
             raise ValueError(f"No model selected for {self.task}")
         requested = self.device.currentData() or "default"
         device = runtime_defaults.get(model.runtime, model.defaults.get("device", "auto")) if requested == "default" else requested
-        if device not in {"auto", "cpu", "vulkan", "cuda", "metal"}:
-            device = "vulkan"
+        validate_backend(device)
         executable = runtime_paths.get(f"{model.runtime}:{device}", "")
         return Stage(model_id, device, executable, self.language.currentText().strip(),
                      threads, ui_parameters(model, copy.deepcopy(self.parameters)))
@@ -1063,11 +1060,8 @@ class PreferencesDialog(QDialog):
         self.audio_backend = QComboBox()
         for combo, value in ((self.whisper_backend, owner.runtime_defaults["whisper_cpp"]),
                              (self.audio_backend, owner.runtime_defaults["audio_cpp"])):
-            combo.addItem("CPU", "cpu")
-            combo.addItem("Vulkan", "vulkan")
-            combo.addItem("CUDA", "cuda")
-            combo.addItem("Automatic", "auto")
-            combo.addItem("Metal", "metal")
+            for device in backends():
+                combo.addItem({'auto':'Automatic', 'cpu':'CPU', 'vulkan':'Vulkan', 'metal':'Metal', 'cuda':'CUDA'}[device], device)
             combo.setCurrentIndex(max(0, combo.findData(value)))
         runtime = QWidget()
         runtime_form = QFormLayout(runtime)
@@ -1115,8 +1109,9 @@ class PreferencesDialog(QDialog):
         title.setObjectName("section")
         advanced_layout.addWidget(title)
         self.runtime_fields = {}
-        for key in ("ffmpeg", "whisper_cpp:cpu", "whisper_cpp:vulkan",
-                    "audio_cpp:cpu", "audio_cpp:vulkan"):
+        keys = ['ffmpeg'] + [f'{runtime}:{device}' for runtime in ('whisper_cpp', 'audio_cpp')
+                             for device in backends() if device != 'auto']
+        for key in keys:
             line = QLineEdit(owner.runtime_paths.get(key, ""))
             line.setPlaceholderText(tr["ffmpeg_auto"] if key == "ffmpeg" else tr["bundled_path"])
             advanced_layout.addLayout(self._file_row(key, line))
@@ -1172,7 +1167,7 @@ class PreferencesDialog(QDialog):
 
     def _runtime_status(self, runtime):
         values = []
-        for device in ("cpu", "vulkan"):
+        for device in (d for d in backends() if d != 'auto'):
             try:
                 path = runtime_executable(runtime, device,
                     self.owner.runtime_paths.get(f"{runtime}:{device}", ""))
@@ -1196,24 +1191,27 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(920, 600)
 
         self.preferences = preferences if preferences is not None else QSettings("ASR2RPP", "ASR2RPP")
-        # The legacy preview defaulted native runtimes to CPU. The DCC UI changes the
-        # product default to Vulkan, so migrate once; later explicit CPU choices persist.
-        if not self.preferences.value("runtime_defaults_v2", False, type=bool):
-            self.preferences.setValue("runtime_default/whisper_cpp", "vulkan")
-            self.preferences.setValue("runtime_default/audio_cpp", "vulkan")
-            self.preferences.setValue("runtime_defaults_v2", True)
+        # Migrate unavailable backend selections once; preserve explicit CPU/auto choices.
+        if not self.preferences.value("runtime_defaults_v3", False, type=bool):
+            for runtime in ('whisper_cpp', 'audio_cpp'):
+                key = 'runtime_default/' + runtime
+                old = self.preferences.value(key, None)
+                if old not in backends():
+                    self.preferences.setValue(key, preferred_gpu())
+            self.preferences.setValue('runtime_defaults_v2', True)
+            self.preferences.setValue('runtime_defaults_v3', True)
             self.preferences.sync()
         saved_language = self.preferences.value("ui/language", None)
         self.ui_lang = str(saved_language) if saved_language else detect_ui_language()
         if self.ui_lang not in TEXT:
             self.ui_lang = detect_ui_language()
         self.runtime_defaults = {
-            "whisper_cpp": str(self.preferences.value("runtime_default/whisper_cpp", "vulkan")),
-            "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", "vulkan")),
+            "whisper_cpp": str(self.preferences.value("runtime_default/whisper_cpp", preferred_gpu())),
+            "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", preferred_gpu())),
         }
         for key in self.runtime_defaults:
-            if self.runtime_defaults[key] not in {"auto", "cpu", "vulkan", "cuda", "metal"}:
-                self.runtime_defaults[key] = "vulkan"
+            if self.runtime_defaults[key] not in backends():
+                self.runtime_defaults[key] = preferred_gpu()
         try:
             self.runtime_paths = json.loads(self.preferences.value("runtime_paths", "{}"))
             if not isinstance(self.runtime_paths, dict) or any(not isinstance(v, str) for v in self.runtime_paths.values()):

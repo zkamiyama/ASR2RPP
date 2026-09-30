@@ -9,37 +9,34 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGES = ('sherpa-onnx', 'sherpa-onnx-core', 'faster-whisper', 'ctranslate2',
-            'av', 'onnxruntime', 'tokenizers', 'huggingface-hub')
+PACKAGES = ('sherpa-onnx', 'sherpa-onnx-core')
+EXCLUDED = ('faster_whisper', 'ctranslate2', 'nvidia', 'onnxruntime', 'av', 'tokenizers', 'huggingface_hub')
 
-
-def build_worker(icon):
+def build_worker(icon=None):
     args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
-            '--console', '--name', 'asr2rpp-worker', '--icon', str(icon),
+            '--console', '--name', 'asr2rpp-worker',
             '--exclude-module', 'PySide6', '--exclude-module', 'torch',
             '--exclude-module', 'tensorflow', '--exclude-module', 'transformers']
-    for name in ('sherpa_onnx', 'ctranslate2', 'faster_whisper'):
+    if icon is not None:
+        args += ['--icon', str(icon)]
+    if sys.platform == 'darwin':
+        args += ['--target-arch', 'arm64']
+    for name in EXCLUDED:
+        args += ['--exclude-module', name]
+    for name in ('sherpa_onnx',):
         args += ['--collect-all', name]
     for name in PACKAGES:
         args += ['--copy-metadata', name]
-    try:
-        cudnn = metadata.distribution('nvidia-cudnn-cu12')
-    except metadata.PackageNotFoundError:
-        cudnn = None
-    if cudnn:
-        for item in cudnn.files or []:
-            if str(item).lower().endswith('.dll'):
-                args += ['--add-binary', str(cudnn.locate_file(item)) + os.pathsep + 'nvidia/cudnn/bin']
     args.append('worker_launcher.py')
     subprocess.run(args, cwd=ROOT, check=True)
     source = ROOT/'dist/asr2rpp-worker'
     destination = ROOT/'engines/python_worker'
     if destination.exists():
         shutil.rmtree(destination)
-    shutil.copytree(source,destination)
+    shutil.copytree(source,destination,symlinks=True)
     licenses = destination/'licenses'
     licenses.mkdir()
-    for name in PACKAGES + (('nvidia-cudnn-cu12',) if cudnn else ()):
+    for name in PACKAGES:
         dist = metadata.distribution(name)
         for item in dist.files or []:
             if any(x in str(item).lower() for x in ('license','notice','copying')):
@@ -54,5 +51,5 @@ def build_worker(icon):
             with path.open('rb') as handle:
                 manifest['files'][path.relative_to(destination).as_posix()] = hashlib.file_digest(handle,'sha256').hexdigest()
     (destination/'build-manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
-    subprocess.run([str(destination/'asr2rpp-worker.exe'),'--capabilities'],check=True)
+    subprocess.run([str(destination/('asr2rpp-worker.exe' if os.name == 'nt' else 'asr2rpp-worker')),'--capabilities'],check=True)
     return destination

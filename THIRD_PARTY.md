@@ -59,3 +59,11 @@ libraries, redistributed under their respective NVIDIA licenses. Their license
 notices are preserved with the runtime packs; these are not covered by ASR2RPP's
 MIT license. No NVIDIA driver or CUDA development toolkit is bundled. GPU
 features require a compatible NVIDIA driver; CPU/Vulkan builds remain available.
+
+## Standard distribution change (0.2.1)
+
+The standard Windows and macOS archives exclude faster-whisper, CTranslate2,
+NVIDIA CUDA, cuBLAS and cuDNN, including faster-whisper's VAD asset. Earlier
+references describe the optional 0.2 implementation, not current bundled files.
+The separate CPU sherpa-onnx worker remains bundled with its own notices.
+Windows GPU code is Vulkan; Apple Silicon GPU code uses the system Metal framework.

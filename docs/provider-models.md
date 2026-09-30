@@ -18,7 +18,7 @@ choices take precedence over a legacy TOML's workflow default.
 
 Place a uniquely named TOML in the directory opened by Settings → Advanced →
 Custom TOMLs. Definitions are reloaded before GO. Copy one of the bundled v2
-examples: qwen3-asr-06b.toml, reazonspeech-k2.toml, faster-whisper-base.toml.
+examples: qwen3-asr-06b.toml or reazonspeech-k2.toml.
 Use `provider`, `family`, `source`, `artifacts`, `capabilities` and `execution`.
 Declare `capabilities.timestamps = "none"` for text-only ASR. Choose timing in
 the GUI, not in the model file. `[parameters.<name>]` supplies a type, default,
@@ -39,7 +39,7 @@ worker. A format name such as ONNX or GGUF alone does not define preprocessing,
 network operators or decoding. The app probes actual compiled family/mode support.
 
 The bundled isolated worker implements sherpa-onnx (transducer, SenseVoice,
-Paraformer, NeMo CTC) and faster-whisper. A trusted third-party executable can use
+Paraformer, NeMo CTC) on CPU. Faster-whisper/CTranslate2 are not bundled. A trusted third-party executable can use
 `provider = "external_json"` and worker protocol 1, documented by worker_client.py
 and provider_worker.py. The executable is selected in settings or registered:
 
@@ -64,15 +64,35 @@ normal builds. Public API changes still require compiling and testing the helper
 
 Run Python tests, native PCM tests, optional-stage smoke and text-equivalence
 checks for every candidate update. Runtime binaries can be replaced/registered
-independently of the GUI; they must pass capability checks. CPU and Vulkan remain
-available beside CUDA. The CUDA build targets SM86/89 by default; other devices
-can use CPU/Vulkan or a separately built runtime with ASR2RPP_CUDA_ARCHS.
+independently of the GUI; they must pass capability checks. Standard Windows GPU
+execution uses Vulkan only; macOS Apple Silicon uses Metal only. CPU is available
+on both. These choices are enforced by the GUI, CLI and registry, including
+explicit custom executable paths. CUDA is not selected automatically on Windows.
 
-## Distribution
+## Distribution (0.2.1)
 
-The ZIP contains GUI, CLI, independent worker and native engines. No Python or
-PyTorch installation is needed. ASR/alignment/separation weights are downloaded
-on demand. Faster-whisper's own Silero VAD asset is included with its package.
-FFmpeg is acquired and verified separately as before. The application is unsigned.
-All DLLs in engines/cuda_runtime are part of the portable layout: do not move an
-EXE alone. Each model retains its own upstream license and use conditions.
+Windows ZIP: GUI, CLI, CPU/Vulkan native engines and a CPU-only sherpa worker.
+Apple Silicon ZIP: a self-contained ASR2RPP.app with CPU/Metal native engines,
+CLI in Contents/MacOS and assets in Contents/Resources. It targets macOS 14 or later;
+Intel/universal2 is not part of this build. The .app is ad-hoc signed, not notarized.
+Keep bundled definitions unmodified to preserve its signature. Add personal TOMLs
+under Settings → Advanced → Custom TOMLs (Library/Application Support/ASR2RPP on Mac).
+
+No Python, PyTorch, CUDA Toolkit, CTranslate2 or faster-whisper is required by
+these standard packages. ASR, alignment and VAD weights are downloaded on demand.
+FFmpeg is not redistributed: Windows can acquire it through the verified bootstrap;
+on macOS install FFmpeg separately and select it in Settings if needed. The app
+also recognizes /opt/homebrew/bin/ffmpeg and /usr/local/bin/ffmpeg for Finder launches.
+
+The faster-whisper example was moved to docs/optional-models. It is not an available
+model until the user explicitly installs/registers a compatible external worker.
+On Windows and macOS that optional path is CPU-only; a Vulkan or Metal flag does
+not make CTranslate2 support those backends. It is never downloaded or bundled
+by the standard build.
+
+CI builds both platforms, audits packaged files for accidental CUDA/CT2 inclusion,
+and tests the extracted archives. macOS signatures, arm64 slices and Mach-O library
+references are verified after relocation. The Metal hardware probe distinguishes
+compiled support from real inference: when the VM exposes no MTLDevice the report
+records GPU testing as skipped. ASR2RPP_REQUIRE_METAL_GPU=1 makes that a failure on
+a hardware runner. The absence of a GPU never counts as a successful Metal test.

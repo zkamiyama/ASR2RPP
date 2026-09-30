@@ -12,7 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def test_all_added_model_definitions_are_pinned_and_valid():
     catalog,errors=load_catalog(ROOT/'models')
     assert not errors
-    for name in ('qwen3-asr-06b','reazonspeech-k2','faster-whisper-base'):
+    for name in ('qwen3-asr-06b','reazonspeech-k2'):
         model=catalog[name]
         assert model.schema_version==2
         assert len(model.source['revision'])==40
@@ -41,23 +41,6 @@ def test_no_upstream_cli_source_patch_is_called_by_builder():
     lock=json.loads((ROOT/'native/versions.json').read_text())
     assert 'qwen3_asr' in lock['audio_cpp']['models']
     assert 'sense_asr' in lock['audio_cpp']['models']
-
-
-def test_cuda_dedup_records_dependencies_and_rejects_conflicts(tmp_path):
-    from tools.portable_runtime import collect_cuda
-    for folder in ('whisper_cpp-cuda','audio_cpp-cuda'):
-        directory=tmp_path/'engines'/folder;directory.mkdir(parents=True)
-        (directory/'cublas64_12.dll').write_bytes(b'same')
-        (directory/'build-manifest.json').write_text(json.dumps({'files':{'cublas64_12.dll':'old'}}))
-    moved=collect_cuda(tmp_path)
-    assert len(moved)==2
-    assert (tmp_path/'engines/cuda_runtime/cublas64_12.dll').read_bytes()==b'same'
-    for folder in ('whisper_cpp-cuda','audio_cpp-cuda'):
-        meta=json.loads((tmp_path/'engines'/folder/'build-manifest.json').read_text())
-        assert not meta['files'] and 'cublas64_12.dll' in meta['shared_cuda_runtime']
-    (tmp_path/'engines/audio_cpp-cuda/cublas64_12.dll').write_bytes(b'conflict')
-    with pytest.raises(ValueError,match='Conflicting'):
-        collect_cuda(tmp_path)
 
 
 def test_gui_preflight_failure_stops_before_model_download(tmp_path,monkeypatch):

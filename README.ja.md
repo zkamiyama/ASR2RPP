@@ -90,6 +90,22 @@ GOの前に再読込し、不正な定義や名前の競合は通知します。
 ## 0.2: timing and model runtimes / 時刻設定とモデル追加
 
 設定 → 時刻で、自動・モデル時刻・VAD発話区間・強制アライメントを選択できます。
-Qwen3-ASR、ReazonSpeech K2、faster-whisperの定義を追加しました。
+Qwen3-ASR、ReazonSpeech K2の定義を同梱しています。faster-whisperは標準配布から外しました。
 時刻の付与方法を変えるためにTOMLを編集する必要はありません。
 追加方法と実行環境の更新は [Provider/model guide](docs/provider-models.md) を参照してください。
+
+## 0.2.1: WindowsはVulkan、Apple SiliconはMetal
+
+WindowsのGPUはVulkanだけを使います。CPUも選べます。CUDA・cuDNN・cuBLAS・
+CTranslate2・faster-whisperは標準ZIPに含めず、実行環境の自動選択もCUDAを使いません。
+以前のCUDA設定はVulkanへ移行します。古い配布フォルダーへ上書きせず、新しい場所へ展開してください。
+
+macOSは **ASR2RPP-macOS-arm64.zip** を展開し、**ASR2RPP.app**を起動します。
+Apple Silicon／macOS 14以降向けで、GPUはMetal、フォールバックはCPUです。
+Intel Mac版／Universal 2ではありません。FFmpegは別途用意し、必要なら設定で場所を指定します。
+アプリはad-hoc署名のみでAppleによる公証はしていません。macOSの警告が出る場合は、
+配布元とチェックサムを確認し、「プライバシーとセキュリティ」で許可してください。
+独自モデルは設定から開くcustom-modelsへ追加し、署名された.app内のファイルは変更しないでください。
+
+CIでは実行ファイルのビルド・署名・展開後の起動と推論を検証します。Metalの実推論は
+CIマシンにGPUが公開されている場合だけ実施し、利用できない場合は検証結果へ区別して記録します。

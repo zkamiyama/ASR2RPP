@@ -16,24 +16,11 @@ _DLL_HANDLES = []
 
 
 def configure_libraries():
-    """Keep Windows dependency search local to this isolated worker."""
-    if os.name != 'nt':
-        return
-    roots = [Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent)),
-             Path(sys.executable).parent.parent/'cuda_runtime']
-    try:
-        dist = metadata.distribution('nvidia-cudnn-cu12')
-        roots.append(Path(dist.locate_file('nvidia/cudnn/bin')))
-    except metadata.PackageNotFoundError:
-        pass
-    if os.getenv('CUDA_PATH'):
-        roots.append(Path(os.environ['CUDA_PATH'])/'bin')
-    for root in list(roots):
-        roots.append(root/'nvidia/cudnn/bin')
-    directories = list(dict.fromkeys(str(p.resolve()) for p in roots if p.is_dir()))
-    for directory in directories:
-        _DLL_HANDLES.append(os.add_dll_directory(directory))
-    os.environ['PATH'] = os.pathsep.join(directories + [os.environ.get('PATH','')])
+    """Windows standard packages contain CPU sherpa only, no CUDA libraries."""
+    if os.name == 'nt':
+        root = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
+        if root.is_dir():
+            _DLL_HANDLES.append(os.add_dll_directory(str(root)))
 
 
 def version(package):
@@ -55,7 +42,7 @@ def capabilities():
         import ctranslate2
         devices = ['cpu']
         try:
-            if ctranslate2.get_cuda_device_count() > 0:
+            if sys.platform not in ('win32', 'darwin') and ctranslate2.get_cuda_device_count() > 0:
                 devices.append('cuda')
         except RuntimeError:
             pass
