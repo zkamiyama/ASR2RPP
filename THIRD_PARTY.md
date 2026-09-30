@@ -36,3 +36,26 @@ No REAPER binary, user media, credential, or system font is distributed with ASR
 Application and native-tool icon glyphs use Google Material Icons (Apache 2.0).
 ASR2RPP adds the background and colors. Full license and provenance are packaged
 in licenses/material-icons and assets/branding/NOTICE.md. No icon font is bundled.
+
+
+## Optional isolated ASR worker (0.2)
+
+The portable distribution includes sherpa-onnx and its native runtime (Apache-2.0),
+faster-whisper (MIT), CTranslate2 (MIT), ONNX Runtime (MIT), tokenizers
+(Apache-2.0), Hugging Face Hub (Apache-2.0), and their redistributed dependency
+notices under `engines/python_worker/licenses`. Python package versions are
+recorded in that worker's build manifest. ASR model weights are not included;
+each downloaded model's upstream license and usage conditions still apply.
+Faster-whisper's packaged Silero VAD asset is included with that component.
+
+PyAV (BSD-3-Clause) includes FFmpeg shared libraries in its binary wheel. The
+statement that FFmpeg is not bundled refers to the separately acquired
+`ffmpeg.exe`, not to PyAV's shared libraries. Preserve PyAV/FFmpeg notices and
+source information distributed with that wheel. Python application source and
+build recipes are available in this repository.
+
+CUDA-enabled packages include NVIDIA CUDA runtime/cuBLAS and cuDNN runtime
+libraries, redistributed under their respective NVIDIA licenses. Their license
+notices are preserved with the runtime packs; these are not covered by ASR2RPP's
+MIT license. No NVIDIA driver or CUDA development toolkit is bundled. GPU
+features require a compatible NVIDIA driver; CPU/Vulkan builds remain available.

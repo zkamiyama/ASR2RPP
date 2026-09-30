@@ -76,3 +76,28 @@ def test_gui_preflight_failure_stops_before_model_download(tmp_path,monkeypatch)
     with pytest.raises(ValueError,match='Unsupported compiled family'):
         worker._prepare_models()
     assert not calls
+
+
+def test_verified_digest_does_not_trust_unchanged_metadata(tmp_path,monkeypatch):
+    import hashlib
+    from asr2rpp.catalog import verified_digest
+    path=tmp_path/'asset';path.write_bytes(b'first')
+    original=Path.stat
+    frozen=path.stat()
+    monkeypatch.setattr(Path,'stat',lambda self,*a,**kw: frozen if self==path else original(self,*a,**kw))
+    assert verified_digest(path,threading.Event())==hashlib.sha256(b'first').hexdigest()
+    path.write_bytes(b'other')
+    assert verified_digest(path,threading.Event())==hashlib.sha256(b'other').hexdigest()
+
+
+def test_incomplete_native_words_keep_whole_native_segment():
+    from types import SimpleNamespace as N
+    from asr2rpp.provider_worker import faster_units
+    segment=N(start=1.0,end=3.0,text='two words',words=[N(start=1.0,end=2.0,word='two'),N(start=2.0,end=2.0,word=' words')])
+    units=faster_units(segment)
+    assert [(u.start,u.end,u.text,u.granularity) for u in units]==[(1.0,3.0,'two words','segment')]
+    segment.words[1].end=3.0
+    assert len(faster_units(segment))==2
+    segment.words=[];segment.end=segment.start
+    with pytest.raises(ValueError,match='no complete interval'):
+        faster_units(segment)

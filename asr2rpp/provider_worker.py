@@ -129,6 +129,21 @@ def load_faster(config):
             'compute_type':model.model.compute_type, 'version':version('faster-whisper'), 'batch_size':batch}
 
 
+
+def faster_units(segment):
+    """Keep words only when native boundaries are complete; never invent ends."""
+    from .domain import Unit
+    words = segment.words or []
+    valid = lambda start,end: (type(start) in (int,float) and type(end) in (int,float)
+                               and math.isfinite(start) and math.isfinite(end)
+                               and 0 <= start < end)
+    if words and all(valid(w.start,w.end) for w in words):
+        return [Unit(w.start,w.end,w.word,granularity='word') for w in words]
+    if valid(segment.start,segment.end):
+        return [Unit(segment.start,segment.end,segment.text)]
+    raise ValueError('Native ASR returned no complete interval for a text segment')
+
+
 def run(config, requests, output):
     from .domain import Unit
     provider = config['provider']
@@ -183,10 +198,8 @@ def run(config, requests, output):
                 texts = []
                 for segment in segments:
                     texts.append(segment.text)
-                    if segment.words:
-                        units.extend(Unit(w.start, w.end, w.word, granularity='word') for w in segment.words)
-                    else:
-                        units.append(Unit(segment.start, segment.end, segment.text))
+                    if not config.get('text_only'):
+                        units.extend(faster_units(segment))
                 text = ''.join(texts).strip()
                 raw = {'language':info.language, 'language_probability':info.language_probability}
                 if config.get('text_only'):

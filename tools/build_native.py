@@ -106,7 +106,8 @@ def build(name, backend='cpu'):
     output = source / ('build-' + backend + ('-' + os.environ['ASR2RPP_BUILD_SUFFIX'] if os.getenv('ASR2RPP_BUILD_SUFFIX') else ''))
     vulkan = 'ON' if backend == 'vulkan' else 'OFF'
     cuda = 'ON' if backend == 'cuda' else 'OFF'
-    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF',
+    flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CCACHE=OFF',
+             '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
              f'-DGGML_CUDA={cuda}', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
     if backend == 'cuda':
         flags.append('-DCMAKE_CUDA_ARCHITECTURES=' + os.getenv('ASR2RPP_CUDA_ARCHS', '86;89'))

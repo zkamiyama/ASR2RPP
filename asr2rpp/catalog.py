@@ -265,24 +265,15 @@ def local_model_path(model):
     return path
 
 
-# installed.json is provenance, not proof of integrity. Verify once per process
-# and invalidate memoization on any change to the actual file's stat identity.
-_VERIFIED_FILES = {}
-
-
+# File timestamps are not a content identity (notably Windows fast same-size
+# rewrites). Verify actual bytes; resolve once per stage/session, not per region.
 def verified_digest(path, cancel):
-    stat = path.stat()
-    key = (str(path.resolve()), stat.st_dev, stat.st_ino, stat.st_size,
-           stat.st_mtime_ns, stat.st_ctime_ns)
-    if key not in _VERIFIED_FILES:
-        sha = digest(path, cancel)
-        after = path.stat()
-        if (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-            raise ValueError('Model changed during verification')
-        if len(_VERIFIED_FILES) > 1024:
-            _VERIFIED_FILES.clear()
-        _VERIFIED_FILES[key] = sha
-    return _VERIFIED_FILES[key]
+    before = path.stat()
+    sha = digest(path, cancel)
+    after = path.stat()
+    if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
+        raise ValueError('Model changed during verification')
+    return sha
 
 
 def _installed_valid(model, directory, state, cancel):
@@ -335,7 +326,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
                 files[name] = verified_digest(file, cancel)
         sha = files[path.name] if path.is_file() else hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
         return path, {'local_path': str(path), 'sha256': sha, 'files': files,
-                      'verification': 'sha256 (process-local stat-identity memoization)'}
+                      'verification': 'sha256 (content rechecked at model resolution)'}
     identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
     lock = weights_root() / model.id / (identity + '.lock')
     with file_lock(lock, cancel):
@@ -359,7 +350,7 @@ def _resolve_remote_model(model, cancel, progress, download=False, keep_source=F
             keep_source and checkpoint_name and
             state.get('files', {}).get(checkpoint_name, {}).get('retained') is False)
         if installed_valid and not restore_source:
-            state['verification'] = 'sha256 (process-local stat-identity memoization)'
+            state['verification'] = 'sha256 (content rechecked at model resolution)'
             return directory / entry, state
     if not download:
         raise FileNotFoundError(f'{model.id}: model not installed. Use Download models / models install first.')
