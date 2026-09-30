@@ -89,7 +89,10 @@ def test_runtime_preferences_migrate_only_unavailable_devices(tmp_path,monkeypat
     from asr2rpp import gui_dcc
     app=QApplication.instance() or QApplication([])
     monkeypatch.setenv('ASR2RPP_DISABLE_RUNTIME_BOOTSTRAP','1')
-    monkeypatch.setattr(sys,'platform',platform)
+    from types import SimpleNamespace
+    from asr2rpp import platforms
+    # Simulate backend policy only; do not make Qt/ctypes believe Linux is Windows.
+    monkeypatch.setattr(platforms, 'sys', SimpleNamespace(platform=platform))
     prefs=QSettings(str(tmp_path/'prefs.ini'),QSettings.Format.IniFormat)
     prefs.setValue('runtime_default/whisper_cpp',previous)
     prefs.setValue('runtime_default/audio_cpp',previous)
