@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tag": "v0.3.0",
+  "source_commit": "af5dca873ab5d44c779f2c3e079ed81b132cefdb",
+  "validation_sha256": "f25f54e5f8ac8e0e38b4e3bf010d7e5c465ef97ff73c2c544d40520e3584ebb2",
+  "packages": {
+    "windows": {
+      "artifact_id": 11125020774,
+      "run_id": 36773381932,
+      "sha256": "80fc00d07aa0867103881f0317ed5b4a5572119bb5b9048e2892e78546b44219"
+    },
+    "macos": {
+      "artifact_id": 11124753686,
+      "run_id": 36773381932,
+      "sha256": "8d58b7e41bf7a1b0706d88f036a5f2086a240c9bfe5702b5c46b1e27b22a8285"
+    }
+  }
+}
