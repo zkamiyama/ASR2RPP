@@ -64,7 +64,7 @@ run('unicode-whisper', ['run', unicode_input, '--asr', 'whisper-base', '--asr-de
                         '--asr-language', 'en', '--duration', '8',
                         '--output-dir', reports / '日本語出力'], 120)
 # The new policy is data-driven even for Whisper Base; no Anime model-ID branch.
-source_bin = next((Path(os.environ['ASR2RPP_HOME'])/'weights'/'whisper-base').rglob('ggml-base.bin'))
+source_bin = next((Path(os.getenv('ASR2RPP_WEIGHTS_DIR', str(Path(os.environ['ASR2RPP_HOME'])/'weights')))/'whisper-base').rglob('ggml-base.bin'))
 profile = Path(os.environ['ASR2RPP_HOME'])/'custom-models'/'policy-base.toml'
 profile.parent.mkdir(parents=True, exist_ok=True)
 assert not (Path(os.environ['ASR2RPP_HOME'])/'models').exists(), 'Bundled templates must not be auto-copied'

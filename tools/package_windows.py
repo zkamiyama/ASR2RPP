@@ -54,8 +54,11 @@ run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', 
     'cli_launcher.py')
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
+print('Packaging: copying isolated runtime packs', flush=True)
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
+print('Packaging: verifying runtime hashes', flush=True)
 verify_manifests(package)
+print('Packaging: deduplicating shared CUDA libraries', flush=True)
 collect_cuda(package)
 required_native = [
     package / 'engines/whisper_cpp-cpu/whisper-cli.exe',
@@ -74,6 +77,7 @@ if os.getenv('ASR2RPP_REQUIRE_CUDA') == '1':
 missing = [str(path) for path in required_native if not path.is_file()]
 if missing:
     raise RuntimeError('Missing packaged native runtime(s): ' + ', '.join(missing))
+print('Packaging: verifying executable icons and notices', flush=True)
 icon_records = apply_icons(package, ROOT/'build/icons', reports/'executable-icons.json')
 shutil.copy2(reports/'executable-icons.json', package/'icon-manifest.json')
 copy_licenses(package)
@@ -91,6 +95,7 @@ if (package/'model-templates').exists() or (package/'_internal/models').exists()
 for file in package.rglob('*'):
     if file.is_file() and file.suffix.lower() in {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}:
         file.unlink()
+print('Packaging: frozen CLI/GUI smoke tests', flush=True)
 run(package / 'asr2rpp-cli.exe', 'doctor')
 run(package / 'asr2rpp-cli.exe', 'models', 'list')
 listed = subprocess.check_output([str(package/'asr2rpp-cli.exe'), 'models', 'list', '--json'], text=True, encoding='utf-8')
@@ -131,6 +136,7 @@ commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=Tr
     'timing_selection': 'user-settings', 'upstream_cli_modified': False, 'ffmpeg_bundled': False, 'model_definitions': 'exe-adjacent/models',
     'icons_verified_executables': len(icon_records), 'documentation': ['README.md', 'README.ja.md'],
     'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download'}, indent=2), encoding='utf-8')
+print('Packaging: compressing verified application folder', flush=True)
 archive = Path(shutil.make_archive(str(ROOT/'dist/ASR2RPP-Windows-x64'), 'zip', ROOT/'dist', 'ASR2RPP'))
 with archive.open('rb') as handle:
     archive_hash = hashlib.file_digest(handle, 'sha256').hexdigest()

@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 import json
 import math
+from numbers import Real
 import os
 import sys
 import time
@@ -134,13 +135,13 @@ def faster_units(segment):
     """Keep words only when native boundaries are complete; never invent ends."""
     from .domain import Unit
     words = segment.words or []
-    valid = lambda start,end: (type(start) in (int,float) and type(end) in (int,float)
+    valid = lambda start,end: (isinstance(start,Real) and not isinstance(start,bool) and isinstance(end,Real) and not isinstance(end,bool)
                                and math.isfinite(start) and math.isfinite(end)
                                and 0 <= start < end)
     if words and all(valid(w.start,w.end) for w in words):
-        return [Unit(w.start,w.end,w.word,granularity='word') for w in words]
+        return [Unit(float(w.start),float(w.end),w.word,granularity='word') for w in words]
     if valid(segment.start,segment.end):
-        return [Unit(segment.start,segment.end,segment.text)]
+        return [Unit(float(segment.start),float(segment.end),segment.text)]
     raise ValueError('Native ASR returned no complete interval for a text segment')
 
 

@@ -113,3 +113,32 @@ def test_packaging_rejects_inconsistent_runtime_copy(tmp_path):
     binary.write_bytes(b'modified')
     with pytest.raises(ValueError,match='Runtime integrity'):
         verify_manifests(tmp_path)
+
+
+def test_faster_units_accept_numpy_reals_and_emit_plain_floats():
+    import numpy as np
+    from types import SimpleNamespace as N
+    from asr2rpp.provider_worker import faster_units
+    segment=N(start=np.float64(0),end=np.float64(1),text='speech',
+              words=[N(start=np.float64(.1),end=np.float32(.9),word='speech')])
+    units=faster_units(segment)
+    assert units[0].granularity=='word'
+    assert type(units[0].start) is type(units[0].end) is float
+    json.dumps([dict(start=u.start,end=u.end) for u in units])
+
+
+def test_diar_request_sequence_omits_language_and_text(tmp_path,monkeypatch):
+    from asr2rpp.catalog import Model
+    from asr2rpp.providers import Request
+    from asr2rpp import native_batches
+    source=tmp_path/'speech.wav';source.write_bytes(b'fixture')
+    model=Model('diar','audio_cpp','diar',{'path':str(source)},family='nemotron_3_diar')
+    monkeypatch.setattr(native_batches,'executable',lambda *a:Path('audiocpp_cli.exe'))
+    def execute(args,*unused):
+        sequence=json.loads(Path(args[args.index('--request-sequence')+1]).read_text(encoding='utf-8'))
+        assert sequence['requests']==[{'id':'q0','audio':str(source.resolve()),'options':{}}]
+        output=Path(args[args.index('--turns-out')+1]);output.with_name('native_q0.json').write_text('[{"start":0,"end":1,"speaker":"A"}]')
+    monkeypatch.setattr(native_batches,'run_process',execute)
+    result=native_batches.audio_many(model,source,[Request('q0',source)],tmp_path/'work',
+        {'device':'cpu','language':'ja'},threading.Event(),lambda _:None,1024)
+    assert not result.errors and result.results['q0'].units[0].speaker=='A'

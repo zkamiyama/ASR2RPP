@@ -109,9 +109,13 @@ def audio_many(model, weights, requests, work, options, cancel, progress, max_by
                     args += ['--request-option',f'{key}={scalar(value)}']
             else:
                 sequence = folder/'requests.json'
-                sequence.write_text(json.dumps({'requests':[dict(id=r.id,audio=str(r.audio.resolve()),
-                    text=r.text, language=options.get('language') or model.defaults.get('language','ja'),
-                    options=params) for r in chunk]},ensure_ascii=False,allow_nan=False),encoding='utf-8')
+                payload = []
+                for request in chunk:
+                    item = dict(id=request.id, audio=str(request.audio.resolve()), options=params)
+                    if model.task in {'asr', 'align'}:
+                        item.update(text=request.text, language=options.get('language') or model.defaults.get('language','ja'))
+                    payload.append(item)
+                sequence.write_text(json.dumps({'requests':payload},ensure_ascii=False,allow_nan=False),encoding='utf-8')
                 args = base + ['--mode','offline','--request-sequence',str(sequence),output_flag,str(output)]
             log = folder/'engine.log'
             error = None
