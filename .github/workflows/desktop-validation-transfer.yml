@@ -1,0 +1,59 @@
+name: Desktop validation artifact handoff
+on:
+  push:
+    branches: [feat/provider-timing-runtime]
+    paths: [.github/workflows/desktop-validation-transfer.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  handoff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare authorized download for the exact Windows candidate
+        shell: python
+        env:
+          GH_DOWNLOAD_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, time, urllib.request, urllib.error
+          from pathlib import Path
+          api = 'https://api.github.com/repos/zkamiyama/ASR2RPP'
+          run_id = 36769470372
+          commit = '5d8a453025363b907e2ec87106111d128a39bbed'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_DOWNLOAD_TOKEN'], 'Accept': 'application/vnd.github+json'}
+          def get(path):
+              with urllib.request.urlopen(urllib.request.Request(api+path, headers=headers), timeout=60) as r:
+                  return json.load(r)
+          artifact = None
+          for _ in range(48):
+              artifacts = get(f'/actions/runs/{run_id}/artifacts')['artifacts']
+              artifact = next((a for a in artifacts if a['name'] == f'ASR2RPP-Windows-x64-{run_id}'), None)
+              if artifact:
+                  break
+              time.sleep(15)
+          if not artifact or artifact.get('expired') or artifact['workflow_run']['head_sha'] != commit:
+              raise RuntimeError('The exact expected artifact is not ready')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          try:
+              urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(artifact['archive_download_url'], headers=headers), timeout=60)
+          except urllib.error.HTTPError as e:
+              if e.code != 302:
+                  raise
+              location = e.headers['Location']
+          else:
+              raise RuntimeError('Expected GitHub artifact download redirect')
+          if not location.startswith('https://'):
+              raise RuntimeError('Unsafe redirect')
+          Path('handoff.json').write_text(json.dumps({'repository':'zkamiyama/ASR2RPP','run_id':run_id,'artifact_id':artifact['id'],'commit':commit,'sha256':artifact['digest'],'url':location}))
+          print('Prepared short-lived download metadata; authorization headers are not exported.')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-handoff-${{ github.run_id }}
+          path: handoff.json
+          retention-days: 1
