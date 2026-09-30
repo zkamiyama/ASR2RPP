@@ -55,3 +55,25 @@ def test_excluded_version_metadata_does_not_leak_from_build_environment(tmp_path
     names = {p.name for p in worker.rglob('*.dist-info')}
     assert names == {'sherpa_onnx-1.13.8.dist-info', 'numpy-2.5.dist-info'}
     assert external.is_dir()
+
+
+def test_native_fixed_language_contract_omits_unsupported_request_field():
+    from asr2rpp.catalog import Model
+    from asr2rpp.native_profile import request_fields
+    model = Model('fixed', 'audio_cpp', 'asr', {'path': 'weights'},
+                  family='fixed', execution={'pass_language': False}, defaults={'language': 'en'})
+    model.validate()
+    assert request_fields(model, {'language': 'ja'}) == {}
+    model.execution['pass_language'] = 'false'
+    with pytest.raises(ValueError, match='boolean'): model.validate()
+
+
+def test_native_speakers_are_actually_requested_and_verified():
+    fixture, device, argv = case_arguments('vibe', {'task': 'asr', 'capabilities': {'speakers': True}},
+        'vulkan', {'ja': Path('ja.wav'), 'en': Path('en.wav')}, Path('out'))
+    assert argv[argv.index('--speaker-source') + 1] == 'native'
+
+
+def test_stock_whisper_diagnostics_are_not_suppressed():
+    source = (Path(__file__).resolve().parents[1] / 'asr2rpp/native_batches.py').read_text(encoding='utf-8')
+    assert "'-np'" not in source

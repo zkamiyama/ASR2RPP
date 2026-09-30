@@ -12,7 +12,7 @@ speakers = true
 
 [execution]
 mode = "offline"
-output = "segments"
+output = "turns"
 max_batch_items = 1
 
 [source]

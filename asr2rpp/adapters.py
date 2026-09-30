@@ -356,7 +356,7 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
             return infer_vad_whisper(model, weights, audio, work, options, cancel, progress)
         prefix = work / 'asr'
         argv = [str(binary), '-m', str(weights), '-f', str(audio), '-l', language,
-                '-t', str(threads), '-ojf', '-of', str(prefix), '-np']
+                '-t', str(threads), '-ojf', '-of', str(prefix)]
         if device == 'cpu':
             argv.append('-ng')
         elif device not in {'auto', 'vulkan', 'cuda', 'metal'}:
@@ -365,25 +365,17 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         run_process(argv, cancel, progress, work / 'engine.log')
         result = parse_whisper(json.loads(prefix.with_suffix('.json').read_text(encoding='utf-8-sig')))
     else:
-        output = work / 'timed.json'
-        # Nemotron's offline encoder builds a full-context attention graph whose
-        # memory grows quadratically with long audio. Its native streaming session
-        # keeps a bounded cache and still returns token timestamps, so use it for
-        # all Nemotron ASR requests rather than risking multi-gigabyte graph OOM.
-        mode = 'streaming' if model.task == 'asr' and model.family == 'nemotron_asr' else 'offline'
+        from .native_profile import profile, request_fields
+        contract = profile(model)
+        output = work / ('text.txt' if contract.output == 'text' else 'timed.json')
         argv = [str(binary), '--task', model.task, '--family', model.family,
                 '--model', str(weights), '--backend', 'best' if device == 'auto' else device,
-                '--mode', mode, '--audio', str(audio), '--threads', str(threads)]
-        if model.task == 'diar':
-            argv += ['--turns-out', str(output)]
-        else:
-            argv += ['--language', language]
-            if model.task == 'align':
-                argv += ['--text', transcript, '--words-out', str(output)]
-            elif model.family == 'vibevoice_asr':
-                argv += ['--segments-out', str(output), '--text-out', str(work / 'text.txt')]
-            else:
-                argv += ['--words-out', str(output), '--text-out', str(work / 'text.txt')]
+                '--mode', contract.mode, '--audio', str(audio), '--threads', str(threads)]
+        for key, value in request_fields(model, options, transcript).items():
+            argv += ['--' + key, value]
+        flag = {'text': '--text-out', 'words': '--words-out',
+                'segments': '--segments-out', 'turns': '--turns-out'}[contract.output]
+        argv += [flag, str(output)]
         for key, value in parameters.items():
             if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
                 raise ValueError('Invalid parameter name')
@@ -392,7 +384,12 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
         run_process(argv, cancel, progress, work / 'engine.log')
         if not output.exists():
             raise ValueError('Engine did not produce timestamps. Use a supported timed model; no times were fabricated.')
-        result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
+        if contract.output == 'text':
+            from .text_requests import checked_text
+            text = checked_text(output)
+            result = Result([], {'text': text}, text)
+        else:
+            result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
     (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in result.units], ensure_ascii=False, indent=2), encoding='utf-8')
     return result
 

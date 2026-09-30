@@ -11,6 +11,7 @@ timestamps = "none"
 speakers = false
 
 [execution]
+pass_language = false
 mode = "offline"
 output = "text"
 max_batch_items = 16

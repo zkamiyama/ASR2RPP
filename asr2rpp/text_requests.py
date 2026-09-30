@@ -28,15 +28,14 @@ def infer_text_requests(model, weights, requests, work, options, cancel, progres
     work = Path(work)
     results = {}
     # Bound command metadata and native batch buffering. Audio windows are <=28s.
-    from .native_profile import profile
+    from .native_profile import profile, request_fields
     maximum = profile(model).max_batch_items
     for batch_no, offset in enumerate(range(0, len(requests), maximum)):
         chunk = requests[offset:offset + maximum]
         folder = work / f'text-{batch_no}'
         folder.mkdir(parents=True, exist_ok=True)
         payload = {'requests': [dict(id=r['id'], audio=str(r['audio'].resolve()),
-            language=options.get('language') or model.defaults.get('language', 'ja'),
-            options=params) for r in chunk]}
+            options=params, **request_fields(model, options)) for r in chunk]}
         request_file = folder / 'requests.json'
         request_file.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding='utf-8')
         output = folder / 'text.txt'

@@ -34,6 +34,8 @@ def case_arguments(model_id, definition, device, fixtures, output):
     base = ['run', str(fixture), '--threads', '4', '--output-dir', str(output)]
     if task == 'asr':
         base += ['--asr', model_id, '--asr-device', selected_device, '--timing', 'auto']
+        if definition.get('capabilities', {}).get('speakers'):
+            base += ['--speaker-source', 'native']
     else:
         base += ['--asr', 'whisper-base', '--asr-device', 'cpu']
         if task == 'align':
@@ -50,7 +52,7 @@ def case_arguments(model_id, definition, device, fixtures, output):
     return fixture, selected_device, base
 
 
-def validate_output(output, task, text_only, source_hash, duration):
+def validate_output(output, task, text_only, source_hash, duration, speakers_required=False):
     manifests = list(output.glob('*.asr2rpp/manifest.json'))
     projects = list(output.glob('*.rpp'))
     if len(manifests) != 1 or len(projects) != 1:
@@ -73,7 +75,7 @@ def validate_output(output, task, text_only, source_hash, duration):
         raise ValueError('Text-only ASR did not use honest VAD-region timing')
     if task == 'align' and not any(u['method'] == 'forced_alignment' for u in units):
         raise ValueError('Aligner did not produce aligned units')
-    if task == 'diar' and not any(u.get('speaker') for u in units):
+    if (task == 'diar' or speakers_required) and not any(u.get('speaker') for u in units):
         raise ValueError('Diarizer did not produce speaker labels')
     if task == 'sep' and not list(output.glob('*_vocals.wav')):
         raise ValueError('Separator did not preserve the processed reference')
@@ -182,7 +184,7 @@ def main():
                 raise ValueError('Inference failed; raw diagnostics retained')
             record.update(validate_output(output, d['task'],
                           d['task'] == 'asr' and d.get('capabilities', {}).get('timestamps') == 'none',
-                          hashes[key], durations[key]))
+                          hashes[key], durations[key], d.get('capabilities', {}).get('speakers', False)))
             gpu_lines = []
             for log in output.rglob('*.log'):
                 for line in log.read_text(encoding='utf-8', errors='replace').splitlines():

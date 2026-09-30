@@ -5,7 +5,7 @@ import shutil
 from .catalog import checkpoint
 from .providers import Batch, _save
 from .domain import Result
-from .native_profile import profile
+from .native_profile import profile, request_fields
 from .adapters import (executable,run_process,parse_whisper,parse_audio,split_engine_parameters,
     validate_model_parameter_constraints,whisper_parameter_args,audio_session_args,scalar)
 
@@ -38,7 +38,7 @@ def whisper_many(model, weights, requests, work, options, cancel, progress, max_
     if session:
         raise ValueError('Whisper does not accept audio.cpp session options')
     base = [str(binary),'-m',str(weights),'-l',options.get('language') or model.defaults.get('language','ja'),
-            '-t',str(options.get('threads',4)),'-ojf','-np']
+            '-t',str(options.get('threads',4)),'-ojf']
     if options.get('device') == 'cpu': base.append('-ng')
     base += whisper_parameter_args(params)
     features = capabilities(binary, work, cancel, progress)
@@ -104,7 +104,9 @@ def audio_many(model, weights, requests, work, options, cancel, progress, max_by
             streaming = contract.mode == 'streaming' and not options.get('_text_only')
             if streaming:
                 args = base + ['--mode','streaming','--audio',str(chunk[0].audio),
-                    '--language',options.get('language') or model.defaults.get('language','ja'),output_flag,str(output)]
+                    output_flag,str(output)]
+                if contract.pass_language:
+                    args += ['--language', options.get('language') or model.defaults.get('language', 'ja')]
                 for key,value in params.items():
                     args += ['--request-option',f'{key}={scalar(value)}']
             else:
@@ -112,8 +114,7 @@ def audio_many(model, weights, requests, work, options, cancel, progress, max_by
                 payload = []
                 for request in chunk:
                     item = dict(id=request.id, audio=str(request.audio.resolve()), options=params)
-                    if model.task in {'asr', 'align'}:
-                        item.update(text=request.text, language=options.get('language') or model.defaults.get('language','ja'))
+                    item.update(request_fields(model, options, request.text))
                     payload.append(item)
                 sequence.write_text(json.dumps({'requests':payload},ensure_ascii=False,allow_nan=False),encoding='utf-8')
                 args = base + ['--mode','offline','--request-sequence',str(sequence),output_flag,str(output)]

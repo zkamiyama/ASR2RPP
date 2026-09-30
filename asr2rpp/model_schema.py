@@ -41,8 +41,12 @@ def validate_extensions(model):
             raise ValueError('An artifact must be a file, not a directory')
     if not isinstance(model.execution, dict):
         raise ValueError('execution must be a table')
-    if set(model.execution) - {'mode', 'output', 'max_batch_items', 'max_audio_seconds', 'protocol'}:
+    if set(model.execution) - {'mode', 'output', 'max_batch_items', 'max_audio_seconds', 'protocol', 'pass_language'}:
         raise ValueError('Unknown execution fields')
+    if type(model.execution.get('pass_language', True)) is not bool:
+        raise ValueError('execution.pass_language must be boolean')
+    if 'pass_language' in model.execution and model.runtime != 'audio_cpp':
+        raise ValueError('execution.pass_language applies to audio_cpp only')
     if model.execution.get('mode', 'offline') not in ('offline', 'streaming'):
         raise ValueError('execution.mode must be offline or streaming')
     if model.execution.get('output', 'segments') not in ('text', 'words', 'segments', 'turns'):

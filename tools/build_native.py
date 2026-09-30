@@ -116,7 +116,7 @@ def build(name, backend='cpu'):
     if os.name == 'nt':
         # Upstream prompts contain CJK literals. Do not interpret source bytes
         # using the developer machine's ANSI codepage (CP932/CP1252).
-        flags += ['-DCMAKE_C_FLAGS=/utf-8', '-DCMAKE_CXX_FLAGS=/utf-8']
+        flags += ['-DCMAKE_C_FLAGS=/utf-8', '-DCMAKE_CXX_FLAGS=/utf-8 /EHsc']
     if sys.platform == 'darwin':
         flags += ['-DCMAKE_OSX_ARCHITECTURES=arm64',
                   '-DCMAKE_OSX_DEPLOYMENT_TARGET=' + os.getenv('MACOSX_DEPLOYMENT_TARGET', '14.0'),
