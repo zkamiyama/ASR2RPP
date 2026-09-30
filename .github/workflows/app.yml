@@ -103,7 +103,7 @@ jobs:
           retention-days: 7
   macos-arm64:
     needs: test
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]') || contains(github.event.head_commit.message, '[mac-build]')
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -134,6 +134,7 @@ jobs:
           cmake --build build/pcm-tests
           ctest --test-dir build/pcm-tests --output-on-failure
       - uses: actions/cache@v4
+        id: mac-native
         with:
           path: |
             engines/whisper_cpp-cpu/
@@ -145,6 +146,16 @@ jobs:
         run: python tools/build_native.py whisper_cpp:cpu whisper_cpp:metal audio_cpp:cpu audio_cpp:metal
         env:
           ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
+      - name: Preserve verified native build before package tests
+        if: steps.mac-native.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            engines/whisper_cpp-cpu/
+            engines/whisper_cpp-metal/
+            engines/audio_cpp-cpu/
+            engines/audio_cpp-metal/
+          key: mac-arm64-metal-v1-${{ hashFiles('tools/build_native.py', 'native/**') }}
       - name: Freeze, ad-hoc sign and relocate-test the complete app
         run: python tools/package_macos.py
       - uses: actions/upload-artifact@v4
