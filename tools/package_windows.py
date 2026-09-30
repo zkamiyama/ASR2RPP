@@ -10,7 +10,7 @@ import sys
 import time
 from build_icons import build_icons
 from brand_windows import apply_icons
-from portable_runtime import collect_cuda
+from portable_runtime import collect_cuda, verify_manifests
 from package_worker import build_worker
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +55,7 @@ run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', 
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
+verify_manifests(package)
 collect_cuda(package)
 required_native = [
     package / 'engines/whisper_cpp-cpu/whisper-cli.exe',

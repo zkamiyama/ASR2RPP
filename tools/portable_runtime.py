@@ -44,3 +44,21 @@ def collect_cuda(package):
     if moved:
         (shared/'manifest.json').write_text(json.dumps({'files':{p.name:sha(p) for p in shared.glob('*.dll')}},indent=2),encoding='utf-8')
     return moved
+
+
+def verify_manifests(package):
+    """Reject partial/copied-while-changing packs before modifying branding."""
+    engines = Path(package)/'engines'
+    count = 0
+    for manifest in engines.glob('*/build-manifest.json'):
+        metadata = json.loads(manifest.read_text(encoding='utf-8'))
+        for name, expected in metadata.get('files',{}).items():
+            path = (manifest.parent/Path(name.replace('\\','/'))).resolve()
+            if not path.is_relative_to(manifest.parent.resolve()) or not path.is_file() or sha(path) != expected:
+                raise ValueError('Runtime integrity check failed: ' + str(path))
+            count += 1
+        for info in metadata.get('shared_cuda_runtime',{}).values():
+            path = (engines/'cuda_runtime'/info['file']).resolve()
+            if not path.is_relative_to((engines/'cuda_runtime').resolve()) or not path.is_file() or sha(path) != info['sha256']:
+                raise ValueError('Shared CUDA dependency integrity check failed')
+    return count

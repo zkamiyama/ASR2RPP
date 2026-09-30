@@ -101,3 +101,15 @@ def test_incomplete_native_words_keep_whole_native_segment():
     segment.words=[];segment.end=segment.start
     with pytest.raises(ValueError,match='no complete interval'):
         faster_units(segment)
+
+
+def test_packaging_rejects_inconsistent_runtime_copy(tmp_path):
+    import hashlib
+    from tools.portable_runtime import verify_manifests
+    directory=tmp_path/'engines/worker';directory.mkdir(parents=True)
+    binary=directory/'worker.exe';binary.write_bytes(b'original')
+    (directory/'build-manifest.json').write_text(json.dumps({'files':{'worker.exe':hashlib.sha256(b'original').hexdigest()}}))
+    assert verify_manifests(tmp_path)==1
+    binary.write_bytes(b'modified')
+    with pytest.raises(ValueError,match='Runtime integrity'):
+        verify_manifests(tmp_path)
