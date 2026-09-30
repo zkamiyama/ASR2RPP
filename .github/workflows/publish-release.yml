@@ -1,0 +1,25 @@
+name: Publish verified desktop release
+on:
+  push:
+    branches: [main, feat/provider-timing-runtime]
+    paths: [release-ready.json]
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify approval, exact CI archives and model matrix; publish stable release
+        run: python tools/publish_release.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
