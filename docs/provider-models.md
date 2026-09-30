@@ -1,98 +1,101 @@
-# Model and runtime extension (0.2)
+# Custom models and independent runtimes
 
-## Timing belongs to the user
+[Quick start](../README.md) · [日本語の具体例](custom-models.ja.md) · [Model catalog](models.md)
 
-Settings → Timing selects Automatic, Native model intervals, VAD speech regions,
-or Forced alignment. The alignment model is selected in the main inspector.
-VAD intervals are deliberately labelled speech-region timing, not word timing.
-The optional “VAD before alignment” switch bounds requests for long/coarse output.
-Native timing cannot be selected for a text-only model. An inconsistent stage
-combination fails before inference rather than silently changing the workflow.
+## What a TOML can and cannot add
 
-A model TOML describes capabilities, artifacts and safe scalar parameters. It
-cannot execute a shell command, import Python, install dependencies, or register
-an executable. Old schema-1 definitions remain accepted. Explicit GUI timing
-choices take precedence over a legacy TOML's workflow default.
+A TOML describes weights, model capabilities and scalar options. Adding another checkpoint of a supported architecture normally needs no application changes.
+It does **not** implement new operators, preprocessing, tokenization or decoding. GGUF/ONNX are formats, not a universal model implementation.
+A new architecture needs a runtime/provider implementing it. Standard Windows GPU execution is Vulkan; Apple Silicon GPU execution is Metal. CPU works on both.
 
-## TOML-only models
+Open **Settings → Advanced → Open custom TOML**, create a unique UTF-8 filename, then reload or press GO. The filename stem is the model ID.
+Do not shadow a bundled ID, edit the signed Mac app, or copy every bundled template into the user directory. The app reads bundled definitions in place and reports invalid/duplicate definitions.
+Schema 1 remains accepted; use schema 2 for new definitions.
 
-Place a uniquely named TOML in the directory opened by Settings → Advanced →
-Custom TOMLs. Definitions are reloaded before GO. Copy one of the bundled v2
-examples: qwen3-asr-06b.toml or reazonspeech-k2.toml.
-Use `provider`, `family`, `source`, `artifacts`, `capabilities` and `execution`.
-Declare `capabilities.timestamps = "none"` for text-only ASR. Choose timing in
-the GUI, not in the model file. `[parameters.<name>]` supplies a type, default,
-range/enum and Japanese/English UI labels. Unknown native scalar options can be
-expressed here without changing the GUI, provided the chosen runtime supports them.
+## Local Whisper example
 
-Multi-file downloads use a pinned Hugging Face revision, `source.files`,
-`source.entry = "."` and an `[artifacts]` role-to-file table. All download files,
-including small JSON/tokenizer files, are supported. Installation is locked and
-atomic; retained artifacts are checked before use. Local models may point at a
-file or directory. Artifact paths must stay inside that directory.
+Replace the path with an actual whisper.cpp-compatible model. Relative paths are relative to the TOML, not the process working directory.
 
-## Adding an implementation
-
-A different checkpoint of an implemented architecture requires only a TOML.
-An architecture not implemented by an installed runtime needs a new runtime or
-worker. A format name such as ONNX or GGUF alone does not define preprocessing,
-network operators or decoding. The app probes actual compiled family/mode support.
-
-The bundled isolated worker implements sherpa-onnx (transducer, SenseVoice,
-Paraformer, NeMo CTC) on CPU. Faster-whisper/CTranslate2 are not bundled. A trusted third-party executable can use
-`provider = "external_json"` and worker protocol 1, documented by worker_client.py
-and provider_worker.py. The executable is selected in settings or registered:
-
-```
-asr2rpp-cli runtimes register --provider external_json --device cpu --exe PATH --trust
-asr2rpp-cli runtimes probe --provider external_json --device cpu
-asr2rpp-cli runtimes rollback --provider external_json --device cpu
+```toml
+schema_version = 2
+provider = "whisper_cpp"
+task = "asr"
+name = "My Whisper"
+sample_rate = 16000
+[source]
+path = "D:/ASR/models/my-whisper.bin"
+[capabilities]
+timestamps = "segment"
+speakers = false
+[defaults]
+language = "en"
 ```
 
-Registration is explicit code trust and pins the selected executable hash.
-Changing it requires re-registration. A model definition cannot do this for you.
+Text-only derivatives declare `timestamps = "none"`. The **user** chooses VAD or forced alignment in Settings → Timing. Do not manufacture word timestamps or add a mandatory alignment workflow to new model definitions.
 
-## Upstream updates
+## Native text-only ASR example
 
-`native/versions.json` pins upstream revisions and compiled audio.cpp families.
-The builder does not alter upstream source files. Ordinary transcription uses
-stock whisper-cli; bounded VAD transcription uses asr2rpp-whisper-regions, linked
-only through whisper.h's public API. Unsupported helper options use the stock
-CLI path, not silently ignored flags. Legacy patched CLIs are still readable;
-tools/patch_whisper.py is retained only for legacy reproduction, not called by
-normal builds. Public API changes still require compiling and testing the helper.
+This example requires a Qwen3-ASR implementation in the installed audio.cpp runtime and a compatible GGUF, not an arbitrary file renamed to GGUF.
 
-Run Python tests, native PCM tests, optional-stage smoke and text-equivalence
-checks for every candidate update. Runtime binaries can be replaced/registered
-independently of the GUI; they must pass capability checks. Standard Windows GPU
-execution uses Vulkan only; macOS Apple Silicon uses Metal only. CPU is available
-on both. These choices are enforced by the GUI, CLI and registry, including
-explicit custom executable paths. CUDA is not selected automatically on Windows.
+```toml
+schema_version = 2
+provider = "audio_cpp"
+family = "qwen3_asr"
+task = "asr"
+name = "My Qwen ASR"
+sample_rate = 16000
+[source]
+path = "D:/ASR/models/my-qwen-asr.gguf"
+[capabilities]
+timestamps = "none"
+speakers = false
+[execution]
+mode = "offline"
+output = "text"
+max_batch_items = 16
+max_audio_seconds = 28
+[defaults]
+language = "English"
+```
 
-## Distribution (0.2.1)
+`execution.output` is `text`, `words`, `segments` or `turns`; it selects the actual native output contract.
+Use `turns` with `capabilities.speakers = true` when the engine returns speaker-labelled turns, as the VibeVoice example does. A `segments` file can omit speakers even when another output carries them.
+`max_batch_items` bounds session requests; it does not promise simultaneous GPU batching. `max_audio_seconds` bounds segmented text-only requests.
+Fixed-language engines that reject a language option declare `execution.pass_language = false` (Moonshine). The visible language field is then not forwarded; the engine's fixed language applies.
 
-Windows ZIP: GUI, CLI, CPU/Vulkan native engines and a CPU-only sherpa worker.
-Apple Silicon ZIP: a self-contained ASR2RPP.app with CPU/Metal native engines,
-CLI in Contents/MacOS and assets in Contents/Resources. It targets macOS 14 or later;
-Intel/universal2 is not part of this build. The .app is ad-hoc signed, not notarized.
-Keep bundled definitions unmodified to preserve its signature. Add personal TOMLs
-under Settings → Advanced → Custom TOMLs (Library/Application Support/ASR2RPP on Mac).
+## Remote and multi-file weights
 
-No Python, PyTorch, CUDA Toolkit, CTranslate2 or faster-whisper is required by
-these standard packages. ASR, alignment and VAD weights are downloaded on demand.
-FFmpeg is not redistributed: Windows can acquire it through the verified bootstrap;
-on macOS install FFmpeg separately and select it in Settings if needed. The app
-also recognizes /opt/homebrew/bin/ffmpeg and /usr/local/bin/ffmpeg for Finder launches.
+Replace `source.path` with `source.repo` (`owner/repository` on Hugging Face), an immutable 40-hex `source.revision`, `source.files`, and a `[source.sha256]` entry for every file. Use the file's SHA-256, not a Git blob SHA.
+Shipped definitions provide tested, pinned examples. Revision changes can create a new installation rather than reusing old files.
+A directory model uses `source.entry = "."` and `[artifacts]` role-to-relative-file mappings. See `models/reazonspeech-k2.toml`: encoder, decoder, joiner and tokens are separate files. Small configuration files are supported. Assets must remain within the model directory.
 
-The faster-whisper example was moved to docs/optional-models. It is not an available
-model until the user explicitly installs/registers a compatible external worker.
-On Windows and macOS that optional path is CPU-only; a Vulkan or Metal flag does
-not make CTranslate2 support those backends. It is never downloaded or bundled
-by the standard build.
+Installation uses per-model locks and atomic state updates. Retained file contents are verified before use. Verification detects corruption; it does not make an untrusted publisher trustworthy.
+Model weights and conversion publishers retain their own licenses.
 
-CI builds both platforms, audits packaged files for accidental CUDA/CT2 inclusion,
-and tests the extracted archives. macOS signatures, arm64 slices and Mach-O library
-references are verified after relocation. The Metal hardware probe distinguishes
-compiled support from real inference: when the VM exposes no MTLDevice the report
-records GPU testing as skipped. ASR2RPP_REQUIRE_METAL_GPU=1 makes that a failure on
-a hardware runner. The absence of a GPU never counts as a successful Metal test.
+## Declarative parameter controls
+
+`[defaults.request]` supplies inference options. `[defaults.session]` supplies session options.
+A `[parameters.option_name]` table adds a typed control with `default`, optional `min`/`max`/`step`, `values` for enums, and `ja`/`en` labels or `tip_ja`/`tip_en` help.
+Supported types are `bool`, `int`, `float`, `str` and `enum`. Session control names use `[parameters."session.option_name"]`.
+The option must exist in the runtime; a GUI declaration does not implement it. Language spelling is model-specific: for example, the bundled aligner uses `Japanese`/`English`, while other models use `ja`/`en` or locale codes.
+
+TOMLs cannot contain executable commands, import Python, install dependencies or silently register an executable.
+
+## Install a compatible runtime independently
+
+Native runtime overrides are under Settings → Advanced. The CLI also supports explicit registration, inspection and rollback:
+
+```text
+asr2rpp-cli runtimes register --provider audio_cpp --device vulkan --exe PATH --trust
+asr2rpp-cli runtimes probe --provider audio_cpp --device vulkan
+asr2rpp-cli runtimes rollback --provider audio_cpp --device vulkan
+```
+
+Use `metal` instead of `vulkan` on Mac. Use `cpu` for the bundled sherpa worker. On Windows the executable is `asr2rpp-cli.exe`; on Mac it is inside `ASR2RPP.app/Contents/MacOS/`.
+Registration is a separate **code-trust** decision and pins the executable hash. Register again after replacing that executable. Capabilities/family/mode checks still apply.
+
+For a different engine, a trusted separate process can implement `provider = "external_json"`, protocol 1.
+The contract is implemented in `asr2rpp/worker_client.py` and `asr2rpp/provider_worker.py`: advertise capabilities, load local assets, process request IDs, return validated intervals/text with an explicit time origin, and report request errors independently. No shell interpretation is needed.
+The standard worker contains CPU sherpa-onnx only. The faster-whisper TOML under `docs/optional-models` is a reference for an explicitly installed external CPU worker, not a bundled or automatically downloaded engine. Vulkan/Metal flags do not turn CTranslate2 into a Vulkan/Metal runtime.
+
+For upstream revision changes, compilation and distribution checks, see [development](development.md).

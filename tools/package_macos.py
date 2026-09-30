@@ -142,7 +142,7 @@ def main():
     verify_manifests(resources)
     audit = audit_lightweight(resources)
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-    meta = dict(version='0.2.1-preview', commit=commit, platform='macos-arm64', minimum_macos='14.0',
+    meta = dict(version='0.2.2-preview', commit=commit, platform='macos-arm64', minimum_macos='14.0',
                 native_backends=['cpu', 'metal'], cuda_bundled=False, ctranslate2_bundled=False,
                 faster_whisper_bundled=False, model_weights_included=False, ffmpeg_bundled=False,
                 model_definitions='app/Contents/Resources/models', model_schema_versions=[1, 2],

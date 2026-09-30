@@ -1,63 +1,75 @@
-# Development and maintenance
+# Development and upstream maintenance
 
-This is developer documentation. End-user setup is in [English](../README.md) and
-[Japanese](../README.ja.md); do not put build history or implementation caveats
-back into the quick-start guide.
+[User guide](../README.md) · [日本語](../README.ja.md) · [Model/runtime customization](provider-models.md)
 
-## Local development
+## Source development
 
-Use Python 3.11 or newer (CI uses 3.12). Install the project and GUI/test dependencies:
+Use Python 3.11 or newer; CI uses 3.12. From the repository root:
 
 ```sh
-python -m pip install -e '.[gui]' pytest
+python -m pip install -e '.[dev,workers]'
 python -m pytest tests
 python launcher.py
 ```
 
-The standalone RPP serializer uses the standard library. The application uses
-separate whisper.cpp/audio.cpp processes, NumPy and safetensors. It must not
-require PyTorch or Transformers on the user's computer.
+The source tree needs FFmpeg and built native runtimes. PyTorch, Transformers, CUDA and CTranslate2 are not standard dependencies. `workers` installs CPU sherpa-onnx; `faster` is a separate optional developer extra, not part of the portable builds.
 
-Build the pinned native engines with `tools/build_native.py`. The small native
-PCM-plan patch is fingerprinted; never replace or force-reset a developer's
-modified upstream checkout. Windows packaging runs `tools/package_windows.py`.
-CPU and Vulkan builds are included; CUDA measurements in the performance report
-are not Windows/Vulkan performance claims.
+## Native builds and packages
 
-## Runtime structure and invariants
+`native/versions.json` is the source of truth for whisper.cpp/audio.cpp revisions and compiled audio.cpp model families.
+The build rejects modified upstream files. It does **not** patch the upstream CLI. Ordinary Whisper uses stock `whisper-cli`; bounded-region requests use our `asr2rpp-whisper-regions`, compiled against the public `whisper.h` API. The legacy patch script is retained for historical reproduction only.
 
-- `catalog.py` reads shipped TOMLs in place from the EXE-adjacent `models` directory.
-  User definitions live in `custom-models`; IDs must be unique. Do not reintroduce
-  `_MEIPASS` model copies or silently let an old definition shadow the package.
-- `run_state.py`, the Qt worker, and `lifecycle_smoke.py` maintain one terminal event
-  per input per attempt. STOP waits for cleanup; GO retries incomplete items only.
-  Late signals must not mutate a later run. A thread-start failure must also unlock GO.
-- `media.py` normalizes media time, preserves samples, and measures whole-reference
-  duration from complete PCM output when FFmpeg's progress timestamp is unavailable.
-- `vad_asr.py` uses independent bounded input regions without decoder history.
-  `alignment.py` refines timestamps when selected. `transcript.py` groups and assigns
-  speakers without inventing text boundaries. `rpp_export.py` keeps ORIGINAL first.
-- Original media is never modified. Temporary inference audio is removed on normal
-  completion, failure and cancellation. Diagnostics contain private text and paths.
+Windows requires a native x64 MSVC environment, CMake and the Vulkan SDK for building. In a Developer Command Prompt:
 
-## Release gate
+```text
+python tools/build_native.py whisper_cpp:cpu whisper_cpp:vulkan audio_cpp:cpu audio_cpp:vulkan
+python tools/package_windows.py
+```
 
-The application workflow runs Linux/Windows unit tests and native PCM tests,
-then tests the actual frozen Windows programs: catalog provenance, GUI lifecycle,
-recognition, optional stages, original references, Unicode paths and PCM/WAV parity.
-The package step verifies icon resources for every staged EXE and updates native
-manifest hashes after resource-only branding. It never modifies the native cache,
-an external FFmpeg, code sections, or signed third-party executables.
+Source and execution character sets use `/utf-8`, and C++ exception unwinding stays enabled with `/EHsc`. This matters for upstream CJK prompt literals on non-UTF-8 Windows installations.
 
-Main publishes a commit-tagged preview ZIP only after all jobs succeed. The
-publication step checks the ZIP SHA-256 and embedded source commit. Never replace
-an existing release's assets with a new untested build. Fonts, model weights and
-FFmpeg binaries must not be included in the application ZIP.
+On Apple Silicon, build with the Xcode/Metal toolchain, CMake and Ninja:
 
-## Technical background
+```sh
+python tools/build_native.py whisper_cpp:cpu whisper_cpp:metal audio_cpp:cpu audio_cpp:metal
+python tools/package_macos.py
+```
 
-[Inference policy](inference-policy.md), [performance](performance.md),
-[measurements](performance-results.json), and [release notes](release-notes.md)
-record the design and known limitations. The [earlier README](history/pre-release-readme.md)
-is retained as a historical record, not current user instructions.
-Executable artwork provenance is in [the icon notice](../assets/branding/NOTICE.md).
+Mac targets arm64/macOS 14+, embeds Metal resources and avoids external Homebrew library references in packaged engines. The app is ad-hoc signed, not notarized. Do not mutate its resources after signing.
+These toolchains are **build dependencies**, not end-user requirements.
+
+Build manifests record revisions, recipe hashes, compiler flags and per-file hashes. Verified-cache reuse is opt-in. The packager copies only the platform's CPU/GPU packs and CPU worker, rejects accidental CUDA/CT2 inclusion, retains notices and excludes fonts/model weights/FFmpeg binaries. Excluded Python package metadata is also removed from the copied worker, never from the build environment.
+
+## Tests and release gate
+
+Common unit tests include model-schema validation, duplicate/unsafe paths, request-level errors, native timing, speaker preservation and GUI cancellation/retry. Native PCM checks run with assertions enabled even in Release:
+
+```sh
+cmake -S native -B build/pcm-tests -DCMAKE_BUILD_TYPE=Release
+cmake --build build/pcm-tests --config Release
+ctest --test-dir build/pcm-tests -C Release --output-on-failure
+```
+
+The application workflow builds Windows CPU/Vulkan and macOS CPU/Metal packages. Windows tests the frozen CLI/GUI and optional stages on CPU. Mac verifies arm64 slices, library references, signatures and a relocated copy of the exact ZIP before exercising the app.
+Metal hardware capabilities are probed: an unavailable GPU or required feature is recorded as a skipped GPU test, not success. `ASR2RPP_REQUIRE_METAL_GPU=1` makes such skips fail on a hardware runner.
+
+Use the explicit real-model matrix on an authorized GPU machine, with synthetic/public inputs:
+
+```text
+python tools/validate_catalog.py --package PATH_TO_APP --fixture-ja JA.wav --fixture-en EN.wav --report NEW_REPORT_DIRECTORY --weights-dir WEIGHTS_DIRECTORY --ffmpeg PATH_TO_FFMPEG --device vulkan --install
+```
+
+Mac uses `--device metal`. `--source-root REPO` replaces `--package` for source validation; reports distinguish those modes.
+`--models ID ID` limits the selection. Without it, all shipped definitions are exercised and **many gigabytes of weights may be downloaded** when `--install` is given. Without `--install`, weights must already exist.
+Each test requires a nonempty bounded transcript/RPP, original-file integrity, correct timing provenance and expected optional-stage output. Speaker-capable ASR must preserve a speaker label. GPU failures are not replaced with CPU successes. This is a functional matrix, not WER/CER, multi-speaker quality, throughput or long-recording certification.
+
+Never call a build successful before its job, artifact and actual report are inspected. Keep application, runtime and model revisions distinct. Do not replace published assets with different untested bytes under the same identity.
+
+## Update an upstream runtime or model
+
+Change the pinned revision/family list or model TOML, rebuild, run unit/PCM checks, verify capabilities and perform the relevant model smoke tests. The public API removes the CLI-text patch dependency but does not promise permanent ABI/API compatibility.
+Unknown architectures still require an implementation. Adding a compiled family and a valid TOML is enough only when the runtime's input/output contract is already supported.
+Keep raw native output and fine-grained timestamps until speaker assignment; construct editable coarse items last. Separate a process failure from an individual malformed result. Persist logs on failure and leave source media unchanged.
+
+[Current model matrix](models.md) · [Historical performance records](performance.md) · [Earlier implementation records](implementation-stages.md)
+Historical CUDA measurements and previous release reports do not describe the standard Windows Vulkan package.

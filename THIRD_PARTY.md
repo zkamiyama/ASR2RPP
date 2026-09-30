@@ -1,69 +1,44 @@
 # Third-party components / 第三者コンポーネント
 
-ASR2RPP source is MIT licensed; see LICENSE. Third-party libraries and models retain their own terms.
-The native engines are separate processes and can be replaced in the Runtime settings.
+ASR2RPP source uses the [MIT license](LICENSE). Libraries, runtimes and weights keep their own licenses. 本体・ライブラリ・モデルの利用条件は別です。
+This inventory describes the standard **0.2.2 CPU/Vulkan (Windows) and CPU/Metal (Apple Silicon)** distributions, not earlier CUDA previews.
 
 ## Bundled application libraries
 
-- Python: Python Software Foundation License. https://www.python.org/downloads/source/
-- PySide6 / Qt 6.8.3 / Shiboken: Qt for Python and Qt library licenses, including LGPL v3. Only Qt Core, Gui and Widgets are required by the app. License files from installed distributions are retained in `licenses/`. Qt libraries remain dynamically loaded and replaceable; modification/debugging of LGPL components is not prohibited by this application. https://code.qt.io/cgit/pyside/pyside-setup.git/tag/?h=v6.8.3 and https://download.qt.io/archive/qt/6.8/6.8.3/
-- PyInstaller 6.22.3: GPL with bootloader exception; application code retains its own license. https://github.com/pyinstaller/pyinstaller/tree/v6.22.3
+| Component | Source / terms |
+|---|---|
+| Python runtime | [Python source and PSF license](https://www.python.org/downloads/source/) |
+| PySide6, Shiboken and Qt | [Qt for Python 6.8.3](https://code.qt.io/cgit/pyside/pyside-setup.git/tag/?h=v6.8.3), [Qt 6.8.3 sources](https://download.qt.io/archive/qt/6.8/6.8.3/); applicable Qt licenses include LGPL v3 |
+| NumPy | [NumPy](https://github.com/numpy/numpy); BSD terms and dependency notices supplied by its distribution |
+| safetensors | [safetensors](https://github.com/huggingface/safetensors); Apache-2.0 |
+| PyInstaller | [PyInstaller](https://github.com/pyinstaller/pyinstaller); GPL with its bootloader exception |
+| sherpa-onnx / sherpa-onnx-core, CPU worker | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); Apache-2.0 and bundled dependency notices |
+| ONNX Runtime used by that worker | [ONNX Runtime](https://github.com/microsoft/onnxruntime); MIT and bundled dependency notices |
 
-## UI assets
-
-- Google Material Icons SVGs are used in the desktop UI. The included SVG files are color-adjusted derivatives of Google's official Material Design Icons and remain under Apache License 2.0. A full copy is in `assets/icons/LICENSE.txt`. Upstream: https://github.com/google/material-design-icons
+Installed distribution license files are copied into `licenses/` and `engines/python_worker/licenses/`. Worker package versions and file hashes are in its `build-manifest.json`.
+Qt libraries remain dynamically loaded and replaceable. Modification/debugging of LGPL components is not prohibited by ASR2RPP. GUI dependencies include Qt Core, Gui, Widgets and SVG support, plus the platform/plugin dependencies collected by PyInstaller.
 
 ## Native engines
 
-- whisper.cpp, ggml and bundled dependencies: upstream licenses in `engines/whisper_cpp-cpu/licenses`. Pinned source https://github.com/ggml-org/whisper.cpp/tree/a664346ea5c6dddff3e61a2b7b32dd4514613f50
-- audio.cpp and bundled dependencies: upstream LICENSE and collected notices in `engines/audio_cpp-cpu/licenses`. Pinned source https://github.com/0xShug0/audio.cpp/tree/9bdd1d908bbd128e9eb405f5a8e38d0defb84c72
-- Native build instructions and flags are recorded in `tools/build_native.py`; per-file hashes and revision appear in each `build-manifest.json`.
-- FFmpeg is NOT bundled in the ASR2RPP Windows ZIP. The app first uses a user-selected executable or `PATH`; if none is found on Windows, it downloads BtbN/FFmpeg-Builds' current `win64-lgpl-shared` archive from the provider's `latest` release, verifies it against that release's `checksums.sha256`, and installs only the runtime `bin` files under the user's ASR2RPP data directory. FFmpeg remains separately licensed under its applicable LGPL terms and the downloaded build retains the provider/upstream terms. Upstream: https://ffmpeg.org/ ; build provider: https://github.com/BtbN/FFmpeg-Builds .
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [audio.cpp](https://github.com/0xShug0/audio.cpp) run as separate processes. Their ggml and other dependency licenses/notices are collected in each native pack's `licenses/` directory. Exact source revisions, build flags and file hashes are recorded in the pack's `build-manifest.json`; `native/versions.json` defines the source pins.
+Windows GPU acceleration uses Vulkan and the installed GPU driver. Mac uses the system Metal framework. No GPU driver is redistributed.
+
+**Not bundled:** CUDA, cuBLAS, cuDNN, CTranslate2, faster-whisper, PyAV, their VAD assets, PyTorch, Transformers, REAPER, user media, credentials or system fonts. An optional external worker has its own dependencies and terms; it does not change this standard inventory.
+
+## FFmpeg, obtained separately
+
+FFmpeg binaries are not included. The app uses a selected executable or a discovered installation.
+When Windows needs a download, the bootstrap obtains the `win64-lgpl-shared` build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), checks the published release checksum, and installs the runtime files in user data. That separate build retains its provider/upstream terms; it is not covered by ASR2RPP's MIT license. See [FFmpeg](https://ffmpeg.org/).
+On Mac, the user provides FFmpeg separately.
 
 ## Model weights
 
-Model weights are NOT included in the Windows ZIP. Model TOML files identify their download repositories.
-Original model and conversion publisher terms must be checked before downloading or redistributing weights.
-The app records repository revision, downloaded file SHA-256 and sizes locally.
-Anime Whisper's community conversion is experimental; availability does not imply verified transcription parity.
+Only TOML definitions are bundled. Selected ASR, alignment, diarization, separation and VAD weights are obtained on demand. Every shipped catalog file has a pinned revision and SHA-256; acquisition records downloaded sizes and actual hashes.
+A conversion's license does not replace its original model's license. Review both publishers' model cards before use or redistribution. The [model table](docs/models.md) links the repositories; in particular, not every model uses MIT/Apache terms.
 
-No REAPER binary, user media, credential, or system font is distributed with ASR2RPP.
+Silero VAD v5.1.2 is separately downloaded from [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad) at `e5614ed76a5dd4b03fad5068c89efcd2617a9d1e`, SHA-256 `29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf` (885,098 bytes). [Silero VAD](https://github.com/snakers4/silero-vad) and that model repository declare MIT licensing.
+Anime Whisper's community GGML conversion is experimental; a functional smoke test is not proof of parity with its original implementation.
 
-- Silero VAD v5.1.2 is downloaded on demand, not bundled. The GGML is from ggml-org/whisper-vad at e5614ed76a5dd4b03fad5068c89efcd2617a9d1e, SHA-256 29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf (885098 bytes). Upstream Silero VAD and the model repository declare MIT licensing. The native helper is built from the same pinned whisper.cpp revision and its license is retained with that runtime. https://huggingface.co/ggml-org/whisper-vad and https://github.com/snakers4/silero-vad
+## Icons
 
-## Executable artwork
-
-Application and native-tool icon glyphs use Google Material Icons (Apache 2.0).
-ASR2RPP adds the background and colors. Full license and provenance are packaged
-in licenses/material-icons and assets/branding/NOTICE.md. No icon font is bundled.
-
-
-## Optional isolated ASR worker (0.2)
-
-The portable distribution includes sherpa-onnx and its native runtime (Apache-2.0),
-faster-whisper (MIT), CTranslate2 (MIT), ONNX Runtime (MIT), tokenizers
-(Apache-2.0), Hugging Face Hub (Apache-2.0), and their redistributed dependency
-notices under `engines/python_worker/licenses`. Python package versions are
-recorded in that worker's build manifest. ASR model weights are not included;
-each downloaded model's upstream license and usage conditions still apply.
-Faster-whisper's packaged Silero VAD asset is included with that component.
-
-PyAV (BSD-3-Clause) includes FFmpeg shared libraries in its binary wheel. The
-statement that FFmpeg is not bundled refers to the separately acquired
-`ffmpeg.exe`, not to PyAV's shared libraries. Preserve PyAV/FFmpeg notices and
-source information distributed with that wheel. Python application source and
-build recipes are available in this repository.
-
-CUDA-enabled packages include NVIDIA CUDA runtime/cuBLAS and cuDNN runtime
-libraries, redistributed under their respective NVIDIA licenses. Their license
-notices are preserved with the runtime packs; these are not covered by ASR2RPP's
-MIT license. No NVIDIA driver or CUDA development toolkit is bundled. GPU
-features require a compatible NVIDIA driver; CPU/Vulkan builds remain available.
-
-## Standard distribution change (0.2.1)
-
-The standard Windows and macOS archives exclude faster-whisper, CTranslate2,
-NVIDIA CUDA, cuBLAS and cuDNN, including faster-whisper's VAD asset. Earlier
-references describe the optional 0.2 implementation, not current bundled files.
-The separate CPU sherpa-onnx worker remains bundled with its own notices.
-Windows GPU code is Vulkan; Apple Silicon GPU code uses the system Metal framework.
+UI and executable artwork use adapted [Google Material Icons](https://github.com/google/material-design-icons), Apache-2.0. ASR2RPP adds backgrounds/colors. The full license is in `assets/icons/LICENSE.txt`; provenance is in `assets/branding/NOTICE.md` and packaged `licenses/material-icons/`. No icon font is bundled.

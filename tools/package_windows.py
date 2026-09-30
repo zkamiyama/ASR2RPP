@@ -128,7 +128,7 @@ process.wait(timeout=10)
     'icons_verified_executables': len(icon_records), 'window_icon': 'passed',
     'ffmpeg_bundled': False, 'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-(package/'version.json').write_text(json.dumps({'version': '0.2.1-preview', 'commit': commit,
+(package/'version.json').write_text(json.dumps({'version': '0.2.2-preview', 'commit': commit,
     'platform': 'windows-x64', 'native_backends': ['cpu','vulkan'], 'minimum_cpu': 'AVX2',
     'model_weights_included': False, 'cuda_bundled': False, 'ctranslate2_bundled': False, 'faster_whisper_bundled': False,
     'model_schema_versions': [1,2], 'worker_protocol': 1,

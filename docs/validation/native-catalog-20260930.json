@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-09-30",
+  "validation_mode": "source-with-native-binaries",
+  "platform": "Windows x64",
+  "gpu": "RTX 4080",
+  "native_device": "vulkan",
+  "fixtures": {
+    "ja": {
+      "sha256": "1aab8f5d522c6e91458c18ff3831fbae056bc6a0174808bfe80eb89d839fffb8",
+      "seconds": 15.688344671201815,
+      "kind": "synthetic Japanese speech"
+    },
+    "en": {
+      "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+      "seconds": 11.0,
+      "kind": "public whisper.cpp JFK sample"
+    }
+  },
+  "original_summary_sha256": "3812a85e2c371ce4d163265c5aa71a113c1d12c847602eb38af5d5d7661a3dbd",
+  "catalog_sha256": "aaa7aa50c7fe81c24ad6114ed4e4cfd221fb490ffb41cf1af472a64c1e4267b8",
+  "all_passed": true,
+  "source_unchanged": true,
+  "scope": "Compact extract of the Desktop Commander matrix-vulkan-final report. All 20 definitions acquired and verified. Not an accuracy/throughput/long-audio/multi-speaker benchmark. Native 19 on Vulkan; ReazonSpeech CPU. Not a claim of all-model frozen macOS validation.",
+  "criteria": [
+    "nonempty transcript and exactly one RPP",
+    "finite intervals within original duration",
+    "original source SHA unchanged",
+    "truthful timing provenance",
+    "selected optional-stage output",
+    "native VibeVoice speaker label retained",
+    "Vulkan log evidence for native GPU cases"
+  ],
+  "upstream": {
+    "whisper_cpp": "a664346ea5c6dddff3e61a2b7b32dd4514613f50",
+    "audio_cpp": "9bdd1d908bbd128e9eb405f5a8e38d0defb84c72"
+  },
+  "native_executable_sha256": {
+    "audio_cpp-cpu/audiocpp_cli.exe": "23688df533819f47dcc165eb4ee397d9f9dcf760fa9ff011acd30f7a4e68c1bc",
+    "audio_cpp-cpu/audiocpp_gguf.exe": "883a610ca6af8676dbeb2257796ed3b5ae344b7d099da18bb9b69fc39e25dcb0",
+    "audio_cpp-vulkan/audiocpp_cli.exe": "ed614c452373eef6c9d28c3f8c0a0f53c016a7b87bd44b2447b66c5c3ad174df",
+    "whisper_cpp-vulkan/whisper-cli.exe": "5fee252644c1a68aae8dd9839f14c201d045fb5545a064aaa18d86d5e2aca3da",
+    "whisper_cpp-vulkan/asr2rpp-whisper-regions.exe": "37b79a6254c1320908a093a4aed481c0e02efd743afb795be8837faf10b31b53"
+  },
+  "definition_hashes": {
+    "whisper-large-v3-turbo-q5": "d47c4c79613fe46b6efb5553ffe95e7bef6d8c3435d3d8be2c2507ed0c505c77",
+    "qwen3-asr-17b": "195759ef8cbba1e032bc598e0cb884c55ba5bcbfaaba4431ca6c61caa01919b7",
+    "mel-big-beta7": "8d4f8b769ac07fedb347f43f12df9f6d9877f3fbba3e4277c5652bb404990b12",
+    "whisper-base": "f618b73045d193eb087607c31de2134cbd7bd38c2eac6cf3a88ae1a58d3f920c",
+    "canary-180m-flash": "1d13108326e250f3bbde33baecd158600b236536c4cd00567e783b38923c9714",
+    "sensevoice-small": "bad7da9d22eb1ed0e949ee8ce36ece552b2e9b5beabffa844a72c8266cb486a2",
+    "reazonspeech-k2": "f3feb79ec3831a216d37ed1bafb60ee3508bbc45a3b5b78ac726c6764e692e70",
+    "whisper-medium-q5": "abdef7c132ff3110dc5fb2049c12aa06cc7865171f14da9c29ae0772ce999fc6",
+    "nemotron-diarization": "08d7ffa32b64bde8e2719804fbb1c1a585f00cd186429efdbcb7443805df3c6b",
+    "nemotron-asr": "a9f7c9069cce80e8b9b50ebcc286a15b47809479e0a1c558a0be5449042e89b5",
+    "anime-whisper": "294509beca8679aee531ac3acca69c6069d895f89b8a8621f71f117177864495",
+    "vibevoice-asr": "d96293b2e35a29198f3a05ebc4348f25d716933f3fd484ea25dfdafd2dd1fa9d",
+    "moonshine-streaming-tiny": "c0a623efa59696f519b6a25f8787b058ac5cb60eed13f676c53d2f2093785a0d",
+    "qwen3-asr-06b": "48690c5030906691f356a8151c5311ab8f8ffe2949a1dcde47ca3b605c9ef012",
+    "whisper-tiny": "798aca4be28f0a0a809aa95d8bb356af4e7a5af5cb318337ea1910e41799ee33",
+    "whisper-large-v3-q5": "480bc4268b5476521346e4556b80e1bd66bf95928416004492d5504075419abd",
+    "qwen-forced-aligner": "c52596fd645c4022f16f0329969b5f7bde348019b361a00128fc7cbc34cc40ef",
+    "fun-asr-nano": "15f1a4520586b49d3e2908ca9b563c8282d9ba42e960ea589fb6e5e8fc514ff3",
+    "voxtral-mini-realtime-q4": "bee2ef99603aeab337b55878d7c2bf04f336d0446e19f7f6ac61786ff7aac14b",
+    "whisper-small": "99cd42e9900d4806d24edc90179cbe9c5dda57ef3e831969d68bca45656fc214"
+  },
+  "cases": {
+    "anime-whisper": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 4.172,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "canary-180m-flash": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 1.89,
+      "unit_count": 5,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "fun-asr-nano": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 4.891,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "mel-big-beta7": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 8.547,
+      "unit_count": 2,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "moonshine-streaming-tiny": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 1.891,
+      "unit_count": 5,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "nemotron-asr": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 3.922,
+      "unit_count": 5,
+      "methods": [
+        "emission_frame"
+      ],
+      "speaker_count": 0
+    },
+    "nemotron-diarization": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 3.343,
+      "unit_count": 3,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 1
+    },
+    "qwen-forced-aligner": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 6.672,
+      "unit_count": 3,
+      "methods": [
+        "forced_alignment"
+      ],
+      "speaker_count": 0
+    },
+    "qwen3-asr-06b": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 3.844,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "qwen3-asr-17b": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 6.609,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "reazonspeech-k2": {
+      "passed": true,
+      "requested_device": "cpu",
+      "elapsed_seconds": 2.734,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "sensevoice-small": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 1.672,
+      "unit_count": 4,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "vibevoice-asr": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 16.266,
+      "unit_count": 1,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 1
+    },
+    "voxtral-mini-realtime-q4": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 11.187,
+      "unit_count": 5,
+      "methods": [
+        "vad_segment"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-base": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 1.547,
+      "unit_count": 3,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-large-v3-q5": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 3.453,
+      "unit_count": 3,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-large-v3-turbo-q5": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 2.079,
+      "unit_count": 3,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-medium-q5": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 2.547,
+      "unit_count": 2,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-small": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 2.188,
+      "unit_count": 2,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    },
+    "whisper-tiny": {
+      "passed": true,
+      "requested_device": "vulkan",
+      "elapsed_seconds": 1.343,
+      "unit_count": 3,
+      "methods": [
+        "native_interval"
+      ],
+      "speaker_count": 0
+    }
+  },
+  "application_code_commit": "16cf9d9066e2ea4c6aae7e119d6fa765d6c2e9f0"
+}
