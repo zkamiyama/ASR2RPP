@@ -80,7 +80,7 @@ def test_otio_original_mute_speakers_gaps_and_source_offsets(tmp_path, processed
     tracks = list(value.tracks)
     assert [t.name for t in tracks] == ['ORIGINAL','Alice','Bob']
     assert tracks[0].enabled is False
-    original = next(tracks[0].find_clips())
+    original = next(iter(tracks[0].find_clips()))
     assert original.enabled is False
     assert original.source_range.start_time.to_seconds() == 0
     assert original.source_range.duration.to_seconds() == (5 if processed else 20)
