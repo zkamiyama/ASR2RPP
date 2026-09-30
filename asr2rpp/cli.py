@@ -6,6 +6,7 @@ import sys
 import threading
 from .catalog import load_catalog, resolve_model
 from .pipeline import Stage
+from .timing import TimingSettings
 from .preprocessing import Settings, run_job
 
 
@@ -24,7 +25,7 @@ def main(argv=None):
     run.add_argument('files', nargs='+', type=Path)
     run.add_argument('--asr', default='whisper-base')
     run.add_argument('--diar', help='omit to disable diarization')
-    run.add_argument('--align', help='optional forced-alignment model; VAD region timestamps are used otherwise (unless TOML requires alignment)')
+    run.add_argument('--align', help='forced-alignment model; select --timing auto or alignment')
     run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')
     run.add_argument('--rpp-audio', choices=['original', 'processed'], default='original',
                      help='processed keeps a persistent WAV next to the RPP; requires --preprocess')
@@ -34,8 +35,13 @@ def main(argv=None):
     run.add_argument('--start', type=float, default=0)
     run.add_argument('--duration', type=float, default=0)
     run.add_argument('--threads', type=int, default=4)
+    run.add_argument('--timing', choices=['auto', 'native', 'vad', 'alignment'], default='auto')
+    run.add_argument('--vad-max-seconds', type=float, default=25)
+    run.add_argument('--vad-threshold', type=float, default=0.5)
+    run.add_argument('--vad-min-silence-ms', type=int, default=250)
+    run.add_argument('--vad-before-alignment', action='store_true')
     for stage in ['asr', 'diar', 'align', 'preprocess']:
-        run.add_argument('--' + stage + '-device', default='vulkan', choices=['cpu', 'vulkan'])
+        run.add_argument('--' + stage + '-device', default='vulkan', choices=['auto', 'cpu', 'vulkan', 'cuda', 'metal'])
         run.add_argument('--' + stage + '-exe', default='')
         run.add_argument('--' + stage + '-language', default=None)
         run.add_argument('--' + stage + '-params', default='{}', help='JSON object of scalar request parameters')
@@ -126,7 +132,9 @@ def main(argv=None):
         if args.same_directory and args.output_dir:
             raise ValueError('Choose --same-directory OR --output-dir, not both')
         settings = Settings(stage('asr'), stage('diar'), stage('align'), not bool(args.output_dir), args.output_dir,
-                            args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio)
+                            args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio,
+                            timing=TimingSettings(args.timing, args.vad_max_seconds, args.vad_threshold,
+                                min_silence_ms=args.vad_min_silence_ms, segment_before_alignment=args.vad_before_alignment))
         settings.validate(catalog)
         failed = 0
         for source in args.files:

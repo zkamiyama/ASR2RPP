@@ -236,10 +236,10 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
         assert whisper_params.controls["initial_prompt"][0].text() == ""
         whisper_params.close()
 
-    # Runtime selectors are deliberately limited to Default / CPU / Vulkan.
+    # Runtime choices are explicit; availability is checked before execution.
     for panel in (window.preprocess, window.asr, window.align, window.diar):
         devices = [panel.device.itemData(i) for i in range(panel.device.count())]
-        assert devices == ["default", "cpu", "vulkan"]
+        assert devices == ["default", "cpu", "vulkan", "cuda", "auto", "metal"]
 
     reports = Path("reports")
     reports.mkdir(exist_ok=True)
@@ -262,11 +262,11 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     dialog = PreferencesDialog(window)
     dialog.show()
     app.processEvents()
-    assert dialog.nav.count() == 3
+    assert dialog.nav.count() == 4
     assert dialog.model_dir.placeholderText()
     assert dialog.temp_dir.placeholderText()
-    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == ["cpu", "vulkan"]
-    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == ["cpu", "vulkan"]
+    assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == ["cpu", "vulkan", "cuda", "auto", "metal"]
+    assert [dialog.audio_backend.itemData(i) for i in range(dialog.audio_backend.count())] == ["cpu", "vulkan", "cuda", "auto", "metal"]
     dialog.grab().save(str(reports / "settings-dcc.png"))
     dialog.close()
     window.close()

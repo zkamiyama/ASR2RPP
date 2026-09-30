@@ -14,10 +14,7 @@ language = "ja"
 [constraints]
 disabled_parameters = ["initial_prompt", "carry_initial_prompt"]
 
-# VAD timestamps describe whole speech regions; optional alignment refines word timing.
-[constraints.inference]
-segmentation = "vad"
-timestamps = false
-history = false
-max_segment_seconds = 25.0
-timestamp_source = "vad"
+# Timing workflow is selected in Settings > Timing (or CLI --timing).
+[capabilities]
+timestamps = "none"
+speakers = false

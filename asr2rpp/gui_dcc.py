@@ -33,6 +33,7 @@ from .pipeline import MEDIA_EXTENSIONS, Stage
 from .preprocessing import Settings, run_job
 from .queue_runner import run_queue
 from .parameter_specs import specs_for
+from .timing import TimingSettings, plan_for as timing_plan_for
 from .adapters import executable as runtime_executable, ffmpeg_path
 
 
@@ -237,6 +238,7 @@ TEXT = {
         "settings": "設定",
         "ui_language": "UI言語を切替",
         "general": "一般",
+        "timing": "時刻付与",
         "runtime": "実行環境",
         "advanced": "詳細",
         "model_dir": "モデル保存先",
@@ -306,6 +308,7 @@ TEXT = {
         "settings": "Settings",
         "ui_language": "Switch UI language",
         "general": "General",
+        "timing": "Timing",
         "runtime": "Runtime",
         "advanced": "Advanced",
         "model_dir": "Model directory",
@@ -813,6 +816,9 @@ class StagePanel(QFrame):
         self.device.addItem(tr["default"], "default")
         self.device.addItem("CPU", "cpu")
         self.device.addItem("Vulkan", "vulkan")
+        self.device.addItem("CUDA", "cuda")
+        self.device.addItem("Auto", "auto")
+        self.device.addItem("Metal", "metal")
         if selected:
             idx = self.device.findData(selected)
             if idx >= 0:
@@ -840,7 +846,7 @@ class StagePanel(QFrame):
             raise ValueError(f"No model selected for {self.task}")
         requested = self.device.currentData() or "default"
         device = runtime_defaults.get(model.runtime, "vulkan") if requested == "default" else requested
-        if device not in {"cpu", "vulkan"}:
+        if device not in {"auto", "cpu", "vulkan", "cuda", "metal"}:
             device = "vulkan"
         executable = runtime_paths.get(f"{model.runtime}:{device}", "")
         return Stage(model_id, device, executable, self.language.currentText().strip(),
@@ -884,10 +890,12 @@ class Worker(QThread):
             else:
                 resolve_model(model, self.cancel, self.progress.emit,
                               download=True, keep_source=self.keep_sources)
-            if policy_for(model).segmentation == 'vad':
+            if (stage is self.settings.asr and
+                    timing_plan_for(model, self.settings.timing, self.settings.align is not None).segmented):
                 from .vad import vad_model
                 from .adapters import split_engine_parameters
                 request, _ = split_engine_parameters(model, stage.parameters or {})
+                request.update(self.settings.timing.parameters())
                 vad_model(model, request, self.cancel, self.progress.emit)
 
     def emit_item(self, index, status, detail=''):
@@ -968,7 +976,7 @@ class PreferencesDialog(QDialog):
         content.setContentsMargins(0, 0, 0, 0)
         self.nav = QListWidget()
         self.nav.setFixedWidth(112)
-        for key in ("general", "runtime", "advanced"):
+        for key in ("general", "timing", "runtime", "advanced"):
             self.nav.addItem(tr[key])
         content.addWidget(self.nav)
 
@@ -1006,12 +1014,56 @@ class PreferencesDialog(QDialog):
         form.addRow(tr["threads"], self.threads)
         self.pages.addWidget(general)
 
+        timing_page = QWidget()
+        timing_form = QFormLayout(timing_page)
+        timing_form.setContentsMargins(10, 10, 10, 10)
+        ja = self.lang == 'ja'
+        self.timing_mode = QComboBox()
+        self.timing_mode.setObjectName('timingMode')
+        for key, en, jp in [('auto', 'Automatic', '自動'),
+                            ('native', 'Native model timestamps', 'モデルの時刻'),
+                            ('vad', 'VAD speech regions', 'VADの発話区間'),
+                            ('alignment', 'Forced alignment', '強制アライメント')]:
+            self.timing_mode.addItem(jp if ja else en, key)
+        self.timing_mode.setCurrentIndex(self.timing_mode.findData(owner.timing_settings.mode))
+        timing_form.addRow('時刻の取得方法' if ja else 'Timestamp source', self.timing_mode)
+        self.vad_maximum = QDoubleSpinBox()
+        self.vad_maximum.setRange(2, 28)
+        self.vad_maximum.setSuffix(' s')
+        self.vad_maximum.setValue(owner.timing_settings.max_seconds)
+        timing_form.addRow('VAD区間の最大長' if ja else 'Maximum VAD window', self.vad_maximum)
+        self.vad_threshold = QDoubleSpinBox()
+        self.vad_threshold.setRange(.01, 1)
+        self.vad_threshold.setSingleStep(.05)
+        self.vad_threshold.setValue(owner.timing_settings.threshold)
+        timing_form.addRow('VADしきい値' if ja else 'VAD threshold', self.vad_threshold)
+        self.vad_silence = QSpinBox()
+        self.vad_silence.setRange(50, 2000)
+        self.vad_silence.setSuffix(' ms')
+        self.vad_silence.setValue(owner.timing_settings.min_silence_ms)
+        timing_form.addRow('最小無音長' if ja else 'Minimum silence', self.vad_silence)
+        self.vad_presegment = QCheckBox('アライメント前にVAD分割する' if ja else 'VAD segmentation before alignment')
+        self.vad_presegment.setChecked(owner.timing_settings.segment_before_alignment)
+        timing_form.addRow('', self.vad_presegment)
+        note = QLabel(('VADは発話区間の概略時刻です。単語の境界ではありません。'
+                       '強制アライメントを選ぶと、メイン画面のアライメント工程が有効になります。'
+                       '時刻を返せないモデルでは、モデルの時刻は選べません。') if ja else
+                      ('VAD gives coarse speech-region times, not word boundaries. '
+                       'Forced alignment enables the alignment stage in the main window. '
+                       'Native timing is unavailable for models that do not return timestamps.'))
+        note.setWordWrap(True)
+        timing_form.addRow(note)
+        self.pages.addWidget(timing_page)
+
         self.whisper_backend = QComboBox()
         self.audio_backend = QComboBox()
         for combo, value in ((self.whisper_backend, owner.runtime_defaults["whisper_cpp"]),
                              (self.audio_backend, owner.runtime_defaults["audio_cpp"])):
             combo.addItem("CPU", "cpu")
             combo.addItem("Vulkan", "vulkan")
+            combo.addItem("CUDA", "cuda")
+            combo.addItem("Automatic", "auto")
+            combo.addItem("Metal", "metal")
             combo.setCurrentIndex(max(0, combo.findData(value)))
         runtime = QWidget()
         runtime_form = QFormLayout(runtime)
@@ -1156,7 +1208,7 @@ class MainWindow(QMainWindow):
             "audio_cpp": str(self.preferences.value("runtime_default/audio_cpp", "vulkan")),
         }
         for key in self.runtime_defaults:
-            if self.runtime_defaults[key] not in {"cpu", "vulkan"}:
+            if self.runtime_defaults[key] not in {"auto", "cpu", "vulkan", "cuda", "metal"}:
                 self.runtime_defaults[key] = "vulkan"
         try:
             self.runtime_paths = json.loads(self.preferences.value("runtime_paths", "{}"))
@@ -1164,6 +1216,11 @@ class MainWindow(QMainWindow):
                 raise ValueError('Invalid runtime path preferences')
         except (ValueError, TypeError):
             self.runtime_paths = {}
+        try:
+            self.timing_settings = TimingSettings(**json.loads(self.preferences.value('timing/settings', '{}')))
+            self.timing_settings.validate()
+        except (ValueError, TypeError):
+            self.timing_settings = TimingSettings()
         self.model_storage_dir = str(self.preferences.value("storage/model_dir", "")).strip()
         self.temp_storage_dir = str(self.preferences.value("storage/temp_dir", "")).strip()
         self.keep_model_sources = self.preferences.value(
@@ -1432,6 +1489,8 @@ class MainWindow(QMainWindow):
             self.preprocess.reference.setCurrentIndex(idx)
 
     def save_preferences(self):
+        from dataclasses import asdict
+        self.preferences.setValue("timing/settings", json.dumps(asdict(self.timing_settings)))
         self.preferences.setValue("ui/language", self.ui_lang)
         self.preferences.setValue("runtime_paths", json.dumps(self.runtime_paths))
         self.preferences.setValue("storage/model_dir", self.model_storage_dir)
@@ -1630,6 +1689,7 @@ class MainWindow(QMainWindow):
             clip_start=0.0,
             clip_duration=0.0,
             preprocess=preprocess,
+            timing=self.timing_settings,
             reference_audio=(self.preprocess.reference.currentData() or "original")
                 if preprocess else "original",
         )
@@ -1638,7 +1698,7 @@ class MainWindow(QMainWindow):
         stages = []
         if self.preprocess.enabled_stage():
             stages.append(self.tr("sep"))
-        stages.append(self.tr("asr"))
+        stages.append(self.tr("asr") + " [" + self.timing_settings.mode + "]")
         if self.align.enabled_stage():
             stages.append(self.tr("align"))
         if self.diar.enabled_stage():
@@ -1647,7 +1707,8 @@ class MainWindow(QMainWindow):
 
     def update_state(self):
         model = self.catalog.get(self.asr.model.currentData()) if hasattr(self, 'catalog') else None
-        required = bool(model and policy_for(model).requires_alignment)
+        required = (self.timing_settings.mode == 'alignment' or
+                    (self.timing_settings.mode == 'auto' and bool(model and policy_for(model).requires_alignment)))
         was_forced = getattr(self, '_alignment_forced', False)
         if required and not was_forced:
             self._alignment_previous = self.align.toggle.isChecked()
@@ -1658,7 +1719,7 @@ class MainWindow(QMainWindow):
             self.align.toggle.setChecked(getattr(self, '_alignment_previous', False))
         self.align.toggle.setEnabled(not required)
         if required:
-            self.align.toggle.setToolTip(policy_notice(model, self.ui_lang))
+            self.align.toggle.setToolTip("設定 → 時刻付与で変更 / Change in Settings → Timing")
         if self.worker is None:
             self.status_label.setText(
                 f"{self.tr('ready')}   {self.pipeline_text()}   "
@@ -1823,6 +1884,14 @@ class MainWindow(QMainWindow):
                 "whisper_cpp": dialog.whisper_backend.currentData(),
                 "audio_cpp": dialog.audio_backend.currentData(),
             }
+            from dataclasses import replace
+            self.timing_settings = replace(self.timing_settings,
+                mode=dialog.timing_mode.currentData(), max_seconds=dialog.vad_maximum.value(),
+                threshold=dialog.vad_threshold.value(), min_silence_ms=dialog.vad_silence.value(),
+                segment_before_alignment=dialog.vad_presegment.isChecked())
+            if self.timing_settings.mode in ('native', 'vad'):
+                self._alignment_previous = False
+                self.align.toggle.setChecked(False)
             self.keep_model_sources = dialog.keep_source.isChecked()
             self.runtime_paths = {
                 key: edit.text().strip() for key, edit in dialog.runtime_fields.items()

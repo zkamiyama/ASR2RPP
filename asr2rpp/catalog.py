@@ -101,12 +101,21 @@ class Model:
     description: str = ''
     definition: Path | None = None
     definition_sha256: str = ''
+    capabilities: dict = field(default_factory=dict)
 
     @property
     def label(self) -> str:
         return self.name or self.id
 
     def validate(self):
+        if not isinstance(self.capabilities, dict):
+            raise ValueError('capabilities must be a table')
+        if self.capabilities.get('timestamps', 'segment') not in {'none', 'token', 'word', 'segment'}:
+            raise ValueError('capabilities.timestamps must be none, token, word or segment')
+        if set(self.capabilities) - {'timestamps', 'speakers'}:
+            raise ValueError('Unknown model capability')
+        if 'speakers' in self.capabilities and type(self.capabilities['speakers']) is not bool:
+            raise ValueError('capabilities.speakers must be boolean')
         if self.runtime not in {'whisper_cpp', 'audio_cpp'}:
             raise ValueError('runtime must be whisper_cpp or audio_cpp')
         if self.task not in {'asr', 'diar', 'align', 'sep'}:
@@ -197,7 +206,7 @@ def load_catalog(directory: Path | None = None) -> tuple[dict[str, Model], list[
             claimed[key] = file
             payload = file.read_bytes()
             data = tomllib.loads(payload.decode('utf-8-sig'))
-            allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description'}
+            allowed = {'runtime', 'task', 'source', 'defaults', 'constraints', 'family', 'name', 'sample_rate', 'description', 'capabilities'}
             unknown = set(data) - allowed
             if unknown:
                 raise ValueError(f'Unknown fields: {sorted(unknown)}')

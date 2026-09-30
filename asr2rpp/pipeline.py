@@ -1,6 +1,6 @@
 """Qt-free pipeline; native audio is never split or modified for RPP export."""
 from __future__ import annotations
-from dataclasses import dataclass, asdict, replace
+from dataclasses import dataclass, asdict, replace, field
 from pathlib import Path
 import copy
 import hashlib
@@ -18,6 +18,7 @@ from .rpp_export import write_reference
 from .media import full_reference_duration
 from .alignment import align_segments
 from .inference_policy import policy_for
+from .timing import TimingSettings, plan_for, prepare_run, stage_options
 from .adapters import split_engine_parameters, validate_model_parameter_constraints
 
 MEDIA_EXTENSIONS = {'.wav', '.wave', '.mp3', '.flac', '.ogg', '.opus', '.aif', '.aiff',
@@ -62,6 +63,7 @@ class Settings:
     ffmpeg: str = ''
     clip_start: float = 0.0
     clip_duration: float = 0.0
+    timing: TimingSettings = field(default_factory=TimingSettings, kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
         if not self.same_directory and not self.output_directory.strip():
@@ -85,8 +87,7 @@ class Settings:
                     from .vad import VadOptions
                     VadOptions.from_parameters(request, policy_for(model).max_segment_seconds)
 
-        if policy_for(catalog[self.asr.model_id]).requires_alignment and self.align is None:
-            raise ValueError('TOML inference policy requires forced alignment: enable --align or choose timestamp_source=vad in the model definition.')
+        plan_for(catalog[self.asr.model_id], self.timing, self.align is not None)
 
 
 def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
@@ -139,7 +140,8 @@ def export_rpp(source: Path, output: Path, units: list[Unit], offset: float,
 
 @profiled
 def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel: threading.Event, progress, *, _analysis_report: Path | None = None) -> Path:
-    settings = copy.deepcopy(settings)
+    settings.validate(catalog)
+    settings, catalog, timing_plan = prepare_run(settings, catalog)
     settings.validate(catalog)
     source = source.expanduser().resolve()
     if not source.is_file() or source.suffix.lower() not in MEDIA_EXTENSIONS:
@@ -203,7 +205,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('ASR — transcribing')
         asr = infer_persist(
             asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
-            dict(settings.asr.options(), alignment_requested=settings.align is not None))
+            stage_options(settings))
         units = clean_bounds(asr.units, duration, warnings)
         if not units:
             raise ValueError('No timed speech was returned; raw engine output is retained')
@@ -233,8 +235,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
         if any(u.method == 'vad_segment' for u in units):
             warnings.append('VAD region timestamps used: approximate speech intervals, not word boundaries.')
-        manifest['timestamp_source'] = ('forced_alignment' if settings.align else
-                                        'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr')
+        manifest['timestamp_source'] = timing_plan.timestamp_source
+        manifest['timing_plan'] = asdict(timing_plan)
         units = group_units(units)
         if not units:
             raise ValueError('No valid intervals remain after normalization')

@@ -354,6 +354,11 @@ def audio_session_args(model: Model, session: dict) -> list[str]:
 def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
           cancel: threading.Event, progress, transcript: str = '') -> Result:
     work.mkdir(parents=True, exist_ok=True)
+    if model.task == 'asr' and model.runtime != 'whisper_cpp' and 'timing' in options:
+        from .timing import TimingSettings, plan_for
+        if plan_for(model, TimingSettings(**options['timing']), options.get('alignment_requested', False)).segmented:
+            from .region_asr import infer_regions
+            return infer_regions(model, weights, audio, work, options, cancel, progress)
     device = options.get('device', 'cpu')
     binary = executable(model.runtime, device, options.get('executable', ''))
     language = options.get('language', model.defaults.get('language', 'ja'))

@@ -13,3 +13,11 @@ Baseline: 7fdffae93e9e64643b2e6d71569dd541534f09df.
 
 Each stage is committed only after its regression suite is run. Model weights,
 private media and local credentials are never committed or bundled.
+
+## Stage 2 validation
+
+235 Python tests pass, including GUI setting persistence and 19 user-timing
+regression cases. RTX 4080 / WSL native smoke on a 25-second Japanese clip:
+VAD mode created 8 speech-region items; forced alignment created 8 grouped items
+with forced-alignment provenance. Both RPPs were generated and all intervals were
+inside the audio. This is a functionality check, not an accuracy benchmark.

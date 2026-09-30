@@ -24,6 +24,7 @@ from . import preprocessing as pre
 from .alignment import (infer_requests, chunks_by_size as _chunks_by_size,
                         alignment_bounds, aligned_units)
 from .inference_policy import policy_for
+from .timing import prepare_run, stage_options
 from .media import slice_pcm
 from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model, definition_provenance
 from .adapters import (
@@ -457,7 +458,8 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
 
     Returns completed output paths keyed by original queue index.
     """
-    settings = copy.deepcopy(settings)
+    settings.validate(catalog)
+    settings, catalog, timing_plan = prepare_run(settings, catalog)
     settings.validate(catalog)
     checkpoint(cancel)
     max_bytes = max(128, min(int(batch_audio_ram_mb), 8192)) * 1024 * 1024
@@ -480,6 +482,8 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
             job.manifest['model_definitions'] = {name: definition_provenance(m) for name, (m, _p, _prov, _s) in selected.items()}
             job.manifest['models'] = {name: provenance for name, (_m, _p, provenance, _s) in selected.items()}
             job.manifest['status'] = 'running'
+            job.manifest['timing_plan'] = asdict(timing_plan)
+            job.manifest['timestamp_source'] = timing_plan.timestamp_source
             _write_manifest(job)
 
         cache_directory = cache_root()
@@ -592,7 +596,21 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                         raise
                     _fail(job, exc, item_callback)
 
-            if asr_model.runtime == 'whisper_cpp':
+            if timing_plan.segmented and asr_model.runtime != 'whisper_cpp':
+                from .region_asr import infer_regions
+                asr_results = {}
+                for job in _active(jobs):
+                    engine_dir = root / 'asr-regions' / job.key
+                    try:
+                        item_callback(job.index, 'ASR', '')
+                        asr_results[job.key] = infer_regions(asr_model, asr_weights,
+                            asr_inputs[job.key], engine_dir, stage_options(settings), cancel, progress)
+                    except Exception as exc:
+                        checkpoint(cancel)
+                        _fail(job, exc, item_callback)
+                    finally:
+                        persist_tree(engine_dir, job.report / 'asr')
+            elif asr_model.runtime == 'whisper_cpp':
                 asr_results = _whisper_batch(asr_model, asr_weights, asr_stage, _active(jobs),
                                              asr_inputs, root / 'asr-batch', cancel, progress,
                                              item_callback, alignment_requested=settings.align is not None)
