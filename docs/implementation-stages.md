@@ -1,57 +1,64 @@
-# Provider / timing implementation
+# Staged implementation and validation
 
-Baseline: 7fdffae93e9e64643b2e6d71569dd541534f09df.
+## Stage 1 — correctness and integrity
 
-1. Integrity and correctness: safe tensor bounds, cache verification and locking,
-   request-level partial success, persistent failure logs, fine-grained diarization.
-2. User-selected timing: automatic / native / VAD speech regions / forced alignment;
-   model definitions describe capabilities, not mandatory user workflow.
-3. Provider boundary, schema-v2 multi-file models, runtime capability inspection,
-   native and optional external workers without executing code from model TOMLs.
-4. Additional ASR providers, CUDA runtime builds, upstream compatibility checks,
-   Windows frozen validation and complete distribution archive.
+Tensor bounds and stride validation, per-request failure isolation, persistent
+failure diagnostics, artifact hashing, installation locking/atomic state, and
+fine native timing before speaker assignment. Same-size rewrites are checked by
+content, not by a cached file timestamp (including Windows coarse timestamps).
 
-Each stage is committed only after its regression suite is run. Model weights,
-private media and local credentials are never committed or bundled.
+## Stage 2 — user-owned timing
 
-## Stage 2 validation
+GUI/CLI Automatic, Native, VAD speech-region and Forced-alignment modes. Settings
+persist independently of model definitions; bounded text-only ASR supports the
+same timing workflow outside Whisper. Native word intervals are never fabricated.
 
-235 Python tests pass, including GUI setting persistence and 19 user-timing
-regression cases. RTX 4080 / WSL native smoke on a 25-second Japanese clip:
-VAD mode created 8 speech-region items; forced alignment created 8 grouped items
-with forced-alignment provenance. Both RPPs were generated and all intervals were
-inside the audio. This is a functionality check, not an accuracy benchmark.
+## Stage 3 — provider/model separation
 
-## Stage 3 contract
+Data-only TOML schema 2, artifact-role/multi-file models, declarative scalar UI
+parameters, fixed provider interfaces, trusted external-worker protocol 1,
+explicit runtime registration/probing/rollback, native speaker preservation,
+and bounded queue windows. Unknown architectures still need an implementation;
+TOML selects an existing implementation rather than executing arbitrary code.
 
-The stage-major GUI path and CLI use the same bounded queue scheduler. Provider implementations
-encapsulate native CLI differences; a version-1 JSONL worker interface supports
-isolated sherpa-onnx, faster-whisper and explicitly selected external executables.
-Model schema 2 supports multiple asset roles, directory entries, declarative
-parameter controls and execution capabilities. Model files never import modules,
-register executables or install software. User runtime registration is separate,
-requires explicit trust and checks the executable hash; it is not an OS sandbox
-or a DLL supply-chain verifier. Keep registered runtime folders read-only.
+## Stage 4 — upstream separation and portable release
 
-Native speaker labels survive normalization/alignment unless the user selects
-external diarization or disables speakers. Fine timestamps are kept until export.
-The previously tested Stage 2 GUI is retained; the proposed GUI module split was
-not published because a source-write operation was blocked.
+Default native builds use unmodified pinned upstreams. A small public-whisper.h
+region runner replaces CLI text patches for bounded transcription; unsupported
+helper options fall back to stock CLI without discarding those options.
+CPU/Vulkan/CUDA native runtimes and an independent frozen sherpa-onnx /
+faster-whisper worker are packaged with dependency notices and manifests.
+Qwen3-ASR 0.6B, ReazonSpeech K2 and faster-whisper-base definitions are pinned.
 
-The new Qwen3-ASR 0.6B Q8_0 native CUDA runtime was built on the authorized RTX 4080
-host. A 25-second private Japanese fixture produced nonempty text successfully
-(exit 0, 5.04 seconds including process/model setup). Only these aggregate
-measurements are recorded; neither the audio nor transcript is published. This
-is a native functionality smoke, not a recognition accuracy benchmark.
+## Verified release, 2026-09-30
 
+Application commit: `dd5846731465f50eab6786c90655c3a13ea7afba`.
 
-## Stage 4: portable runtimes and upstream separation
+- Linux/Qt: 288 tests passed.
+- Windows/Qt: 287 passed; one symlink-privilege-dependent test skipped.
+- Native PCM Release test: 1 passed (assertions enabled).
+- Extracted portable ZIP: 11/11 inference cases passed, with Python/toolkit paths
+  removed. Includes Whisper and Qwen CUDA/Vulkan, Reazon CPU, faster-whisper CPU,
+  CUDA and batch=4, and Qwen CUDA forced alignment. All preserve original media.
+- Frozen optional-stage checks: all expected outcomes passed, including native
+  diarization, alignment, Unicode paths, required-alignment rejection, full muted
+  ORIGINAL track and four independent regions with exact stock/helper text match.
+- Frozen GUI lifecycle, CLI commands, native inference and 14 EXE icons verified.
+- ZIP hash checked after extraction; font files and ASR model weights excluded.
+  Faster-whisper's packaged Silero VAD asset is included and declared separately.
 
-- Windows Python/Qt regression suite: 281 passed, 1 symlink-privilege skip.
-- Added public-C-API Whisper region runner; default builds never modify upstream CLI source.
-- Added pinned Qwen3-ASR 0.6B, ReazonSpeech K2 and faster-whisper model definitions.
-- Added isolated frozen worker and shared CUDA dependency layout; worker capability probe succeeds after freezing.
-- Native CPU builds completed locally; GPU/Vulkan build and complete ZIP validation remain release gates.
-- GUI and CLI preflight capabilities before downloads and retain runtime identity in job settings.
+[Machine-readable results](validation/windows-20260930.json).
+These are functional tests on synthetic Japanese/public English speech, not a
+quality benchmark or a claim that every model/backend combination is certified.
+The local Windows CUDA build used CUDA 12.6 and an explicitly recorded compiler
+compatibility flag. Other GPUs may require a different runtime build.
 
-The branch remains a draft until the complete portable ZIP has passed native inference and lifecycle checks.
+## Boundaries kept explicit
+
+The app is unsigned. GPU drivers and REAPER are external prerequisites; model
+weights and ffmpeg.exe are acquired separately. PyAV's FFmpeg shared libraries
+and all redistribution notices remain in the worker pack. Workers are reused
+within bounded request groups, not promised to remain resident between GO runs.
+Optional future work includes cross-run resident workers and corpus-level CER,
+word-boundary and diarization quality benchmarks. Native updates still require
+capability/contract tests even though they no longer patch CLI source text.

@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "commit": "dd5846731465f50eab6786c90655c3a13ea7afba",
+  "zip_sha256": "1370460220b51ec1f103f1f73e33b48e7256e706639f7a5c26582f70204b2b3a",
+  "zip_bytes": 1611427778,
+  "unit_tests": {
+    "linux": {
+      "tests": 288,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "windows": {
+      "tests": 288,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    }
+  },
+  "portable": {
+    "fixture_sha256": "1aab8f5d522c6e91458c18ff3831fbae056bc6a0174808bfe80eb89d839fffb8",
+    "package_commit": "dd5846731465f50eab6786c90655c3a13ea7afba",
+    "gpu_requested": true,
+    "installed_python_or_toolkit_path_used": false,
+    "cases": {
+      "whisper-cpu-native": {
+        "returncode": 0,
+        "elapsed_seconds": 4.375,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "native_asr",
+        "unit_count": 3,
+        "methods": [
+          "native_interval"
+        ],
+        "text_sha256": "3f5c7e93efa112d002f69ffce212b2e3b31ed418a85cd968f567359a8b90ab1a",
+        "worker_devices": [],
+        "gpu_evidence": []
+      },
+      "whisper-cpu-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 5.203,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "76569b9d4690be710848e071fc146d8e3a7b62426265edc4aaa876134649a18c",
+        "worker_devices": [],
+        "gpu_evidence": []
+      },
+      "reazon-cpu-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 4.266,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "bd92b7cb95260dc47bd647039a3f98d2a05b9c5319f08412c14151f16d3dc80f",
+        "worker_devices": [
+          "cpu"
+        ],
+        "gpu_evidence": []
+      },
+      "faster-cpu-native": {
+        "returncode": 0,
+        "elapsed_seconds": 3.468,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "native_asr",
+        "unit_count": 3,
+        "methods": [
+          "native_interval"
+        ],
+        "text_sha256": "3f5c7e93efa112d002f69ffce212b2e3b31ed418a85cd968f567359a8b90ab1a",
+        "worker_devices": [
+          "cpu"
+        ],
+        "gpu_evidence": []
+      },
+      "whisper-cuda-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 4.594,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "76569b9d4690be710848e071fc146d8e3a7b62426265edc4aaa876134649a18c",
+        "worker_devices": [],
+        "gpu_evidence": [
+          "  Device 0: NVIDIA GeForce RTX 4080, compute capability 8.9, VMM: yes, VRAM: 16375 MiB",
+          "whisper_backend_init_gpu: using CUDA0 backend"
+        ]
+      },
+      "whisper-vulkan-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 2.891,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "76569b9d4690be710848e071fc146d8e3a7b62426265edc4aaa876134649a18c",
+        "worker_devices": [],
+        "gpu_evidence": [
+          "ggml_vulkan: 0 = NVIDIA GeForce RTX 4080 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2",
+          "whisper_model_load:      Vulkan0 total size =   147.37 MB",
+          "whisper_backend_init_gpu: device 0: Vulkan0 (type: 1)",
+          "whisper_backend_init_gpu: found GPU device 0: Vulkan0 (type: 1, cnt: 0)",
+          "whisper_backend_init_gpu: using Vulkan0 backend"
+        ]
+      },
+      "qwen-cuda-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 5.453,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "1e76e6a585a17bb46e231b90135c125343683a16bb26ae50977fa888baba3c6e",
+        "worker_devices": [],
+        "gpu_evidence": [
+          "  Device 0: NVIDIA GeForce RTX 4080, compute capability 8.9, VMM: yes, VRAM: 16375 MiB",
+          "ggml_backend_cuda_graph_compute: CUDA graph warmup complete"
+        ]
+      },
+      "qwen-vulkan-vad": {
+        "returncode": 0,
+        "elapsed_seconds": 5.125,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "vad",
+        "unit_count": 4,
+        "methods": [
+          "vad_segment"
+        ],
+        "text_sha256": "1e76e6a585a17bb46e231b90135c125343683a16bb26ae50977fa888baba3c6e",
+        "worker_devices": [],
+        "gpu_evidence": [
+          "ggml_vulkan: 0 = NVIDIA GeForce RTX 4080 (NVIDIA) | uma: 0 | fp16: 1 | bf16: 1 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2"
+        ]
+      },
+      "faster-cuda-native": {
+        "returncode": 0,
+        "elapsed_seconds": 2.922,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "native_asr",
+        "unit_count": 3,
+        "methods": [
+          "native_interval"
+        ],
+        "text_sha256": "3f5c7e93efa112d002f69ffce212b2e3b31ed418a85cd968f567359a8b90ab1a",
+        "worker_devices": [
+          "cuda"
+        ],
+        "gpu_evidence": []
+      },
+      "faster-cuda-batch": {
+        "returncode": 0,
+        "elapsed_seconds": 2.609,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "native_asr",
+        "unit_count": 3,
+        "methods": [
+          "native_interval"
+        ],
+        "text_sha256": "3f5c7e93efa112d002f69ffce212b2e3b31ed418a85cd968f567359a8b90ab1a",
+        "worker_devices": [
+          "cuda"
+        ],
+        "gpu_evidence": []
+      },
+      "qwen-cuda-alignment": {
+        "returncode": 0,
+        "elapsed_seconds": 7.688,
+        "passed": true,
+        "source_unchanged": true,
+        "timestamp_source": "forced_alignment",
+        "unit_count": 3,
+        "methods": [
+          "forced_alignment"
+        ],
+        "text_sha256": "b479c883fbe281eaa1bf1c8d0daaa7de8582659a23d81e9fdcecab0d3d062e4b",
+        "worker_devices": [],
+        "gpu_evidence": [
+          "  Device 0: NVIDIA GeForce RTX 4080, compute capability 8.9, VMM: yes, VRAM: 16375 MiB",
+          "ggml_backend_cuda_graph_compute: CUDA graph warmup complete"
+        ]
+      }
+    },
+    "acquisition": {
+      "returncode": 0,
+      "elapsed_seconds": 3.25
+    },
+    "original_unchanged": true,
+    "passed": true
+  },
+  "optional_stages": {
+    "download": {
+      "returncode": 0,
+      "elapsed_seconds": 2.687000000034459
+    },
+    "asr-only": {
+      "returncode": 0,
+      "elapsed_seconds": 5.312999999965541,
+      "stages": {
+        "diar": false,
+        "align": false
+      },
+      "rpp_count": 1,
+      "source_unchanged": true,
+      "original_track": "full reference, muted, first"
+    },
+    "diar-only": {
+      "returncode": 0,
+      "elapsed_seconds": 11.812000000034459,
+      "stages": {
+        "diar": true,
+        "align": false
+      },
+      "rpp_count": 1,
+      "source_unchanged": true,
+      "original_track": "full reference, muted, first"
+    },
+    "align-only": {
+      "returncode": 0,
+      "elapsed_seconds": 8.390999999945052,
+      "stages": {
+        "diar": false,
+        "align": true
+      },
+      "rpp_count": 1,
+      "source_unchanged": true,
+      "original_track": "full reference, muted, first"
+    },
+    "both": {
+      "returncode": 0,
+      "elapsed_seconds": 8.781000000075437,
+      "stages": {
+        "diar": true,
+        "align": true
+      },
+      "rpp_count": 1,
+      "source_unchanged": true,
+      "original_track": "full reference, muted, first"
+    },
+    "unicode-whisper": {
+      "returncode": 0,
+      "elapsed_seconds": 2.530999999959022
+    },
+    "policy-requires-align": {
+      "returncode": 2,
+      "elapsed_seconds": 0.9690000000409782,
+      "expected_returncode": 2
+    },
+    "vad-region-times": {
+      "returncode": 0,
+      "elapsed_seconds": 4.921999999904074,
+      "vad_segments": 4,
+      "timestamp_source": "vad"
+    },
+    "vad-policy": {
+      "returncode": 0,
+      "elapsed_seconds": 8.359000000054948,
+      "windows": 4,
+      "aligned_units": 3
+    },
+    "pcm-equivalence": {
+      "returncode": 0,
+      "independent_regions": 4,
+      "exact_native_text_match": true
+    }
+  },
+  "frozen_smoke": {
+    "cli_doctor": "passed",
+    "cli_models_list": "passed",
+    "cli_model_download": "passed",
+    "cli_asr_to_rpp": "passed",
+    "gui_startup_5s": "passed",
+    "gui_interaction": "frozen GO-STOP-GO, errors and completed-item preservation passed",
+    "icons_verified_executables": 14,
+    "window_icon": "passed",
+    "ffmpeg_bundled": false,
+    "code_signing": "unsigned",
+    "private_media_used": false
+  },
+  "native_pcm_release_test": "1 passed",
+  "private_media_included": false,
+  "validation_scope": "Functional smoke tests using synthetic Japanese and public English speech; not a quality or performance benchmark"
+}
