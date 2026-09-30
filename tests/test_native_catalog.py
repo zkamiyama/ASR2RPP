@@ -46,3 +46,9 @@ def test_english_only_models_do_not_default_to_japanese():
 def test_catalog_has_no_faster_whisper_standard_dependency():
     catalog, _ = load_catalog(ROOT / 'models')
     assert all(m.runtime != 'faster_whisper' for m in catalog.values())
+
+
+def test_windows_builder_uses_utf8_for_upstream_prompt_literals():
+    source = (ROOT / 'tools/build_native.py').read_text()
+    assert '-DCMAKE_C_FLAGS=/utf-8' in source
+    assert '-DCMAKE_CXX_FLAGS=/utf-8' in source

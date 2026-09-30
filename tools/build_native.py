@@ -113,6 +113,10 @@ def build(name, backend='cpu'):
     flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF', '-DGGML_CCACHE=OFF',
              '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
              f'-DGGML_CUDA={cuda}', f'-DGGML_METAL={metal}', f'-DGGML_VULKAN={vulkan}']
+    if os.name == 'nt':
+        # Upstream prompts contain CJK literals. Do not interpret source bytes
+        # using the developer machine's ANSI codepage (CP932/CP1252).
+        flags += ['-DCMAKE_C_FLAGS=/utf-8', '-DCMAKE_CXX_FLAGS=/utf-8']
     if sys.platform == 'darwin':
         flags += ['-DCMAKE_OSX_ARCHITECTURES=arm64',
                   '-DCMAKE_OSX_DEPLOYMENT_TARGET=' + os.getenv('MACOSX_DEPLOYMENT_TARGET', '14.0'),
