@@ -15,6 +15,7 @@ from urllib.request import urlopen
 
 from portable_runtime import audit_lightweight, verify_manifests
 from package_macos import audit_machos
+from metal_smoke_policy import PROBE_SOURCE, select_metal_cases
 
 
 def main():
@@ -43,7 +44,7 @@ def main():
         if key.startswith(('DYLD_', 'CUDA_PATH', 'VULKAN_SDK')):
             env.pop(key, None)
     env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
-    results = {'platform': 'macos-arm64', 'signature_verified': True, 'distribution': audit, 'cases': {}}
+    results = {'platform': 'macos-arm64', 'signature_verified': True, 'distribution': audit, 'cases': {}, 'skipped': {}}
     def save():
         (report/'summary.json').write_text(json.dumps(results, indent=2))
     def run(name, argv, timeout=600):
@@ -62,43 +63,42 @@ def main():
     with urlopen(url, timeout=30) as response:
         fixture.write_bytes(response.read())
     original = hashlib.sha256(fixture.read_bytes()).hexdigest()
-    run('models', [cli, 'models', 'install', 'whisper-base', 'reazonspeech-k2'])
+    run('models', [cli, 'models', 'install', 'whisper-base', 'reazonspeech-k2', 'qwen3-asr-06b'])
     for name, model, timing, language in [('whisper-cpu-native','whisper-base','native','en'),
                                          ('whisper-cpu-vad','whisper-base','vad','en'),
-                                         ('reazon-cpu-vad','reazonspeech-k2','vad','ja')]:
+                                         ('reazon-cpu-vad','reazonspeech-k2','vad','ja'),
+                                         ('qwen-cpu-vad','qwen3-asr-06b','vad','English')]:
         run(name, [cli, 'run', fixture, '--asr', model, '--asr-device', 'cpu', '--timing', timing,
                    '--asr-language', language, '--output-dir', report/name])
         if not list((report/name).glob('*.rpp')):
             raise RuntimeError('Missing RPP: ' + name)
-    # Query Apple's device API. A headless VM may have no GPU even though Metal builds work.
+    # Measure the capabilities ggml actually needs, not just device presence.
     source = report/'metal-probe.mm'
-    source.write_text('#import <Foundation/Foundation.h>\n#import <Metal/Metal.h>\n'
-                      'int main() { @autoreleasepool { id<MTLDevice> d = MTLCreateSystemDefaultDevice(); '
-                      'if (!d) return 2; puts([[d name] UTF8String]); return 0; }}\n')
+    source.write_text(PROBE_SOURCE)
     probe = report/'metal-probe'
     subprocess.run(['xcrun', 'clang++', str(source), '-framework', 'Foundation', '-framework', 'Metal', '-o', str(probe)], check=True)
-    device = subprocess.run([str(probe)], capture_output=True, text=True)
-    if device.returncode not in (0, 2):
-        raise RuntimeError('Metal hardware probe failed unexpectedly')
-    results['metal'] = {'available': device.returncode == 0, 'device': device.stdout.strip(), 'inference_verified': False}
+    device = subprocess.run([str(probe)], capture_output=True, text=True, check=True)
+    capabilities = json.loads(device.stdout)
+    runnable, skipped = select_metal_cases(capabilities)
+    results['metal'] = dict(capabilities, inference_verified_models=[], coverage_complete=False)
+    results['skipped'] = {model+'-metal-vad': reason for model, reason in skipped.items()}
     save()
-    if device.returncode == 0:
-        for model in ('whisper-base', 'qwen3-asr-06b'):
-            if model.startswith('qwen'):
-                run('qwen-model', [cli, 'models', 'install', model])
-            name = model+'-metal-vad'
-            run(name, [cli, 'run', fixture, '--asr', model, '--asr-device', 'metal', '--timing', 'vad',
-                       '--asr-language', 'English' if model.startswith('qwen') else 'en',
-                       '--output-dir', report/name])
-            logs = '\n'.join(p.read_text(errors='replace') for p in (report/name).rglob('*.log'))
-            if not any(token in logs.lower() for token in ('using metal', 'ggml_metal', 'ggml_backend_metal')):
-                raise RuntimeError('Metal execution evidence missing')
-        results['metal']['inference_verified'] = True
-    else:
-        results['metal']['skip_reason'] = 'MTLCreateSystemDefaultDevice returned nil on this runner; compilation is not GPU verification'
-        if os.getenv('ASR2RPP_REQUIRE_METAL_GPU') == '1':
-            save()
-            raise RuntimeError('This job requires real Metal hardware')
+    for model in runnable:
+        name = model+'-metal-vad'
+        run(name, [cli, 'run', fixture, '--asr', model, '--asr-device', 'metal', '--timing', 'vad',
+                   '--asr-language', 'English' if model.startswith('qwen') else 'en',
+                   '--output-dir', report/name])
+        logs = '\n'.join(p.read_text(errors='replace') for p in (report/name).rglob('*.log'))
+        if not any(token in logs.lower() for token in ('using metal', 'ggml_metal', 'ggml_backend_metal')):
+            raise RuntimeError('Metal execution evidence missing')
+        if not list((report/name).glob('*.rpp')):
+            raise RuntimeError('Missing Metal RPP: ' + name)
+        results['metal']['inference_verified_models'].append(model)
+        save()
+    results['metal']['coverage_complete'] = not skipped
+    save()
+    if skipped and os.getenv('ASR2RPP_REQUIRE_METAL_GPU') == '1':
+        raise RuntimeError('This hardware job requires both Metal inference cases: ' + str(skipped))
     results['source_unchanged'] = hashlib.sha256(fixture.read_bytes()).hexdigest() == original
     results['passed'] = results['source_unchanged'] and all(v['returncode'] == 0 for v in results['cases'].values())
     save()
