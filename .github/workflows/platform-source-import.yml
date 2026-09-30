@@ -1,0 +1,66 @@
+name: Verified platform source objects
+on:
+  push:
+    branches: [feat/provider-timing-runtime]
+    paths: ['.platform-import/**', '.github/workflows/platform-source-import.yml']
+permissions:
+  contents: write
+jobs:
+  objects:
+    if: github.repository == 'zkamiyama/ASR2RPP'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reconstruct VM-verified source objects without updating any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, hashlib, json, os, pathlib, urllib.request
+          base_tree = 'e796e24213e6089ae4ed80fcdbd050c465c593bc'
+          target_tree = 'b744269d86c9c277bab09fcae6804bc35a8145c4'
+          root = pathlib.Path.cwd()
+          def blob(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          changes, seen = [], set()
+          for delta in sorted(pathlib.Path('.platform-import').glob('*.json')):
+              for item in json.loads(delta.read_text(encoding='utf-8')):
+                  path = pathlib.PurePosixPath(item['path'])
+                  assert not path.is_absolute() and '..' not in path.parts and path.as_posix() not in seen
+                  seen.add(path.as_posix())
+                  old = (root/path).read_bytes() if item['old'] is not None else b''
+                  assert item['old'] is None or blob(old) == item['old'], item['path']
+                  lines = old.decode('utf-8').splitlines(keepends=True)
+                  for start, stop, text in reversed(item['edits']):
+                      assert 0 <= start <= stop <= len(lines)
+                      lines[start:stop] = text.splitlines(keepends=True)
+                  data = ''.join(lines).encode('utf-8')
+                  assert item['new'] is None and not data or blob(data) == item['new'], item['path']
+                  changes.append((item, data))
+          assert len(changes) == 31
+          def post(resource, payload):
+              url = 'https://api.github.com/repos/zkamiyama/ASR2RPP/git/' + resource
+              request = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST', headers={
+                  'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                  'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          entries = []
+          for item, data in changes:
+              if item['new'] is not None:
+                  result = post('blobs', {'content': base64.b64encode(data).decode(), 'encoding': 'base64'})
+                  assert result['sha'] == item['new'], item['path']
+              entries.append({'path':item['path'], 'mode':'100644', 'type':'blob', 'sha':item['new']})
+              print('Verified:', item['path'])
+          tree = post('trees', {'base_tree':base_tree, 'tree':entries})
+          assert tree['sha'] == target_tree, tree['sha']
+          pathlib.Path('source-objects.json').write_text(json.dumps({'tree':tree['sha'], 'files':len(changes), 'branch_updated':False}))
+          print('VERIFIED_TARGET_TREE', tree['sha'])
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-platform-source-objects
+          path: source-objects.json
+          retention-days: 1
