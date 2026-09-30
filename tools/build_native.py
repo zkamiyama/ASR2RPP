@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-WORK = ROOT / 'build' / 'native'
+WORK = Path(os.environ['ASR2RPP_NATIVE_WORK']) if os.getenv('ASR2RPP_NATIVE_WORK') else ROOT / 'build' / 'native'
 ENGINES = ROOT / 'engines'
 LOCK = json.loads((ROOT / 'native/versions.json').read_text(encoding='utf-8'))
 SOURCES = {name: (entry['repository'], entry['commit'], entry['target'])

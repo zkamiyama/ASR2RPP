@@ -58,3 +58,21 @@ def test_cuda_dedup_records_dependencies_and_rejects_conflicts(tmp_path):
     (tmp_path/'engines/audio_cpp-cuda/cublas64_12.dll').write_bytes(b'conflict')
     with pytest.raises(ValueError,match='Conflicting'):
         collect_cuda(tmp_path)
+
+
+def test_gui_preflight_failure_stops_before_model_download(tmp_path,monkeypatch):
+    pytest.importorskip('PySide6')
+    from asr2rpp import gui_dcc,providers
+    from asr2rpp.catalog import Model
+    from asr2rpp.pipeline import Stage
+    from asr2rpp.preprocessing import Settings
+    model=Model('not-installed','audio_cpp','asr',{'path':str(tmp_path/'weights')},family='missing')
+    calls=[]
+    monkeypatch.setattr(gui_dcc,'resolve_model',lambda *a,**kw:calls.append('download'))
+    def unsupported(*args,**kwargs):
+        raise ValueError('Unsupported compiled family')
+    monkeypatch.setattr(providers,'preflight',unsupported)
+    worker=gui_dcc.Worker([],Settings(Stage(model.id)),{model.id:model})
+    with pytest.raises(ValueError,match='Unsupported compiled family'):
+        worker._prepare_models()
+    assert not calls
