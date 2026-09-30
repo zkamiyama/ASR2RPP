@@ -56,6 +56,19 @@ def main():
         save()
         if completed.returncode:
             raise RuntimeError(f'{name} failed; see {name}.log')
+    # Verify the independent first-run arm64 download rather than relying on Homebrew.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from asr2rpp.ffmpeg_macos import ensure_ffmpeg
+    previous_home = os.environ.get('ASR2RPP_HOME')
+    os.environ['ASR2RPP_HOME'] = env['ASR2RPP_HOME']
+    try:
+        downloaded_ffmpeg = ensure_ffmpeg()
+    finally:
+        if previous_home is None:
+            os.environ.pop('ASR2RPP_HOME', None)
+        else:
+            os.environ['ASR2RPP_HOME'] = previous_home
+    run('downloaded-ffmpeg', [downloaded_ffmpeg, '-version'])
     run('doctor', [cli, 'doctor'])
     run('lifecycle', [app/'Contents/MacOS/ASR2RPP', '--self-test-lifecycle', report/'lifecycle'])
     fixture = report/'jfk.wav'
@@ -69,9 +82,11 @@ def main():
                                          ('reazon-cpu-vad','reazonspeech-k2','vad','ja'),
                                          ('qwen-cpu-vad','qwen3-asr-06b','vad','English')]:
         run(name, [cli, 'run', fixture, '--asr', model, '--asr-device', 'cpu', '--timing', timing,
-                   '--asr-language', language, '--output-dir', report/name])
+                   '--asr-language', language, '--ffmpeg', downloaded_ffmpeg, '--format', 'rpp,otio,json', '--output-dir', report/name])
         if not list((report/name).glob('*.rpp')):
             raise RuntimeError('Missing RPP: ' + name)
+        from smoke_outputs import check_exports
+        results['cases'][name]['exports'] = check_exports(next((report/name).glob('*.json')))
     # Measure the capabilities ggml actually needs, not just device presence.
     source = report/'metal-probe.mm'
     source.write_text(PROBE_SOURCE)
@@ -87,12 +102,14 @@ def main():
         name = model+'-metal-vad'
         run(name, [cli, 'run', fixture, '--asr', model, '--asr-device', 'metal', '--timing', 'vad',
                    '--asr-language', 'English' if model.startswith('qwen') else 'en',
-                   '--output-dir', report/name])
+                   '--ffmpeg', downloaded_ffmpeg, '--format', 'rpp,otio,json', '--output-dir', report/name])
         logs = '\n'.join(p.read_text(errors='replace') for p in (report/name).rglob('*.log'))
         if not any(token in logs.lower() for token in ('using metal', 'ggml_metal', 'ggml_backend_metal')):
             raise RuntimeError('Metal execution evidence missing')
         if not list((report/name).glob('*.rpp')):
             raise RuntimeError('Missing Metal RPP: ' + name)
+        from smoke_outputs import check_exports
+        results['cases'][name]['exports'] = check_exports(next((report/name).glob('*.json')))
         results['metal']['inference_verified_models'].append(model)
         save()
     results['metal']['coverage_complete'] = not skipped

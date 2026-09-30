@@ -15,6 +15,7 @@ from .catalog import Model, checkpoint, cache_root, resolve_model, digest, defin
 from .adapters import Unit, infer, run_process, ffmpeg_path, executable
 from .transcript import clean_bounds, group_units, has_alignable_text, assign_speakers, safe_label
 from .rpp_export import write_reference
+from .outputs import validate_formats, FORMATS, snapshot, export_results
 from .media import full_reference_duration
 from .alignment import align_segments
 from .inference_policy import policy_for
@@ -66,8 +67,10 @@ class Settings:
     timing: TimingSettings = field(default_factory=TimingSettings, kw_only=True)
     queue_window_items: int = field(default=16, kw_only=True)
     runtime_provenance: dict = field(default_factory=dict, kw_only=True)
+    output_formats: tuple[str, ...] = field(default=('rpp',), kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
+        validate_formats(self.output_formats)
         if type(self.queue_window_items) is not int or not 1 <= self.queue_window_items <= 4096:
             raise ValueError('Queue window must be 1..4096 items')
         if not self.same_directory and not self.output_directory.strip():
@@ -99,14 +102,15 @@ class Settings:
 
 
 def reserve_output(source: Path, settings: Settings, sibling_suffixes=()) -> tuple[Path, Path]:
+    formats = validate_formats(settings.output_formats)
     parent = source.parent if settings.same_directory else Path(settings.output_directory).expanduser().resolve()
     parent.mkdir(parents=True, exist_ok=True)
     for index in range(1, 100000):
         suffix = '' if index == 1 else f'_{index}'
         base = compact_output_stem(source.stem, MAX_OUTPUT_STEM_CHARS - len(suffix))
         stem = base + suffix
-        output, report = parent / f'{stem}.rpp', parent / f'{stem}.asr2rpp'
-        siblings = [parent / f'{stem}{extra}' for extra in sibling_suffixes]
+        output, report = parent / f'{stem}.{formats[0]}', parent / f'{stem}.asr2rpp'
+        siblings = [parent / f'{stem}{extra}' for extra in (*sibling_suffixes, *('.'+f for f in FORMATS))]
         if output.exists() or any(path.exists() for path in siblings):
             continue
         try:
@@ -215,6 +219,10 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
             stage_options(settings))
         units = clean_bounds(asr.units, duration, warnings)
+        snapshot(report, 'asr_normalized', units)
+        (report/'asr').mkdir(exist_ok=True)
+        if not (report/'asr/raw.json').exists():
+            json_write(report/'asr/raw.json', asr.raw)
         if not units:
             raise ValueError('No timed speech was returned; raw engine output is retained')
         if any(u.method == 'emission_frame' for u in units):
@@ -236,6 +244,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
                 # Never copy temporary audio slices into the user's report.
                 if engine_dir.exists():
                     persist_tree(engine_dir, report / 'align')
+            snapshot(report, 'aligned', units)
         if settings.diar is not None:
             model = catalog[settings.diar.model_id]
             audio, _ = pcm(model.sample_rate)
@@ -243,18 +252,26 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             result = infer_persist(
                 model, weights['diar'], audio, work / 'diar', report / 'diar',
                 settings.diar.options())
-            units = assign_speakers(units, clean_bounds(result.units, duration, warnings), warnings)
+            turns = clean_bounds(result.units, duration, warnings)
+            snapshot(report, 'diarization_turns', turns)
+            (report/'diar').mkdir(exist_ok=True)
+            if not (report/'diar/raw.json').exists():
+                json_write(report/'diar/raw.json', result.raw)
+            units = assign_speakers(units, turns, warnings)
         if any(u.method == 'vad_segment' for u in units):
             warnings.append('VAD region timestamps used: approximate speech intervals, not word boundaries.')
         manifest['timestamp_source'] = timing_plan.timestamp_source
         manifest['timing_plan'] = asdict(timing_plan)
+        fine_units = list(units)
+        snapshot(report, 'speaker_assigned', fine_units)
         units = group_units(units)
         if not units:
             raise ValueError('No valid intervals remain after normalization')
         checkpoint(cancel)
-        progress('RPP — writing non-destructive references')
+        progress('Export — ' + ', '.join(settings.output_formats))
         json_write(report / 'transcript.json', {'clip_start': settings.clip_start, 'duration': duration,
-                   'units': [asdict(u) for u in units], 'warnings': warnings})
+                   'units': [asdict(u) for u in units], 'fine_units': [asdict(u) for u in fine_units],
+                   'warnings': warnings})
         if digest(source) != manifest['source_sha256']:
             raise ValueError('Original input changed while processing')
         if _analysis_report is not None:
@@ -264,10 +281,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             return report
         reference_length = full_reference_duration(
             source, settings, duration, work, cancel, progress)
-        export_rpp(source, output, units, settings.clip_start, settings.diar is not None or any(u.speaker for u in units),
-                   reference_length)
-        manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
-                                      'duration_seconds': float(reference_length)}
+        export_results(source, source, units, fine_units, settings, output, report, manifest,
+                       duration, 0.0, reference_length, warnings=warnings, cancel=cancel)
         manifest.update(status='completed', elapsed_seconds=time.monotonic() - started,
                         source_unchanged=True, warnings=warnings,
                         output=str(output))

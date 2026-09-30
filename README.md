@@ -1,76 +1,80 @@
-[English](README.md) | [日本語](README.ja.md)
+<p align="center"><img src="assets/branding/app.svg" width="96" height="96" alt="ASR2RPP: speech into an editable timeline"></p>
 
 # ASR2RPP
 
-**Turn speech in audio or video into an editable REAPER project, locally.**
+**Local speech recognition. Editable timelines. Your original media stays untouched.**
 
-ASR2RPP writes recognized text and timing into `.rpp` items that reference your media.
-Optional stages remove background audio, refine timing and organize items by speaker.
-The original file is not modified.
+[日本語](README.ja.md) · [Download](https://github.com/zkamiyama/ASR2RPP/releases/latest) · [Models](docs/models.md)
 
-## Start here
+Turn audio or video into a **REAPER project, OpenTimelineIO timeline, or reusable JSON**.
+Optional background removal, alignment and speaker labels all work before export, so the selected formats share the same edit decisions.
 
-1. Get the complete ZIP for your OS from [Releases](https://github.com/zkamiyama/ASR2RPP/releases). Development builds are the successful CI artifacts linked from [PR #7](https://github.com/zkamiyama/ASR2RPP/pull/7). **This guide describes 0.2.2 and later; the older CUDA-containing 0.2.0 archive is different.**
-2. Extract everything into a **new folder**. Start `ASR2RPP.exe` on Windows or `ASR2RPP.app` on Mac. Do not move only the EXE.
-3. Drag recordings into the queue, choose an ASR model and press **GO**. For a first check, use **Whisper Base**, select the recording's language, leave optional stages OFF, and use **Settings → Timing → Automatic**.
-4. Only the selected weights are downloaded. Open the resulting `.rpp` in REAPER. The default output location is beside the input; change it in the main window. Double-click a completed row to open its output folder.
+## Start in four steps
 
-The gear opens settings. The globe button or `Ctrl+Shift+L` switches English/Japanese.
+1. Download your OS's **complete ZIP** from Releases and extract it into a **new folder**.
+2. Open `ASR2RPP.exe` on Windows or `ASR2RPP.app` on Mac. Keep the other files together.
+3. Drop a recording into the window. For a first test, use the included `examples/sample.wav`, **Whisper Base**, language **en**, optional stages OFF, and **Settings → Timing → Automatic**.
+4. Press **GO**. Selected model weights and a missing FFmpeg are acquired on first use. Double-click a completed row to open the output folder.
 
-## Requirements and dependencies
+For your own recordings, choose the appropriate language. The default destination is beside the input. The gear opens settings; the globe switches English/Japanese. Downloads require a network connection. Once dependencies are present, recognition stays on your computer.
 
-| Package | Target | GPU path |
-|---|---|---|
-| Windows | x64 CPU with AVX2 | Vulkan only, with a compatible GPU driver |
-| macOS | Apple Silicon, macOS 14 or later; not Intel | Metal only |
+## Choose your output
 
-Both packages support CPU execution. Select **CPU** for a stage when its GPU path is unavailable or fails on your system. The bundled ReazonSpeech K2 worker is CPU-only.
+The main window starts with **Format: `RPP ×` `+`**. Click **+** to add OTIO or JSON; click a chip's **×** to remove it. The menu offers only unselected formats. An empty selection shows an error and does **not** start inference. Your selection is remembered.
 
-**Included:** application Python runtime, Qt/PySide6, NumPy, safetensors, whisper.cpp, audio.cpp, CPU sherpa-onnx worker and model TOML definitions.
-**Separate:** REAPER to open projects, FFmpeg to decode media, and the selected model weights.
-**Not required for users:** a Python installation, PyTorch, CUDA Toolkit, Vulkan SDK or Xcode. Standard packages exclude CUDA, CTranslate2 and faster-whisper.
+| Format | Use it for |
+|---|---|
+| **RPP** | Open directly in REAPER. |
+| **OTIO** | Exchange a timeline with an OpenTimelineIO-capable editor or adapter. |
+| **JSON** | Keep raw stage results, corrected units, model provenance, media paths and an explicit edit timeline for your own converters. |
 
-Windows acquires a checksum-verified FFmpeg build when none is found. On Mac, install FFmpeg separately; choose its executable under **Settings → Advanced → ffmpeg** when necessary. Standard Homebrew paths are also detected.
-Model/FFmpeg acquisition uses the network. Once those files are available, inference runs locally; recordings are not sent to a cloud transcription service.
+RPP and OTIO contain a full-length, **muted ORIGINAL** reference track, followed by transcript or speaker tracks. Gaps stay in place. Overlapping clips from one speaker use additional lanes. Media is **referenced, not embedded**. OTIO writes `enabled=false` for the muted track and clip; the receiving editor must honor this property. Check its import behavior before production use.
 
-Windows builds are unsigned; Mac builds are ad-hoc signed and not notarized. Check the distribution source and SHA-256. Libraries and weights retain their own terms, separate from the app's MIT license; see [third-party notices](THIRD_PARTY.md).
+Background removal can save a continuous `*_vocals.wav`; choose **Reference audio → Processed** to edit against it. Otherwise the timeline references the original media. Existing outputs are never overwritten. The adjacent `.asr2rpp` folder holds diagnostics; JSON also includes the result data needed for conversion without that folder. **Both can contain private text and paths.**
+
+[Output structure, JSON schema and conversion examples →](docs/outputs.md)
 
 ## Models and timing
 
-The catalog contains **20 model definitions, not 20 bundled sets of weights**. Nothing downloads the entire catalog automatically.
-It covers Whisper Tiny through Large/Turbo, Anime Whisper, Qwen3-ASR, SenseVoice, Fun-ASR-Nano, Nemotron, Canary, Moonshine, Voxtral, VibeVoice and optional analysis stages.
-Use the [model table](docs/models.md) for language, download size and exact validation scope. The included Canary and Moonshine models do not support Japanese.
+The ZIP contains **20 model definitions, not 20 sets of weights**. Only selected weights are downloaded. The [model table](docs/models.md) lists languages, sizes and validation scope. Canary and Moonshine's included models are English-oriented, not Japanese ASR.
 
-Choose timing in **Settings → Timing**, not by editing model definitions:
+Choose timing under **Settings → Timing**:
 
-| Choice | Behavior |
+| Setting | Meaning |
 |---|---|
-| Automatic | Uses model intervals when available; otherwise uses VAD speech regions. Enabling alignment selects alignment. Legacy TOML workflow defaults are also considered for compatibility. |
-| Native model intervals | Keeps the model's intervals; unavailable for text-only ASR. |
-| VAD speech regions | Recognizes bounded speech regions independently. **These are utterance intervals, not word boundaries.** |
-| Forced alignment | Aligns recognized text to audio. Select the aligner in the main window. Enable “VAD before alignment” for long/coarse segments. |
+| **Automatic** | Use native model intervals when available, otherwise VAD speech regions. An enabled aligner takes precedence. Legacy TOML defaults are supported. |
+| **Native model intervals** | Use intervals returned by the ASR. Not available for text-only models. |
+| **VAD speech regions** | Locate utterances and recognize each region. **These are not word boundaries.** |
+| **Forced alignment** | Align the recognized text to the audio. Select the aligner in the main window; use VAD before alignment for long/coarse segments. |
 
-The same settings page controls maximum VAD duration, threshold and minimum silence.
-Recognition, timing and speaker labels can be wrong. Alignment does not correct a wrong transcript.
-Background removal and speaker diarization are optional. Native ASR speaker labels, such as VibeVoice's, can also be retained. Assigning labels does not separate overlapping voices into distinct recordings.
+Recognition, timing and speaker labels can be wrong. Alignment does not fix a wrong transcript. Speaker labeling does not separate overlapping voices into separate recordings.
 
-## Output, cancellation and errors
+## Requirements
 
-The first track, **ORIGINAL**, contains the complete reference audio as one muted item.
-Transcript or speaker tracks follow. Audio is referenced, not embedded: keep the media with the project.
-With background removal and **RPP Audio → Processed**, a continuous `*_vocals.wav` is saved and becomes the reference; **Original** keeps references to the original media.
-Existing output names receive a numeric suffix instead of being overwritten.
-The adjacent `.asr2rpp` directory contains settings, timing provenance, logs and recognized text. **Review it for private information before sharing.**
+| OS | Supported package | GPU |
+|---|---|---|
+| **Windows** | x64 CPU with AVX2 | Vulkan only; a compatible GPU driver is required |
+| **macOS** | Apple Silicon, macOS 14+; not Intel | Metal only |
 
-Press **STOP** and wait for cleanup. **GO** retries waiting, stopped or failed items without regenerating completed items. Remove and re-add a completed row to process it again.
-The bottom log is selectable/copyable. An unsupported `family` means the runtime does not contain that implementation; a missing model means its weights need to be installed.
+CPU is available on both. The bundled ReazonSpeech K2 worker is CPU-only.
 
-## Updates and customization
+**Included:** Python runtime, Qt/PySide6, NumPy, safetensors, OpenTimelineIO, whisper.cpp, audio.cpp and a CPU sherpa-onnx worker.
+**Acquired separately on first use:** selected model weights and, when missing, checksum-verified FFmpeg. A custom FFmpeg path can be set in **Settings → Advanced**.
+**Not needed:** a separate Python install, PyTorch, CUDA Toolkit, Vulkan SDK or Xcode. CUDA, CTranslate2 and faster-whisper are not bundled.
 
-Change model and temporary storage under **Settings → General**. Default data locations are `%LOCALAPPDATA%\ASR2RPP` on Windows and `~/Library/Application Support/ASR2RPP` on Mac.
-Extract updates into a new folder. UI preferences use the OS settings store, and verified weights for unchanged definitions are normally reused. Changing the source/revision may require another download.
+REAPER is only needed to open RPP; it is not needed to generate JSON or OTIO. Windows executables are unsigned; the Mac app is ad-hoc signed, not Apple-notarized. Verify the release source and checksum. Dependency/model terms are separate from the app's [MIT license](LICENSE); see [third-party notices](THIRD_PARTY.md).
 
-Add a uniquely named `.toml` under **Settings → Advanced → Open custom TOML**. Do not reuse a bundled model ID or edit the signed `.app` contents. Definitions reload before GO or through the reload button.
-**TOML-only additions work for architectures already implemented by an installed runtime. A GGUF or ONNX extension alone does not make an unknown architecture executable.**
+## Automate and customize
 
-[Custom models and runtimes](docs/provider-models.md) · [Model catalog and test scope](docs/models.md) · [Development/upstream updates](docs/development.md) · [License](LICENSE)
+```powershell
+.\asr2rpp-cli.exe run recording.wav --asr whisper-base --asr-device vulkan --format rpp,otio,json --output-dir exports
+.\asr2rpp-cli.exe convert exports\recording.json --format otio --output-dir converted
+```
+
+`--format` may be repeated; omission means RPP only. Conversion from JSON does not run or download ASR models. On Mac the CLI is inside `ASR2RPP.app/Contents/MacOS/asr2rpp-cli`. [CLI reference →](docs/outputs.md#command-line)
+
+Add a unique `.toml` under **Settings → Advanced → Open custom TOML**; do not modify the signed `.app`. Definitions reload before GO. **TOML adds checkpoints for architectures supported by an installed runtime; it cannot implement an unknown architecture.** [Model and runtime examples →](docs/provider-models.md)
+
+Press **STOP** and wait for cleanup. GO retries waiting/stopped/failed items, not completed items. To redo a completed input, remove and re-add it. Save model/cache locations under **Settings → General**. Updates go into a new folder; unchanged model definitions reuse verified cached weights.
+
+[Model catalog](docs/models.md) · [Development and upstream updates](docs/development.md) · [Output schema](docs/outputs.md) · [Validation](docs/implementation-stages.md)

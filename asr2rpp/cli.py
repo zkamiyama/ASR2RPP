@@ -25,12 +25,14 @@ def main(argv=None):
     models.add_argument('--keep-source', action='store_true', help='keep original source checkpoints after a successful conversion')
     run = sub.add_parser('run', help='convert files through the shared stage scheduler')
     run.add_argument('files', nargs='+', type=Path)
+    run.add_argument('--format', dest='formats', action='append', metavar='RPP,OTIO,JSON',
+                     help='Output formats, comma-separated or repeatable; default: rpp')
     run.add_argument('--asr', default='whisper-base')
     run.add_argument('--diar', help='omit to disable diarization')
     run.add_argument('--align', help='forced-alignment model; select --timing auto or alignment')
     run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')
-    run.add_argument('--rpp-audio', choices=['original', 'processed'], default='original',
-                     help='processed keeps a persistent WAV next to the RPP; requires --preprocess')
+    run.add_argument('--reference-audio', '--rpp-audio', dest='rpp_audio', choices=['original', 'processed'], default='original',
+                     help='processed keeps a persistent WAV next to the exported files; requires --preprocess')
     run.add_argument('--output-dir', default='')
     run.add_argument('--same-directory', action='store_true')
     run.add_argument('--ffmpeg', default='')
@@ -55,9 +57,36 @@ def main(argv=None):
     runtimes.add_argument('--device',default='cpu',choices=backends())
     runtimes.add_argument('--exe',default='')
     runtimes.add_argument('--trust',action='store_true',help='explicitly trust the selected executable code')
+    convert = sub.add_parser('convert', help='Re-export an ASR2RPP JSON without running inference')
+    convert.add_argument('input', type=Path)
+    convert.add_argument('--format', dest='formats', action='append', metavar='RPP,OTIO,JSON')
+    convert.add_argument('--output-dir', type=Path)
     sub.add_parser('doctor', help='verify packaged runtimes and model-converter dependencies')
     sub.add_parser('gui')
     args = parser.parse_args(argv)
+    if args.command == 'convert':
+        from .outputs import parse_formats, validate_document, write_document, FORMATS
+        try:
+            formats = parse_formats(args.formats)
+            if args.input.stat().st_size > 1024**3:
+                raise ValueError('Result JSON exceeds the 1 GiB input limit')
+            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+            validate_document(document)
+            parent = (args.output_dir or args.input.parent).resolve()
+            parent.mkdir(parents=True, exist_ok=True)
+            for number in range(1, 100000):
+                stem = args.input.stem + '_export' + ('' if number == 1 else f'_{number}')
+                if not any((parent/(stem+'.'+key)).exists() for key in FORMATS):
+                    output = parent/(stem+'.'+formats[0])
+                    break
+            else:
+                raise ValueError('Too many output name collisions')
+            for path in write_document(document, output, formats).values():
+                print(path)
+            return 0
+        except Exception as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     if args.command == 'gui':
         from .gui_dcc import main as gui_main
         return gui_main()
@@ -159,11 +188,14 @@ def main(argv=None):
             return Stage(model_id, getattr(args, task + '_device'), getattr(args, task + '_exe'), language, args.threads, parameters)
         if args.same_directory and args.output_dir:
             raise ValueError('Choose --same-directory OR --output-dir, not both')
+        from .outputs import parse_formats, output_paths
+        formats = parse_formats(args.formats)
         settings = Settings(stage('asr'), stage('diar'), stage('align'), not bool(args.output_dir), args.output_dir,
                             args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio,
                             timing=TimingSettings(args.timing, args.vad_max_seconds, args.vad_threshold,
                                 min_silence_ms=args.vad_min_silence_ms, segment_before_alignment=args.vad_before_alignment,
-                                speaker_source=args.speaker_source),queue_window_items=args.queue_window_items)
+                                speaker_source=args.speaker_source),queue_window_items=args.queue_window_items,
+                            output_formats=formats)
         settings.validate(catalog)
         from .providers import preflight
         from .timing import plan_for
@@ -177,7 +209,8 @@ def main(argv=None):
         outputs = run_queue(list(enumerate(args.files)),settings,catalog,cancel,progress,
             lambda index,status,detail: events.append((index,status,detail)))
         for output in outputs.values():
-            print(output)
+            for path in output_paths(output, settings.output_formats).values():
+                print(path)
         for index,status,detail in events:
             if status == '失敗':
                 progress(f'{args.files[index]}: {detail}')

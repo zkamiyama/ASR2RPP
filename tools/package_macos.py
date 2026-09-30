@@ -12,9 +12,13 @@ import platform
 import shutil
 import subprocess
 import sys
+import zipfile
 
 from package_worker import build_worker
 from portable_runtime import copy_runtime_packs, audit_lightweight, verify_manifests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from asr2rpp import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 MACHO_MAGICS = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf',
@@ -89,7 +93,7 @@ def copy_documents(resources):
         target = resources/'assets'/name
         target.mkdir(parents=True, exist_ok=True)
         shutil.copytree(ROOT/'assets'/name, target, dirs_exist_ok=True)
-    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'numpy', 'safetensors', 'pyinstaller'):
+    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'numpy', 'safetensors', 'pyinstaller', 'opentimelineio'):
         dist = distribution(name)
         for entry in dist.files or []:
             if any(x in str(entry).lower() for x in ('license', 'copying', 'notice')):
@@ -111,7 +115,7 @@ def main():
     build_worker()
     base = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--target-arch', 'arm64',
             '--exclude-module', 'faster_whisper', '--exclude-module', 'ctranslate2', '--exclude-module', 'nvidia',
-            '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime']
+            '--collect-all', 'opentimelineio', '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime']
     run(*base, '--onedir', '--windowed', '--name', 'ASR2RPP', '--icon', icon,
         '--osx-bundle-identifier', 'io.github.zkamiyama.asr2rpp',
         '--hidden-import', 'PySide6.QtSvg', '--add-data', 'assets:assets', 'launcher.py')
@@ -142,7 +146,8 @@ def main():
     verify_manifests(resources)
     audit = audit_lightweight(resources)
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-    meta = dict(version='0.2.2-preview', commit=commit, platform='macos-arm64', minimum_macos='14.0',
+    meta = dict(version=__version__, commit=commit, platform='macos-arm64', minimum_macos='14.0',
+                output_formats=['rpp','otio','json'], export_schema_version=1,
                 native_backends=['cpu', 'metal'], cuda_bundled=False, ctranslate2_bundled=False,
                 faster_whisper_bundled=False, model_weights_included=False, ffmpeg_bundled=False,
                 model_definitions='app/Contents/Resources/models', model_schema_versions=[1, 2],
@@ -151,9 +156,15 @@ def main():
     (reports/'distribution-audit.json').write_text(json.dumps(audit, indent=2))
     run('codesign', '--force', '--sign', '-', '--timestamp=none', app)
     run('codesign', '--verify', '--deep', '--strict', app)
+    run(sys.executable, ROOT/'tools/smoke_outputs.py', '--cli', cli, '--report', reports/'exports')
     # ditto preserves app symlinks and executable permissions; ordinary zip extraction may not.
     archive = ROOT/'dist/ASR2RPP-macOS-arm64.zip'
     run('ditto', '-c', '-k', '--keepParent', app, archive)
+    from package_sample import make_sample
+    sample = make_sample(ROOT/'build/sample')
+    with zipfile.ZipFile(archive, 'a', compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.write(sample, 'examples/sample.wav')
+        bundle.write(sample.with_name('README.txt'), 'examples/README.txt')
     (ROOT/'dist/SHA256SUMS-macOS.txt').write_text(digest(archive) + '  ' + archive.name + '\n')
     run(sys.executable, ROOT/'tools/smoke_macos.py', '--archive', archive,
         '--report', reports/'macos-portable')

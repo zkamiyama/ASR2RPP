@@ -53,7 +53,7 @@ def ffmpeg_path(custom: str = '', progress=None, cancel=None) -> str:
     installed = installed_ffmpeg()
     if installed:
         return str(installed)
-    if sys.platform == 'win32':
+    if sys.platform in {'win32', 'darwin'}:
         return str(ensure_ffmpeg(progress=progress, cancel=cancel))
     raise FileNotFoundError('FFmpeg not found in PATH or ASR2RPP user runtime data.')
 
@@ -392,4 +392,3 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
             result = parse_audio(json.loads(output.read_text(encoding='utf-8-sig')), model.task, model.family, model.sample_rate)
     (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in result.units], ensure_ascii=False, indent=2), encoding='utf-8')
     return result
-

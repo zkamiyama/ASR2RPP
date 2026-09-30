@@ -13,6 +13,9 @@ from brand_windows import apply_icons
 from portable_runtime import copy_runtime_packs, audit_lightweight
 from package_worker import build_worker
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from asr2rpp import __version__
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -23,7 +26,7 @@ def run(*args, cwd=None):
 def copy_licenses(package):
     target = package / 'licenses'
     target.mkdir(exist_ok=True)
-    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'numpy', 'safetensors'):
+    for name in ('PySide6', 'PySide6-Essentials', 'PySide6-Addons', 'shiboken6', 'pyinstaller', 'numpy', 'safetensors', 'opentimelineio'):
         dist = distribution(name)
         for item in dist.files or []:
             if any(x in str(item).lower() for x in ('license', 'copying', 'notice')) and str(item).lower().endswith(('.txt', '.md', '.rst', 'license', 'copying')):
@@ -46,12 +49,12 @@ build_worker(icons['cli'])
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
     '--name', 'ASR2RPP', '--icon', icons['app'],
     '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'PySide6.QtSvg',
-    '--hidden-import', 'asr2rpp.ffmpeg_runtime',
+    '--hidden-import', 'asr2rpp.ffmpeg_runtime', '--collect-all', 'opentimelineio',
     '--exclude-module', 'faster_whisper', '--exclude-module', 'ctranslate2', '--exclude-module', 'nvidia',
     '--add-data', 'assets:assets', 'launcher.py')
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--console',
     '--name', 'asr2rpp-cli', '--icon', icons['cli'], '--exclude-module', 'PySide6',
-    '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime',
+    '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'asr2rpp.ffmpeg_runtime', '--collect-all', 'opentimelineio',
     '--exclude-module', 'faster_whisper', '--exclude-module', 'ctranslate2', '--exclude-module', 'nvidia',
     'cli_launcher.py')
 package = ROOT / 'dist/ASR2RPP'
@@ -128,14 +131,19 @@ process.wait(timeout=10)
     'icons_verified_executables': len(icon_records), 'window_icon': 'passed',
     'ffmpeg_bundled': False, 'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-(package/'version.json').write_text(json.dumps({'version': '0.2.2-preview', 'commit': commit,
+(package/'version.json').write_text(json.dumps({'version': __version__, 'commit': commit,
     'platform': 'windows-x64', 'native_backends': ['cpu','vulkan'], 'minimum_cpu': 'AVX2',
     'model_weights_included': False, 'cuda_bundled': False, 'ctranslate2_bundled': False, 'faster_whisper_bundled': False,
+    'output_formats': ['rpp','otio','json'], 'export_schema_version': 1,
     'model_schema_versions': [1,2], 'worker_protocol': 1,
     'timing_selection': 'user-settings', 'upstream_cli_modified': False, 'ffmpeg_bundled': False, 'model_definitions': 'exe-adjacent/models',
     'icons_verified_executables': len(icon_records), 'documentation': ['README.md', 'README.ja.md'],
     'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download'}, indent=2), encoding='utf-8')
 (reports/'distribution-audit.json').write_text(json.dumps(audit_lightweight(package), indent=2))
+run(sys.executable, ROOT/'tools/smoke_outputs.py', '--cli', package/'asr2rpp-cli.exe',
+    '--fixture', fixture, '--report', reports/'exports')
+from package_sample import make_sample
+make_sample(package/'examples')
 print('Packaging: compressing verified application folder', flush=True)
 archive = Path(shutil.make_archive(str(ROOT/'dist/ASR2RPP-Windows-x64'), 'zip', ROOT/'dist', 'ASR2RPP'))
 with archive.open('rb') as handle:

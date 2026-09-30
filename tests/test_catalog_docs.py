@@ -42,7 +42,9 @@ def test_customization_model_examples_load_without_gui(tmp_path):
 def test_distribution_version_tracks_project_version():
     version = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
     for name in ('tools/package_windows.py', 'tools/package_macos.py'):
-        assert version + '-preview' in (ROOT / name).read_text(encoding='utf-8')
+        assert 'from asr2rpp import __version__' in (ROOT / name).read_text(encoding='utf-8')
+    from asr2rpp import __version__
+    assert version == __version__
 
 
 def test_published_catalog_evidence_matches_shipped_tomls():

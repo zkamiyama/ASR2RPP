@@ -127,7 +127,8 @@ def test_ico_bounds_checked(tmp_path, payload):
 def test_readmes_link_each_language_and_have_no_broken_relative_links():
     for name in ('README.md', 'README.ja.md'):
         text = (ROOT/name).read_text(encoding='utf-8')
-        assert text.splitlines()[0] == '[English](README.md) | [日本語](README.ja.md)'
+        assert 'assets/branding/app.svg' in text.splitlines()[0]
+        assert '[English](README.md)' in text or '[日本語](README.ja.md)' in text
         assert 'PyInstaller' not in text and '37.01' not in text
         for target in re.findall(r'\]\(([^)]+)\)', text):
             if '://' not in target and not target.startswith('#'):

@@ -101,3 +101,38 @@ def test_windows_packager_does_not_bundle_ffmpeg():
     assert "imageio_ffmpeg" not in source
     assert "engines/ffmpeg" not in source
     assert "FFmpeg must not be bundled" in source
+
+
+def test_mac_ffmpeg_is_verified_and_reused_without_package_install(tmp_path, monkeypatch):
+    import hashlib, zipfile, threading, os
+    from asr2rpp import ffmpeg_macos as mac, ffmpeg_runtime as runtime
+    archive = tmp_path/'verified.whl'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(mac.MEMBER, b'Mach-O fixture, never executed')
+        z.writestr(mac.LICENSE_MEMBER, 'License fixture')
+    monkeypatch.setattr(mac.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(mac, 'SHA256', hashlib.sha256(archive.read_bytes()).hexdigest())
+    monkeypatch.setattr(runtime, 'runtime_root', lambda: tmp_path/'runtime')
+    calls = []
+    def download(url, destination, *args):
+        calls.append(url)
+        destination.write_bytes(archive.read_bytes())
+    monkeypatch.setattr(runtime, '_download', download)
+    path = mac.ensure_ffmpeg(cancel=threading.Event())
+    assert path.read_bytes() == b'Mach-O fixture, never executed'
+    if os.name != 'nt':
+        assert path.stat().st_mode & 0o111
+    assert mac.ensure_ffmpeg() == path and len(calls) == 1
+    path.write_bytes(b'corrupt executable')
+    assert runtime.installed_ffmpeg() is None
+
+
+def test_mac_ffmpeg_rejects_unverified_archive(tmp_path, monkeypatch):
+    import threading
+    from asr2rpp import ffmpeg_macos as mac, ffmpeg_runtime as runtime
+    monkeypatch.setattr(mac.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(runtime, 'runtime_root', lambda: tmp_path/'runtime')
+    monkeypatch.setattr(runtime, '_download', lambda url, destination, *args: destination.write_bytes(b'bad'))
+    with pytest.raises(ValueError, match='SHA-256'):
+        mac.ensure_ffmpeg(cancel=threading.Event())
+    assert runtime.installed_ffmpeg() is None

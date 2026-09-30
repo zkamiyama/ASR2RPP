@@ -1,7 +1,7 @@
 """Stage-major queue scheduler.
 
 The GUI queue is processed by model stage rather than file:
-SEP -> ASR -> forced alignment -> diarization -> RPP.
+SEP -> ASR -> forced alignment -> diarization -> selected exports.
 
 Native model processes are never kept alive across different model families.
 whisper.cpp receives multiple files per process (one model context), while
@@ -28,8 +28,8 @@ from .timing import prepare_run, stage_options
 from .media import slice_pcm
 from .catalog import Cancelled, checkpoint, cache_root, digest, resolve_model, definition_provenance
 from .adapters import (
-    Result, Unit, executable, ffmpeg_path, parse_audio, parse_whisper,
-    run_process, scalar, whisper_parameter_args, split_engine_parameters,
+    Result, Unit, executable, ffmpeg_path,
+    run_process, scalar, split_engine_parameters,
     audio_session_args, validate_model_parameter_constraints,
 )
 
@@ -57,6 +57,7 @@ class QueueJob:
 from .performance import profiled, report_directory
 
 from .diagnostics import persist_tree
+from .outputs import snapshot, export_results
 
 def _jsonable_result(job: QueueJob, task: str, result: Result) -> None:
     directory = job.report / task
@@ -86,19 +87,6 @@ def _active(jobs):
     return [job for job in jobs if not job.failed and job.manifest.get('status') not in {'completed', 'cancelled', 'failed'}]
 
 
-def _chunks_for_command(items, path_of, max_chars: int = 22000, max_items: int = 96):
-    chunk, used = [], 0
-    for item in items:
-        cost = len(str(path_of(item))) + 140
-        if chunk and (len(chunk) >= max_items or used + cost > max_chars):
-            yield chunk
-            chunk, used = [], 0
-        chunk.append(item)
-        used += cost
-    if chunk:
-        yield chunk
-
-
 def _link_inputs(chunk, path_of, directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     mapping = {}
@@ -121,18 +109,6 @@ def _copy_log(log: Path, jobs, filename: str):
             shutil.copy2(log, job.report / filename)
         except OSError:
             pass
-
-
-def _stage_parameters(model, stage):
-    request, session = split_engine_parameters(model, stage.parameters or {})
-    validate_model_parameter_constraints(model, request, session)
-    return request
-
-
-def _session_args(model, stage):
-    request, session = split_engine_parameters(model, stage.parameters or {})
-    validate_model_parameter_constraints(model, request, session)
-    return audio_session_args(model, session)
 
 
 def _asr_batch(model, weights, stage, jobs, audio_paths, root, cancel, progress,
@@ -440,6 +416,7 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                     result = asr_results[job.key]
                     _jsonable_result(job, 'asr', result)
                     units = core.clean_bounds(result.units, job.duration, job.warnings)
+                    snapshot(job.report, 'asr_normalized', units)
                     if not units:
                         raise ValueError('No timed speech was returned')
                     if any(unit.method == 'vad_segment' for unit in units):
@@ -523,6 +500,7 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                         _fail(job, ValueError('No valid aligned intervals'), item_callback)
                     else:
                         job.units = aligned
+                        snapshot(job.report, 'aligned', aligned)
                 shutil.rmtree(root / 'align-source', ignore_errors=True)
                 # Shared PCM cleanup belongs to the queue workspace.
 
@@ -549,22 +527,24 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                         result = diar_results[job.key]
                         _jsonable_result(job, 'diar', result)
                         turns = core.clean_bounds(result.units, job.duration, job.warnings)
+                        snapshot(job.report, 'diarization_turns', turns)
                         job.units = core.assign_speakers(job.units, turns, job.warnings)
                     except BaseException as exc:
                         _fail(job, exc, item_callback)
                 # Shared PCM cleanup belongs to the queue workspace.
 
-            # 5. Final RPP. At this point no inference process/model is resident.
+            # 5. Export once per format after all inference models have exited.
             for job in _active(jobs):
                 checkpoint(cancel)
                 try:
-                    item_callback(job.index, 'RPP', '')
+                    item_callback(job.index, 'Export', '')
+                    fine_units = list(job.units)
+                    snapshot(job.report, 'speaker_assigned', fine_units)
                     job.units = core.group_units(job.units)
                     if not job.units:
                         raise ValueError('No valid intervals remain after normalization')
                     if digest(job.source) != job.source_sha256:
                         raise ValueError('Original input changed while processing')
-                    diar_enabled = settings.diar is not None or any(u.speaker for u in job.units)
                     if getattr(settings, 'preprocess', None) is not None:
                         mode = getattr(settings, 'reference_audio', 'original')
                         if mode == 'processed':
@@ -578,9 +558,6 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                             reference, origin, sample_rate = job.source, 0.0, 48000
                         reference_length = core.full_reference_duration(
                             reference, settings, job.duration, root, cancel, progress)
-                        pre.write_reference(job.output, reference, job.units, settings.clip_start,
-                                            origin, diar_enabled, sample_rate,
-                                            reference_duration=reference_length)
                         job.manifest.update(reference_file=str(reference),
                                             reference_origin_seconds=origin,
                                             timeline_origin_seconds=settings.clip_start,
@@ -588,14 +565,15 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                     else:
                         reference_length = core.full_reference_duration(
                             job.source, settings, job.duration, root, cancel, progress)
-                        core.export_rpp(job.source, job.output, job.units, settings.clip_start,
-                                        diar_enabled, reference_length)
-                    job.manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
-                                                       'duration_seconds': float(reference_length)}
+                        reference, origin, sample_rate = job.source, 0.0, 48000
+                    export_results(job.source, reference, job.units, fine_units, settings,
+                                   job.output, job.report, job.manifest, job.duration, origin,
+                                   reference_length, sample_rate, job.warnings, cancel)
                     core.json_write(job.report / 'transcript.json', {
                         'clip_start': settings.clip_start,
                         'duration': job.duration,
                         'units': [asdict(unit) for unit in job.units],
+                        'fine_units': [asdict(unit) for unit in fine_units],
                         'warnings': job.warnings,
                     })
                     job.manifest.update(status='completed', output=str(job.output),

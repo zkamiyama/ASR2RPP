@@ -16,6 +16,7 @@ from .catalog import Model, checkpoint, cache_root, digest, resolve_model, defin
 from .adapters import (executable, ffmpeg_path, run_process, Unit, split_engine_parameters,
                        audio_session_args, validate_model_parameter_constraints, scalar)
 from .rpp_export import write_reference
+from .outputs import export_results
 from .media import wave_info, validate_duration, full_reference_duration
 
 
@@ -31,8 +32,8 @@ class Settings(core.Settings):
         if self.reference_audio == 'processed' and self.preprocess is None:
             raise ValueError('Processed RPP audio requires enabled preprocessing')
         if self.preprocess is not None:
-            if self.preprocess.device not in {'cpu', 'auto', 'vulkan', 'metal', 'cuda'}:
-                raise ValueError('Unsupported preprocessing device')
+            from .platforms import validate_backend
+            validate_backend(self.preprocess.device)
             model = catalog.get(self.preprocess.model_id)
             if model is None or model.task != 'sep' or model.runtime != 'audio_cpp':
                 raise ValueError('Choose an audio.cpp separation model for preprocessing')
@@ -153,11 +154,10 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
             # may extend outside an explicitly selected inference clip.
             reference_length = full_reference_duration(
                 reference, settings, wave_info(vocals).duration, work, cancel, progress)
-            write_reference(output, reference, units, settings.clip_start, origin,
-                            settings.diar is not None, sample_rate,
-                            reference_duration=reference_length)
-            manifest['original_track'] = {'name': 'ORIGINAL', 'muted': True,
-                                          'duration_seconds': float(reference_length)}
+            fine_units = [Unit(**record) for record in transcript.get('fine_units', transcript['units'])]
+            export_results(source, reference, units, fine_units, settings, output, report, manifest,
+                           wave_info(vocals).duration, origin, reference_length, sample_rate,
+                           transcript.get('warnings', []), cancel)
             transcript.update(clip_start=settings.clip_start, reference_audio=settings.reference_audio)
             core.json_write(report / 'transcript.json', transcript)
             manifest.update(status='completed', output=str(output), source_unchanged=True)
@@ -169,4 +169,3 @@ def run_job(source, settings: Settings, catalog, cancel, progress):
         manifest['elapsed_seconds'] = time.monotonic() - started
         manifest['temporary_preprocessed_audio_removed'] = (temp_path is None or not temp_path.exists())
         core.json_write(report / 'manifest.json', manifest)
-

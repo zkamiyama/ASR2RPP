@@ -138,8 +138,7 @@ def test_diarization_uses_fine_native_asr_units(tmp_path, monkeypatch):
             return Result([Unit(0, 1, 'first', granularity='word'), Unit(1, 3, 'second', granularity='word')], {})
         return Result([Unit(0, 1, speaker='A'), Unit(1, 3, speaker='B')], {})
     monkeypatch.setattr(pipeline, 'infer', infer)
-    exported = []
-    monkeypatch.setattr(pipeline, 'export_rpp', lambda src, out, units, *args: exported.extend(units))
-    pipeline.run_job(source, Settings(Stage('asr'), diar=Stage('diar')),
+    output = pipeline.run_job(source, Settings(Stage('asr'), diar=Stage('diar')),
                      {'asr': asr, 'diar': diar}, threading.Event(), lambda _: None)
-    assert [(u.text, u.speaker) for u in exported] == [('first', 'A'), ('second', 'B')]
+    exported = json.loads((output.with_suffix('.asr2rpp')/'transcript.json').read_text())['units']
+    assert [(u['text'], u['speaker']) for u in exported] == [('first', 'A'), ('second', 'B')]

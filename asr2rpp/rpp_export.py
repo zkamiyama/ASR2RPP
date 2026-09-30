@@ -1,50 +1,43 @@
-"""Build non-destructive projects with an uncut, muted reference track first."""
+"""RPP adapter for the common non-destructive timeline model."""
 from fractions import Fraction
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import os
-from rpp_writer import Source, Item, Track, Project, write
+from rpp_writer import Source, Item, Track, Project, dumps
 from .transcript import safe_label
-
-
+from .export_timeline import build_timeline, validate_timeline
 from .performance import timed
 
-def _seconds(value) -> Fraction:
-    return value if isinstance(value, Fraction) else Fraction(str(value))
+
+def _relative(reference: str, destination: Path) -> str:
+    # Re-exporting Windows JSON on another OS must not reinterpret C:\\ as a
+    # relative POSIX filename. Cross-drive paths remain absolute in REAPER.
+    if os.name != 'nt' and PureWindowsPath(reference).is_absolute():
+        return reference.replace('\\', '/')
+    try:
+        return os.path.relpath(reference, destination.parent).replace('\\', '/')
+    except ValueError:
+        return reference.replace('\\', '/')
+
+
+def render(timeline: dict, output: Path) -> str:
+    validate_timeline(timeline)
+    reference = timeline['reference']['path']
+    suffix = Path(reference).suffix.lower()
+    kind = {'.wav': 'WAVE', '.wave': 'WAVE', '.aif': 'WAVE', '.aiff': 'WAVE',
+            '.flac': 'FLAC', '.mp3': 'MP3', '.ogg': 'VORBIS'}.get(suffix, 'VIDEO')
+    source = Source(_relative(reference, Path(output)), kind)
+    tracks = tuple(Track(safe_label(track['name']), tuple(Item(
+        safe_label(clip['text']), source, Fraction(str(clip['start_seconds'])),
+        Fraction(str(clip['source_start_seconds'])), Fraction(str(clip['duration_seconds'])))
+        for clip in track['clips']), muted=track['muted']) for track in timeline['tracks'])
+    return dumps(Project(tracks, timeline['sample_rate']))
 
 
 @timed('rpp_export')
 def write_reference(output: Path, reference: Path, units, timeline_origin: float,
                     reference_origin: float, diar: bool, sample_rate: int = 48000,
                     *, reference_duration):
-    """ORIGINAL covers the entire reference, not just first/last detected speech.
-
-    A processed clip starts at reference_origin on the source timeline; its file
-    offset is zero. Edited items keep their existing source offsets. The reference
-    track is muted initially to avoid doubling playback with the edited tracks.
-    """
-    try:
-        relative = os.path.relpath(reference, output.parent).replace('\\', '/')
-    except ValueError:
-        relative = str(reference).replace('\\', '/')
-    kind = {'.wav': 'WAVE', '.wave': 'WAVE', '.aif': 'WAVE', '.aiff': 'WAVE',
-            '.flac': 'FLAC', '.mp3': 'MP3', '.ogg': 'VORBIS'}.get(reference.suffix.lower(), 'VIDEO')
-    src = Source(relative, kind)
-    origin = _seconds(reference_origin)
-    timeline = _seconds(timeline_origin)
-    original = Item(safe_label(reference.name), src, origin, Fraction(0),
-                    _seconds(reference_duration))
-    tracks = [Track('ORIGINAL', (original,), muted=True)]
-    edits = {}
-    for unit in units:
-        if unit.method == 'vad_window':
-            raise ValueError('Cannot export VAD window boundaries as speech timestamps; forced alignment is required')
-        position = timeline + _seconds(unit.start)
-        key = (unit.speaker or 'UNKNOWN') if diar else 'Transcript'
-        # Reserve the reference name even if a custom diarizer supplies ORIGINAL.
-        if key == 'ORIGINAL':
-            key = 'Speaker ORIGINAL'
-        item = Item(safe_label(unit.text), src, position, position - origin,
-                    _seconds(unit.end) - _seconds(unit.start))
-        edits.setdefault(key, []).append(item)
-    tracks.extend(Track(safe_label(str(key)), tuple(items)) for key, items in edits.items())
-    write(Project(tuple(tracks), sample_rate), output)
+    timeline = build_timeline(reference, units, timeline_origin, reference_origin, diar,
+                              sample_rate, reference_duration=reference_duration)
+    with Path(output).open('x', encoding='utf-8', newline='\n') as handle:
+        handle.write(render(timeline, output))
