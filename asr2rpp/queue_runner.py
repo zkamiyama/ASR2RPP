@@ -312,6 +312,7 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
         for job in _active(jobs):
             job.manifest['model_definitions'] = {name: definition_provenance(m) for name, (m, _p, _prov, _s) in selected.items()}
             job.manifest['models'] = {name: provenance for name, (_m, _p, provenance, _s) in selected.items()}
+            job.manifest['runtimes'] = settings.runtime_provenance
             job.manifest['status'] = 'running'
             job.manifest['timing_plan'] = asdict(timing_plan)
             job.manifest['timestamp_source'] = timing_plan.timestamp_source

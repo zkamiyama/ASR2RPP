@@ -8,18 +8,23 @@ import subprocess
 import sys
 import tempfile
 
-try:
-    from .patch_whisper import apply as patch_whisper, patch_digest
-except ImportError:
-    from patch_whisper import apply as patch_whisper, patch_digest
-
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / 'build' / 'native'
 ENGINES = ROOT / 'engines'
-SOURCES = {
-    'whisper_cpp': ('ggml-org/whisper.cpp', 'a664346ea5c6dddff3e61a2b7b32dd4514613f50', 'whisper-cli'),
-    'audio_cpp': ('0xShug0/audio.cpp', '9bdd1d908bbd128e9eb405f5a8e38d0defb84c72', 'audiocpp_cli'),
-}
+LOCK = json.loads((ROOT / 'native/versions.json').read_text(encoding='utf-8'))
+SOURCES = {name: (entry['repository'], entry['commit'], entry['target'])
+           for name, entry in LOCK.items() if isinstance(entry, dict)}
+
+
+def recipe_digest():
+    paths = [Path(__file__), ROOT/'native/versions.json', ROOT/'native/pcm_plan.h',
+             ROOT/'native/whisper_regions.cpp', ROOT/'native/whisper/CMakeLists.txt']
+    h = hashlib.sha256()
+    for path in paths:
+        h.update(path.read_bytes())
+    for key in ('ASR2RPP_CUDA_ARCHS', 'CMAKE_GENERATOR', 'ASR2RPP_MSVC_TOOLSET'):
+        h.update((key + '=' + os.getenv(key, '')).encode())
+    return h.hexdigest()
 
 
 def run(*args, cwd=None):
@@ -49,13 +54,15 @@ def preserve_restored_samples(source: Path):
 
 def build(name, backend='cpu'):
     repo, revision, target = SOURCES[name]
-    extension = patch_digest() if name == 'whisper_cpp' else None
+    extension = recipe_digest()
     destination = ENGINES / (name + '-' + backend)
     required = [target + ('.exe' if os.name == 'nt' else '')]
     if name == 'whisper_cpp' and backend == 'cpu':
         required.append('whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else ''))
     if name == 'audio_cpp' and backend == 'cpu':
         required.append('audiocpp_gguf' + ('.exe' if os.name == 'nt' else ''))
+    if name == 'whisper_cpp':
+        required.append('asr2rpp-whisper-regions' + ('.exe' if os.name == 'nt' else ''))
     # OPT-IN for CI restored caches only. Normal builds are never skipped.
     manifest = destination / 'build-manifest.json'
     if os.getenv('ASR2RPP_REUSE_VERIFIED_NATIVE') == '1' and manifest.is_file():
@@ -63,7 +70,7 @@ def build(name, backend='cpu'):
             prior = json.loads(manifest.read_text(encoding='utf-8'))
             reusable = (prior['commit'] == revision and prior['backend'] == backend
                         and prior['repository'] == repo and prior['files']
-                        and prior.get('asr2rpp_pcm_plan_sha256') == extension
+                        and prior.get('build_recipe_sha256') == extension
                         and all(filename in prior['files'] for filename in required))
             for filename, expected in prior['files'].items():
                 relative = Path(filename)
@@ -91,32 +98,46 @@ def build(name, backend='cpu'):
     # the optional server frontend (SSH URL), which a standalone CLI does not use.
     if name != 'audio_cpp':
         run('git', 'submodule', 'update', '--init', '--recursive', '--depth', '1', cwd=source)
-    if name == 'whisper_cpp':
-        patch_whisper(source)
-    if backend not in {'cpu', 'vulkan'}:
+    dirty = subprocess.check_output(['git', 'diff', '--name-only'], cwd=source, text=True).strip()
+    if dirty:
+        raise RuntimeError('Upstream source must be unmodified; use a clean build directory: ' + dirty)
+    if backend not in {'cpu', 'vulkan', 'cuda'}:
         raise ValueError(f'Unsupported packaged backend: {backend}')
-    output = source / ('build-' + backend)
+    output = source / ('build-' + backend + ('-' + os.environ['ASR2RPP_BUILD_SUFFIX'] if os.getenv('ASR2RPP_BUILD_SUFFIX') else ''))
     vulkan = 'ON' if backend == 'vulkan' else 'OFF'
+    cuda = 'ON' if backend == 'cuda' else 'OFF'
     flags = ['-DCMAKE_BUILD_TYPE=Release', '-DGGML_NATIVE=OFF',
-             '-DGGML_CUDA=OFF', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
+             f'-DGGML_CUDA={cuda}', '-DGGML_METAL=OFF', f'-DGGML_VULKAN={vulkan}']
+    if backend == 'cuda':
+        flags.append('-DCMAKE_CUDA_ARCHITECTURES=' + os.getenv('ASR2RPP_CUDA_ARCHS', '86;89'))
+        if os.name == 'nt' and os.getenv('ASR2RPP_CUDA_HOST_COMPAT') == '1':
+            flags.append('-DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler')
     if name == 'audio_cpp':
         flags += ['-DAUDIOCPP_DEPLOYMENT_BUILD=ON',
                   '-DAUDIOCPP_MODEL_SET=custom',
-                  '-DAUDIOCPP_MODELS=nemotron_asr,nemotron_3_diar,vibevoice_asr,qwen3_forced_aligner,roformer',
+                  '-DAUDIOCPP_MODELS=' + ','.join(LOCK['audio_cpp']['models']),
                   '-DENGINE_ENABLE_NATIVE_CPU=OFF',
-                  '-DENGINE_ENABLE_CUDA=OFF', f'-DENGINE_ENABLE_VULKAN={vulkan}',
+                  f'-DENGINE_ENABLE_CUDA={cuda}', f'-DENGINE_ENABLE_VULKAN={vulkan}',
                   '-DENGINE_BUILD_TESTS=OFF', '-DENGINE_BUILD_EXAMPLES=OFF',
                   '-DAUDIOCPP_BUILD_SERVER_FRONTENDS=OFF']
     else:
-        flags += ['-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF', '-DWHISPER_CURL=OFF']
-    if os.name == 'nt':
+        flags += ['-DWHISPER_BUILD_EXAMPLES=ON', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF', '-DWHISPER_CURL=OFF']
+    if os.name == 'nt' and os.getenv('CMAKE_GENERATOR', '').lower() != 'ninja':
         flags += ['-A', 'x64']
-    run('cmake', '-S', source, '-B', output, *flags)
-    run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', '4')
+        if os.getenv('ASR2RPP_MSVC_TOOLSET'):
+            flags += ['-T', os.environ['ASR2RPP_MSVC_TOOLSET']]
+    project = source
+    if name == 'whisper_cpp':
+        project = ROOT / 'native/whisper'
+        flags.append('-DASR2RPP_WHISPER_SOURCE=' + str(source))
+    run('cmake', '-S', project, '-B', output, *flags)
+    run('cmake', '--build', output, '--config', 'Release', '--target', target, '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
+    if name == 'whisper_cpp':
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'asr2rpp-whisper-regions', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     if name == 'whisper_cpp' and backend == 'cpu':
-        run('cmake', '--build', output, '--config', 'Release', '--target', 'whisper-vad-speech-segments', '--parallel', '4')
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'whisper-vad-speech-segments', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     if name == 'audio_cpp' and backend == 'cpu':
-        run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', '4')
+        run('cmake', '--build', output, '--config', 'Release', '--target', 'audiocpp_gguf', '--parallel', os.getenv('ASR2RPP_BUILD_JOBS', '4'))
     destination = ENGINES / (name + '-' + backend)
     destination.mkdir(parents=True, exist_ok=True)
     binary_name = target + ('.exe' if os.name == 'nt' else '')
@@ -125,6 +146,11 @@ def build(name, backend='cpu'):
         raise RuntimeError('Missing built executable: ' + binary_name)
     binary = binaries[0]
     shutil.copy2(binary, destination / binary.name)
+    if name == 'whisper_cpp':
+        helper = 'asr2rpp-whisper-regions' + ('.exe' if os.name == 'nt' else '')
+        built = list(output.rglob(helper))
+        if not built: raise RuntimeError('Missing public API helper')
+        shutil.copy2(built[0], destination / helper)
     if name == 'whisper_cpp' and backend == 'cpu':
         vad_name = 'whisper-vad-speech-segments' + ('.exe' if os.name == 'nt' else '')
         vad_binaries = list(output.rglob(vad_name))
@@ -140,6 +166,14 @@ def build(name, backend='cpu'):
     for suffix in ('*.dll', '*.so', '*.so.*', '*.dylib'):
         for library in output.rglob(suffix):
             shutil.copy2(library, destination / library.name)
+    if os.name == 'nt' and backend == 'cuda':
+        cuda_root = Path(os.environ['CUDA_PATH'])
+        for pattern in ('cublas64_*.dll', 'cublasLt64_*.dll', 'cudart64_*.dll'):
+            matches = list((cuda_root/'bin').glob(pattern))
+            if not matches: raise RuntimeError('Missing CUDA redistributable: ' + pattern)
+            for dll in matches: shutil.copy2(dll, destination/dll.name)
+        for file in (cuda_root/'EULA.txt', cuda_root/'doc/EULA.txt'):
+            if file.is_file(): shutil.copy2(file, destination/'NVIDIA-CUDA-EULA.txt')
     licenses = destination / 'licenses'
     licenses.mkdir(exist_ok=True)
     for file in source.rglob('*'):
@@ -154,13 +188,18 @@ def build(name, backend='cpu'):
     if name == 'audio_cpp' and (source / 'model_specs').exists():
         shutil.copytree(source / 'model_specs', destination / 'model_specs', dirs_exist_ok=True)
     metadata = {'repository': repo, 'commit': revision, 'backend': backend, 'files': {},
-                'asr2rpp_pcm_plan_sha256': extension,
-                'pcm_plan_version': 1 if extension else None}
+                'build_recipe_sha256': extension, 'upstream_modified': False,
+                'pcm_plan_version': 1 if name == 'whisper_cpp' else None,
+                'cuda_architectures': os.getenv('ASR2RPP_CUDA_ARCHS', '86;89') if backend == 'cuda' else None,
+                'cmake_flags': flags}
     for file in destination.rglob('*'):
         if file.is_file() and file != destination / 'build-manifest.json':
             metadata['files'][str(file.relative_to(destination))] = hashlib.sha256(file.read_bytes()).hexdigest()
     (destination / 'build-manifest.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     run(destination / binary.name, '--help')
+    if name == 'audio_cpp':
+        data = subprocess.check_output([str(destination / binary.name), '--list-loaders', '--json'], text=True, encoding='utf-8')
+        (destination/'capabilities.json').write_text(data, encoding='utf-8')
 
 
 if __name__ == '__main__':

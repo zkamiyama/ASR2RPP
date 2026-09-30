@@ -94,3 +94,20 @@ def read_bundle(path, count):
     if not isinstance(payload,dict) or type(payload.get('schema')) is not int or payload.get('schema')!=1 or not isinstance(payload.get('results'),list) or len(payload['results'])!=count:
         raise ValueError('Invalid/incomplete native result bundle')
     return payload['results']
+
+
+def region_executable(binary, parameters):
+    """Prefer the public-API helper only for explicitly supported options.
+
+    The stock CLI remains available for grammar or future CLI-only features.
+    Never silently discard an option merely to use the optimized path.
+    """
+    supported = {'processors','gpu_device','beam_size','best_of','audio_ctx','max_context',
+        'max_len','word_thold','entropy_thold','logprob_thold','no_speech_thold',
+        'temperature','temperature_inc','initial_prompt','suppress_regex','flash_attn',
+        'no_timestamps','split_on_word','no_fallback','suppress_nst','carry_initial_prompt'}
+    request = {key for key in parameters if key != 'vad' and not key.startswith('vad_')}
+    candidate = Path(binary).with_name('asr2rpp-whisper-regions' + Path(binary).suffix)
+    if request <= supported and candidate.is_file() and os.getenv('ASR2RPP_WHISPER_IO') != 'legacy':
+        return candidate
+    return Path(binary)

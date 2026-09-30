@@ -11,6 +11,30 @@ import time
 import wave
 
 
+_DLL_HANDLES = []
+
+
+def configure_libraries():
+    """Keep Windows dependency search local to this isolated worker."""
+    if os.name != 'nt':
+        return
+    roots = [Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent)),
+             Path(sys.executable).parent.parent/'cuda_runtime']
+    try:
+        dist = metadata.distribution('nvidia-cudnn-cu12')
+        roots.append(Path(dist.locate_file('nvidia/cudnn/bin')))
+    except metadata.PackageNotFoundError:
+        pass
+    if os.getenv('CUDA_PATH'):
+        roots.append(Path(os.environ['CUDA_PATH'])/'bin')
+    for root in list(roots):
+        roots.append(root/'nvidia/cudnn/bin')
+    directories = list(dict.fromkeys(str(p.resolve()) for p in roots if p.is_dir()))
+    for directory in directories:
+        _DLL_HANDLES.append(os.add_dll_directory(directory))
+    os.environ['PATH'] = os.pathsep.join(directories + [os.environ.get('PATH','')])
+
+
 def version(package):
     try:
         return metadata.version(package)
@@ -152,6 +176,7 @@ def run(config, requests, output):
                 if config.get('text_only'):
                     args['condition_on_previous_text'] = False
                     args['without_timestamps'] = True
+                    args['vad_filter'] = False
                 if batch > 1:
                     args['batch_size'] = batch
                 segments, info = runner.transcribe(samples, **args)
@@ -181,6 +206,7 @@ def main(argv=None):
     parser.add_argument('--request')
     parser.add_argument('--output')
     args = parser.parse_args(argv)
+    configure_libraries()
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
     if args.capabilities:

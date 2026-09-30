@@ -169,8 +169,9 @@ def main(argv=None):
         timing_plan = plan_for(catalog[settings.asr.model_id],settings.timing,settings.align is not None)
         for selected in (settings.preprocess,settings.asr,settings.align,settings.diar):
             if selected is not None:
-                preflight(catalog[selected.model_id],selected,cancel,
+                info = preflight(catalog[selected.model_id],selected,cancel,
                           segmented=selected is settings.asr and timing_plan.segmented)
+                settings.runtime_provenance[catalog[selected.model_id].task] = {k:v for k,v in info.items() if k != 'capabilities'}
         events = []
         outputs = run_queue(list(enumerate(args.files)),settings,catalog,cancel,progress,
             lambda index,status,detail: events.append((index,status,detail)))

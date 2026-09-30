@@ -61,9 +61,13 @@ def process_environment(binary: Path) -> dict:
     else:
         env.pop('LD_LIBRARY_PATH', None)
     env['OMP_NUM_THREADS'] = env.get('ASR2RPP_THREADS', '4')
+    if os.name == 'nt':
+        shared = binary.resolve().parent.parent / 'cuda_runtime'
+        if shared.is_dir():
+            env['PATH'] = str(shared) + os.pathsep + env.get('PATH', '')
     # Never add generic /usr/lib: it can contain incompatible system libraries.
     # Only explicitly recognize libraries belonging to a native speech executable.
-    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:
+    if sys.platform.startswith('linux') and binary.name in {'whisper-cli', 'asr2rpp-whisper-regions', 'whisper-vad-speech-segments', 'audiocpp_cli', 'nemo-speech'}:
         for directory in (binary.resolve().parent, binary.resolve().parent.parent / 'lib'):
             if list(directory.glob('libggml*.so*')):
                 env['LD_LIBRARY_PATH'] = str(directory)

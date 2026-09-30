@@ -85,3 +85,11 @@ GOの前に再読込し、不正な定義や名前の競合は通知します。
 [開発手順や経緯](docs/development.md)は別の文書にまとめています。
 
 [ライセンス](LICENSE) · [第三者コンポーネント](THIRD_PARTY.md)
+
+
+## 0.2: timing and model runtimes / 時刻設定とモデル追加
+
+設定 → 時刻で、自動・モデル時刻・VAD発話区間・強制アライメントを選択できます。
+Qwen3-ASR、ReazonSpeech K2、faster-whisperの定義を追加しました。
+時刻の付与方法を変えるためにTOMLを編集する必要はありません。
+追加方法と実行環境の更新は [Provider/model guide](docs/provider-models.md) を参照してください。

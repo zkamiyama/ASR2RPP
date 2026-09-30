@@ -1,0 +1,46 @@
+"""Deduplicate CUDA DLLs without changing code and record shared dependencies."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+
+
+def sha(path):
+    with path.open('rb') as handle:
+        return hashlib.file_digest(handle,'sha256').hexdigest()
+
+
+def collect_cuda(package):
+    engines = Path(package)/'engines'
+    shared = engines/'cuda_runtime'
+    moved = {}
+    for path in sorted(engines.rglob('*.dll')):
+        if shared in path.parents:
+            continue
+        name = path.name.lower()
+        if not name.startswith(('cublas64_', 'cublaslt64_', 'cudart64_', 'cudnn')):
+            continue
+        shared.mkdir(exist_ok=True)
+        destination = shared/path.name
+        checksum = sha(path)
+        if destination.exists():
+            if sha(destination) != checksum:
+                raise ValueError('Conflicting CUDA runtime DLL: ' + path.name)
+            path.unlink()
+        else:
+            shutil.move(str(path),str(destination))
+        moved[path.relative_to(engines).as_posix()] = dict(file=path.name,sha256=checksum)
+    for manifest in engines.rglob('build-manifest.json'):
+        meta = json.loads(manifest.read_text(encoding='utf-8'))
+        dependencies = {}
+        for name in list(meta.get('files',{})):
+            key = (manifest.parent/Path(name.replace('\\','/'))).relative_to(engines).as_posix()
+            if key in moved:
+                dependencies[name] = moved[key]
+                del meta['files'][name]
+        if dependencies:
+            meta['shared_cuda_runtime'] = dependencies
+            manifest.write_text(json.dumps(meta,indent=2),encoding='utf-8')
+    if moved:
+        (shared/'manifest.json').write_text(json.dumps({'files':{p.name:sha(p) for p in shared.glob('*.dll')}},indent=2),encoding='utf-8')
+    return moved

@@ -65,6 +65,7 @@ class Settings:
     clip_duration: float = 0.0
     timing: TimingSettings = field(default_factory=TimingSettings, kw_only=True)
     queue_window_items: int = field(default=16, kw_only=True)
+    runtime_provenance: dict = field(default_factory=dict, kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
         if type(self.queue_window_items) is not int or not 1 <= self.queue_window_items <= 4096:

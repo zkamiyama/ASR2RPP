@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "whisper_cpp": {
+    "repository": "ggml-org/whisper.cpp",
+    "commit": "a664346ea5c6dddff3e61a2b7b32dd4514613f50",
+    "target": "whisper-cli"
+  },
+  "audio_cpp": {
+    "repository": "0xShug0/audio.cpp",
+    "commit": "9bdd1d908bbd128e9eb405f5a8e38d0defb84c72",
+    "target": "audiocpp_cli",
+    "models": [
+      "nemotron_asr",
+      "nemotron_3_diar",
+      "vibevoice_asr",
+      "qwen3_asr",
+      "sense_asr",
+      "qwen3_forced_aligner",
+      "roformer"
+    ]
+  }
+}

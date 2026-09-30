@@ -87,3 +87,11 @@ For model setup details, see the [model guide](docs/inference-policy.md).
 [Development notes](docs/development.md) and technical history are separate from this guide.
 
 [License](LICENSE) · [Third-party notices](THIRD_PARTY.md)
+
+
+## 0.2: timing and model runtimes
+
+Settings → Timing selects automatic, native, VAD speech-region or forced-alignment
+timing without editing model TOMLs. Qwen3-ASR, ReazonSpeech K2 and faster-whisper
+model definitions are included. See the [provider/model guide](docs/provider-models.md)
+for custom models, isolated workers and independently replaceable runtimes.

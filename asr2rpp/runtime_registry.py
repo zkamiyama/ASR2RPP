@@ -148,6 +148,9 @@ def probe(runtime, device='auto', custom='', cancel=None):
         data = json.loads(result.stdout)
         if not isinstance(data, dict) or type(data.get('schema_version')) is not int or data.get('schema_version') != 1 or not isinstance(data.get('loaders'), dict):
             raise ValueError('Unsupported runtime capability schema')
-    info = dict(runtime=runtime, binary=str(binary.resolve()), sha256=fingerprint, capabilities=data)
+    manifest = binary.parent/'build-manifest.json'
+    build = json.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else {}
+    info = dict(runtime=runtime, binary=str(binary.resolve()), sha256=fingerprint, capabilities=data,
+                build={k:build[k] for k in ('repository','commit','backend','build_recipe_sha256','cuda_architectures','packages') if k in build})
     _PROBES[key] = info
     return dict(info, requested_device=device)

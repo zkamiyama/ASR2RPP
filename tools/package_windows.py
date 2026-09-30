@@ -10,6 +10,8 @@ import sys
 import time
 from build_icons import build_icons
 from brand_windows import apply_icons
+from portable_runtime import collect_cuda
+from package_worker import build_worker
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -40,6 +42,7 @@ os.environ['PYTHONUTF8'] = '1'
 reports = ROOT / 'reports'
 reports.mkdir(exist_ok=True)
 icons = build_icons(ROOT/'build/icons', reports/'executable-icons.png')
+build_worker(icons['cli'])
 run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
     '--name', 'ASR2RPP', '--icon', icons['app'],
     '--hidden-import', 'numpy', '--hidden-import', 'safetensors.numpy', '--hidden-import', 'PySide6.QtSvg',
@@ -52,6 +55,7 @@ run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', 
 package = ROOT / 'dist/ASR2RPP'
 shutil.copy2(ROOT / 'dist/asr2rpp-cli.exe', package / 'asr2rpp-cli.exe')
 shutil.copytree(ROOT / 'engines', package / 'engines', dirs_exist_ok=True)
+collect_cuda(package)
 required_native = [
     package / 'engines/whisper_cpp-cpu/whisper-cli.exe',
     package / 'engines/whisper_cpp-cpu/whisper-vad-speech-segments.exe',
@@ -60,6 +64,12 @@ required_native = [
     package / 'engines/audio_cpp-cpu/audiocpp_gguf.exe',
     package / 'engines/audio_cpp-vulkan/audiocpp_cli.exe',
 ]
+required_native += [package/'engines/whisper_cpp-cpu/asr2rpp-whisper-regions.exe',
+                    package/'engines/python_worker/asr2rpp-worker.exe']
+if os.getenv('ASR2RPP_REQUIRE_CUDA') == '1':
+    required_native += [package/'engines/whisper_cpp-cuda/whisper-cli.exe',
+                        package/'engines/whisper_cpp-cuda/asr2rpp-whisper-regions.exe',
+                        package/'engines/audio_cpp-cuda/audiocpp_cli.exe']
 missing = [str(path) for path in required_native if not path.is_file()]
 if missing:
     raise RuntimeError('Missing packaged native runtime(s): ' + ', '.join(missing))
@@ -113,9 +123,11 @@ process.wait(timeout=10)
     'icons_verified_executables': len(icon_records), 'window_icon': 'passed',
     'ffmpeg_bundled': False, 'code_signing': 'unsigned', 'private_media_used': False}), encoding='utf-8')
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-(package/'version.json').write_text(json.dumps({'version': '0.1.0-preview', 'commit': commit,
-    'platform': 'windows-x64', 'native_backends': ['cpu', 'vulkan'], 'minimum_cpu': 'AVX2',
-    'model_weights_included': False, 'ffmpeg_bundled': False, 'model_definitions': 'exe-adjacent/models',
+(package/'version.json').write_text(json.dumps({'version': '0.2.0-preview', 'commit': commit,
+    'platform': 'windows-x64', 'native_backends': [backend for backend in ('cpu','vulkan','cuda') if (package/'engines'/('whisper_cpp-'+backend)).exists()], 'minimum_cpu': 'AVX2',
+    'model_weights_included': False, 'bundled_vad_asset': 'faster-whisper Silero VAD',
+    'model_schema_versions': [1,2], 'worker_protocol': 1,
+    'timing_selection': 'user-settings', 'upstream_cli_modified': False, 'ffmpeg_bundled': False, 'model_definitions': 'exe-adjacent/models',
     'icons_verified_executables': len(icon_records), 'documentation': ['README.md', 'README.ja.md'],
     'ffmpeg_resolution': 'custom-or-PATH-or-verified-user-download'}, indent=2), encoding='utf-8')
 archive = Path(shutil.make_archive(str(ROOT/'dist/ASR2RPP-Windows-x64'), 'zip', ROOT/'dist', 'ASR2RPP'))

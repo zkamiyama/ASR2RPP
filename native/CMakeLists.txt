@@ -4,3 +4,10 @@ add_executable(asr2rpp-pcm-plan-test pcm_plan_test.cpp)
 target_compile_features(asr2rpp-pcm-plan-test PRIVATE cxx_std_11)
 enable_testing()
 add_test(NAME bounded_pcm_plan COMMAND asr2rpp-pcm-plan-test ${CMAKE_CURRENT_BINARY_DIR})
+
+# Assertions are part of the protocol tests, including Release builds.
+if(MSVC)
+  target_compile_options(asr2rpp-pcm-plan-test PRIVATE /UNDEBUG)
+else()
+  target_compile_options(asr2rpp-pcm-plan-test PRIVATE -UNDEBUG)
+endif()

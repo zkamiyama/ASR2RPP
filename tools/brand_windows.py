@@ -18,6 +18,7 @@ ROLE_BY_NAME = {
     'asr2rpp.exe': 'app', 'asr2rpp-cli.exe': 'cli',
     'whisper-cli.exe': 'whisper', 'whisper-vad-speech-segments.exe': 'vad',
     'audiocpp_cli.exe': 'audio', 'audiocpp_gguf.exe': 'convert',
+    'asr2rpp-worker.exe': 'cli', 'asr2rpp-whisper-regions.exe': 'whisper',
 }
 
 
@@ -76,7 +77,7 @@ def apply_icons(package, icon_directory, report):
         icon = icon_directory/f'{role}.ico'
         before = sha256(exe)
         code = executable_sections(exe)
-        if exe.parent == package and exe.name.casefold() in {'asr2rpp.exe', 'asr2rpp-cli.exe'}:
+        if exe.name.casefold() in {'asr2rpp.exe', 'asr2rpp-cli.exe', 'asr2rpp-worker.exe'}:
             # Never edit a onefile archive after PyInstaller has created it.
             verify_icon(exe, icon)
         else:

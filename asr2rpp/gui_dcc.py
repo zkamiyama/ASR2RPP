@@ -845,7 +845,7 @@ class StagePanel(QFrame):
         if not model:
             raise ValueError(f"No model selected for {self.task}")
         requested = self.device.currentData() or "default"
-        device = runtime_defaults.get(model.runtime, "vulkan") if requested == "default" else requested
+        device = runtime_defaults.get(model.runtime, model.defaults.get("device", "auto")) if requested == "default" else requested
         if device not in {"auto", "cpu", "vulkan", "cuda", "metal"}:
             device = "vulkan"
         executable = runtime_paths.get(f"{model.runtime}:{device}", "")
@@ -882,6 +882,10 @@ class Worker(QThread):
                 continue
             seen.add(stage.model_id)
             model = self.catalog[stage.model_id]
+            from .providers import preflight
+            plan = timing_plan_for(self.catalog[self.settings.asr.model_id], self.settings.timing, self.settings.align is not None)
+            info = preflight(model, stage, self.cancel, segmented=stage is self.settings.asr and plan.segmented)
+            self.settings.runtime_provenance[model.task] = {k:v for k,v in info.items() if k != 'capabilities'}
             if 'path' in model.source and not self.prepare_only:
                 from .catalog import local_model_path
                 local_model_path(model)

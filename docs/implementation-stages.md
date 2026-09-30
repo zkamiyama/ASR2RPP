@@ -43,3 +43,15 @@ host. A 25-second private Japanese fixture produced nonempty text successfully
 (exit 0, 5.04 seconds including process/model setup). Only these aggregate
 measurements are recorded; neither the audio nor transcript is published. This
 is a native functionality smoke, not a recognition accuracy benchmark.
+
+
+## Stage 4: portable runtimes and upstream separation
+
+- Windows Python/Qt regression suite: 281 passed, 1 symlink-privilege skip.
+- Added public-C-API Whisper region runner; default builds never modify upstream CLI source.
+- Added pinned Qwen3-ASR 0.6B, ReazonSpeech K2 and faster-whisper model definitions.
+- Added isolated frozen worker and shared CUDA dependency layout; worker capability probe succeeds after freezing.
+- Native CPU builds completed locally; GPU/Vulkan build and complete ZIP validation remain release gates.
+- GUI and CLI preflight capabilities before downloads and retain runtime identity in job settings.
+
+The branch remains a draft until the complete portable ZIP has passed native inference and lifecycle checks.

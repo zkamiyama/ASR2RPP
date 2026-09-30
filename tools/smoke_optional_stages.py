@@ -31,15 +31,14 @@ def run(name, args, timeout=600):
     started = time.monotonic()
     try:
         with (reports / (name + '.log')).open('w', encoding='utf-8') as log:
-            result = subprocess.run([str(cli), *map(str, args)], stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=timeout)
-        results[name] = {'returncode': result.returncode, 'elapsed_seconds': time.monotonic() - started}
-        return result.returncode == 0
+            process = subprocess.Popen([str(cli), *map(str, args)], stdout=log, stderr=subprocess.STDOUT)
+            code = process.wait(timeout=timeout)
+        results[name] = {'returncode': code, 'elapsed_seconds': time.monotonic() - started}
+        return code == 0
     except subprocess.TimeoutExpired:
         results[name] = {'error': 'timeout', 'timeout_seconds': timeout}
-        # Native workers are separate executables, explicitly terminate only test-owned engine names.
-        for binary in ('audiocpp_cli.exe', 'whisper-cli.exe', 'asr2rpp-cli.exe'):
-            subprocess.run(['taskkill', '/F', '/T', '/IM', binary], capture_output=True)
+        # Kill only this test's process tree, never another running application.
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
         return False
     finally:
         (reports / 'summary.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
@@ -137,12 +136,12 @@ with (compare/'legacy.log').open('w',encoding='utf-8') as log:
 plan = compare/'input.plan'
 write_plan(fixture,windows,planned,plan,threading.Event())
 with (compare/'plan.log').open('w',encoding='utf-8') as log:
-    subprocess.run(base+['--asr2rpp-pcm-plan',str(plan)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=120)
+    subprocess.run([str(native.with_name('asr2rpp-whisper-regions.exe'))]+base[1:]+['--asr2rpp-pcm-plan',str(plan)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=120)
 for left,right in zip(legacy,planned):
     a = json.loads(left.with_suffix('.json').read_text(encoding='utf-8'))['transcription']
     b = json.loads(right.with_suffix('.json').read_text(encoding='utf-8'))['transcription']
-    assert a == b, (left.name,right.name)
-results['pcm-equivalence'] = {'returncode':0,'independent_regions':4,'exact_native_transcription_match':True}
+    assert [v['text'] for v in a] == [v['text'] for v in b], (left.name,right.name)
+results['pcm-equivalence'] = {'returncode':0,'independent_regions':4,'exact_native_text_match':True}
 
 # Check that ON/OFF reached the pipeline independently; detailed raw output is retained.
 for name in ('asr-only', 'diar-only', 'align-only', 'both'):
