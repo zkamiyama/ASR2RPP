@@ -209,7 +209,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             raise ValueError('No timed speech was returned; raw engine output is retained')
         if any(u.method == 'emission_frame' for u in units):
             warnings.append('ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
-        units = group_units(units)
+        # Keep the finest native intervals until speaker assignment is complete.
         units = [replace(u, speaker=None) for u in units]
         if settings.align is not None:
             align_model = catalog[settings.align.model_id]
@@ -217,7 +217,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
             engine_dir = work / 'alignment'
             try:
                 units = align_segments(
-                    align_model, weights['align'], settings.align, units,
+                    align_model, weights['align'], settings.align, group_units(units),
                     alignment_pcm, duration, engine_dir, cancel, progress, warnings)
             finally:
                 # Never copy temporary audio slices into the user's report.

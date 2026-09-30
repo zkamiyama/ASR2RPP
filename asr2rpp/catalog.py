@@ -11,6 +11,7 @@ import shutil
 import sys
 import threading
 import tomllib
+from .atomic import file_lock, json_replace
 
 
 class Cancelled(Exception):
@@ -215,10 +216,12 @@ def definition_provenance(model):
 
 
 @timed('sha256')
-def digest(path: Path) -> str:
+def digest(path: Path, cancel=None) -> str:
     hasher = hashlib.sha256()
     with path.open('rb') as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b''):
+            if cancel is not None:
+                checkpoint(cancel)
             hasher.update(block)
     return hasher.hexdigest()
 
@@ -234,29 +237,79 @@ def local_model_path(model):
     return path
 
 
+# installed.json is provenance, not proof of integrity. Verify once per process
+# and invalidate memoization on any change to the actual file's stat identity.
+_VERIFIED_FILES = {}
+
+
+def verified_digest(path, cancel):
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_dev, stat.st_ino, stat.st_size,
+           stat.st_mtime_ns, stat.st_ctime_ns)
+    if key not in _VERIFIED_FILES:
+        sha = digest(path, cancel)
+        after = path.stat()
+        if (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError('Model changed during verification')
+        if len(_VERIFIED_FILES) > 1024:
+            _VERIFIED_FILES.clear()
+        _VERIFIED_FILES[key] = sha
+    return _VERIFIED_FILES[key]
+
+
+def _installed_valid(model, directory, state, cancel):
+    files = state.get('files', {})
+    required = set(model.source['files'])
+    recipe = model.source.get('convert') or {}
+    entry = safe_relative(model.source.get('entry', model.source['files'][0]))
+    if not isinstance(files, dict) or not required.issubset(files) or not (directory / entry).is_file():
+        return False
+    for name, info in files.items():
+        if info.get('retained', True) is False:
+            if name != recipe.get('checkpoint'):
+                return False
+            continue
+        path = directory / safe_relative(name)
+        if (not path.is_file() or path.stat().st_size != info.get('size') or
+                verified_digest(path, cancel) != info.get('sha256')):
+            return False
+        expected = model.source.get('sha256', {}).get(name)
+        if expected and info['sha256'] != expected:
+            return False
+    return entry in files
+
+
 @timed('model_resolution')
 def resolve_model(model: Model, cancel: threading.Event, progress, download: bool = False, keep_source: bool = False) -> tuple[Path, dict]:
-    """Cache identity includes the complete source definition; edits cannot reuse stale weights."""
     checkpoint(cancel)
     if 'path' in model.source:
         path = local_model_path(model)
-        return path, {'local_path': str(path), 'sha256': digest(path) if path.is_file() else None}
+        return path, {'local_path': str(path), 'sha256': verified_digest(path, cancel) if path.is_file() else None,
+                      'verification': 'sha256 (process-local stat-identity memoization)'}
+    identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
+    lock = weights_root() / model.id / (identity + '.lock')
+    with file_lock(lock, cancel):
+        return _resolve_remote_model(model, cancel, progress, download, keep_source)
+
+
+def _resolve_remote_model(model, cancel, progress, download=False, keep_source=False):
     identity = hashlib.sha256(json.dumps(model.source, sort_keys=True).encode()).hexdigest()[:16]
     directory = weights_root() / model.id / identity
     state_file = directory / 'installed.json'
     if state_file.exists():
-        state = json.loads(state_file.read_text(encoding='utf-8'))
+        try:
+            state = json.loads(state_file.read_text(encoding='utf-8'))
+            installed_valid = _installed_valid(model, directory, state, cancel)
+        except (ValueError, TypeError, KeyError, AttributeError, OSError):
+            state, installed_valid = {}, False
         entry = safe_relative(model.source.get('entry', model.source['files'][0]))
-        installed_valid = ((directory / entry).is_file() and
-                all((info.get('retained', True) is False) or
-                    ((directory / f).is_file() and (directory / f).stat().st_size == info['size'])
-                    for f, info in state['files'].items()))
         recipe = model.source.get('convert') or {}
         checkpoint_name = str(recipe.get('checkpoint', ''))
         restore_source = bool(
             keep_source and checkpoint_name and
             state.get('files', {}).get(checkpoint_name, {}).get('retained') is False)
         if installed_valid and not restore_source:
+            state['verification'] = 'sha256 (process-local stat-identity memoization)'
             return directory / entry, state
     if not download:
         raise FileNotFoundError(f'{model.id}: model not installed. Use Download models / models install first.')
@@ -302,8 +355,8 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
             sha = downloaded_sha.hexdigest()
             if expected and sha != expected:
                 raise ValueError('Model SHA-256 mismatch')
-            if partial.stat().st_size < 1024:
-                raise ValueError('Downloaded file is unexpectedly small; check repository/file name')
+            if partial.stat().st_size == 0:
+                raise ValueError('Downloaded model asset is empty')
             partial.replace(destination)
             state['files'][filename] = {'sha256': sha, 'size': done, 'retained': True}
         finally:
@@ -325,6 +378,7 @@ def resolve_model(model: Model, cancel: threading.Event, progress, download: boo
         else:
             conversion['source_checkpoint_retained'] = source_checkpoint.is_file()
         state['conversion'] = conversion
-    state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    state['verification'] = 'sha256 at installation'
+    json_replace(state_file, state)
     entry = safe_relative(model.source.get('entry', model.source['files'][0]))
     return directory / entry, state

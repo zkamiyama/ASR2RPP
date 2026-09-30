@@ -202,20 +202,29 @@ def _whisper_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
             args_file = log.with_suffix('.args')
             argv = response_command(argv,args_file)
             _copy_log(args_file,chunk,f'asr-batch-{chunk_no}.args')
+        process_error = None
         try:
             run_process(argv, cancel, progress, log)
-            for job in chunk:
-                path = out / f'{job.key}.json'
+        except Exception as exc:
+            checkpoint(cancel)
+            process_error = exc
+        finally:
+            _copy_log(log, chunk, f'asr-batch-{chunk_no}.log')
+        for job in chunk:
+            checkpoint(cancel)
+            path = out / f'{job.key}.json'
+            try:
                 if not path.is_file():
-                    raise ValueError(f'whisper.cpp did not produce JSON for {job.source.name}')
+                    raise ValueError(f'No complete output for {job.source.name}: {process_error or "missing JSON"}')
+                # Preserve even malformed bytes for diagnosis before parsing.
+                target = job.report / 'asr'
+                target.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target / 'native-output.json')
                 raw = json.loads(path.read_text(encoding='utf-8-sig'))
                 results[job.key] = parse_whisper(raw)
-            _copy_log(log, chunk, f'asr-batch-{chunk_no}.log')
-        except BaseException as exc:
-            if cancel.is_set():
-                raise
-            for job in chunk:
+            except Exception as exc:
                 _fail(job, exc, item_callback)
+
     return results
 
 
@@ -259,11 +268,12 @@ def _nemotron_streaming_asr(model, weights: Path, stage, jobs, audio_paths, root
                     f'audio.cpp did not produce streaming ASR timestamps for {job.source.name}')
             raw = json.loads(output.read_text(encoding='utf-8-sig'))
             results[job.key] = parse_audio(raw, 'asr', model.family, model.sample_rate)
-            _copy_log(log, [job], f'asr-stream-{item_no}.log')
         except BaseException as exc:
             if cancel.is_set():
                 raise
             _fail(job, exc, item_callback)
+        finally:
+            _copy_log(log, [job], f'asr-stream-{item_no}.log')
     return results
 
 
@@ -307,22 +317,31 @@ def _audio_batch(model, weights: Path, stage, jobs, audio_paths, root: Path,
             argv += ['--request-option', f'{key}={scalar(value)}']
         argv += _session_args(model, stage)
         log = chunk_root / 'engine.log'
+        for job in chunk:
+            item_callback(job.index, 'ASR' if task == 'asr' else 'Diarization', '')
+        process_error = None
         try:
-            for job in chunk:
-                item_callback(job.index, 'ASR' if task == 'asr' else 'Diarization', '')
             run_process(argv, cancel, progress, log)
-            for job in chunk:
-                path = base.parent / f'{base.stem}_{job.key}{base.suffix}'
+        except Exception as exc:
+            checkpoint(cancel)
+            process_error = exc
+        finally:
+            _copy_log(log, chunk, f'{task}-batch-{chunk_no}.log')
+        for job in chunk:
+            checkpoint(cancel)
+            path = base.parent / f'{base.stem}_{job.key}{base.suffix}'
+            try:
                 if not path.is_file():
-                    raise ValueError(f'audio.cpp did not produce {task} timestamps for {job.source.name}')
+                    raise ValueError(f'No complete output for {job.source.name}: {process_error or "missing JSON"}')
+                # Preserve even malformed bytes for diagnosis before parsing.
+                target = job.report / task
+                target.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target / 'native-output.json')
                 raw = json.loads(path.read_text(encoding='utf-8-sig'))
                 results[job.key] = parse_audio(raw, task, model.family, model.sample_rate)
-            _copy_log(log, chunk, f'{task}-batch-{chunk_no}.log')
-        except BaseException as exc:
-            if cancel.is_set():
-                raise
-            for job in chunk:
+            except Exception as exc:
                 _fail(job, exc, item_callback)
+
     return results
 
 
@@ -593,7 +612,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                     if any(unit.method == 'emission_frame' for unit in units):
                         job.warnings.append(
                             'ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
-                    job.units = [replace(unit, speaker=None) for unit in core.group_units(units)]
+                    job.units = [replace(unit, speaker=None) for unit in units]
                 except BaseException as exc:
                     _fail(job, exc, item_callback)
             # PCM remains until the last enabled stage; same-rate stages share it.
@@ -605,6 +624,7 @@ def run_queue(indexed_paths, settings, catalog, cancel: threading.Event, progres
                 requests = []
                 by_job = {job.key: [] for job in _active(jobs)}
                 for job in list(_active(jobs)):
+                    job.units = core.group_units(job.units)
                     too_long = next((u for u in job.units if core.has_alignable_text(u.text) and u.end - u.start > 55), None)
                     if too_long is not None:
                         _fail(job, ValueError(

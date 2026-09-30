@@ -90,6 +90,10 @@ def _checkpoint_payload(path: Path):
     pickle_name = pickle_names[0]
     root = pickle_name.rsplit('/', 1)[0] if '/' in pickle_name else ''
     try:
+        if archive.getinfo(pickle_name).file_size > MAX_PICKLE_BYTES:
+            raise ConversionError('Checkpoint metadata exceeds safety limit')
+        if len(archive.infolist()) > 100000 or sum(i.file_size for i in archive.infolist()) > 16 * 1024**3:
+            raise ConversionError('Checkpoint archive exceeds safety limit')
         payload = RestrictedCheckpointUnpickler(io.BytesIO(archive.read(pickle_name))).load()
     except BaseException:
         archive.close()
@@ -212,29 +216,46 @@ def parse_big_beta7_yaml(path: Path) -> dict:
     }
 
 
+# Resource limits are deliberately explicit: untrusted tensor metadata must
+# not request an arbitrary allocation or a ZIP decompression bomb.
+MAX_TENSOR_BYTES = 2 * 1024**3
+MAX_PICKLE_BYTES = 64 * 1024**2
+
+
 def _materialize(archive: zipfile.ZipFile, root: str, ref: TensorRef):
+    import math
     import numpy as np
+    if ref.dtype_name != 'FloatStorage':
+        raise ConversionError('Unsupported tensor dtype')
+    if (len(ref.size) != len(ref.stride) or len(ref.size) > 32 or
+            type(ref.offset) is not int or ref.offset < 0 or
+            any(type(v) is not int or v < 0 for v in (*ref.size, *ref.stride))):
+        raise ConversionError('Invalid tensor shape, offset or stride')
+    elements = math.prod(ref.size)
+    if elements * 4 > MAX_TENSOR_BYTES:
+        raise ConversionError('Tensor exceeds conversion memory limit')
+    if not ref.storage_key.isdecimal():
+        raise ConversionError('Invalid tensor storage key')
     member = f'{root}/data/{ref.storage_key}' if root else f'data/{ref.storage_key}'
     try:
-        raw = archive.read(member)
+        info = archive.getinfo(member)
     except KeyError as exc:
         raise ConversionError(f'Missing tensor storage {member}') from exc
-    flat = np.frombuffer(raw, dtype=np.float32)
-    if any(v < 0 for v in ref.size) or ref.offset < 0:
-        raise ConversionError('Negative tensor shape/offset')
-    if len(ref.size) != len(ref.stride):
-        raise ConversionError('Tensor rank/stride mismatch')
-    if ref.size:
-        last = ref.offset + sum((size - 1) * stride for size, stride in zip(ref.size, ref.stride)) + 1
-        if last > flat.size:
-            raise ConversionError('Tensor points outside storage')
-        view = np.lib.stride_tricks.as_strided(
-            flat[ref.offset:], shape=ref.size,
-            strides=tuple(stride * flat.itemsize for stride in ref.stride), writeable=False)
-        return np.ascontiguousarray(view)
-    if ref.offset >= flat.size:
-        raise ConversionError('Scalar points outside storage')
-    return np.ascontiguousarray(flat[ref.offset:ref.offset + 1].reshape(()))
+    if info.file_size > MAX_TENSOR_BYTES or info.file_size % 4:
+        raise ConversionError('Invalid or oversized tensor storage')
+    storage_elements = info.file_size // 4
+    if elements == 0:
+        if ref.offset > storage_elements:
+            raise ConversionError('Empty tensor points outside storage')
+        return np.empty(ref.size, dtype=np.float32)
+    last = ref.offset + sum((size - 1) * stride for size, stride in zip(ref.size, ref.stride))
+    if last >= storage_elements:
+        raise ConversionError('Tensor points outside storage')
+    raw = archive.read(member)
+    # ndarray checks the buffer bounds too. Never use unchecked as_strided.
+    view = np.ndarray(shape=ref.size, dtype='<f4', buffer=raw,
+                      offset=ref.offset * 4, strides=tuple(v * 4 for v in ref.stride))
+    return np.array(view, dtype=np.float32, order='C', copy=True)
 
 
 def checkpoint_to_safetensors(checkpoint: Path, config_yaml: Path, output_dir: Path,
