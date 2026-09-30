@@ -1,10 +1,23 @@
-runtime = "audio_cpp"
+schema_version = 2
+provider = "audio_cpp"
 task = "align"
 family = "qwen3_forced_aligner"
 name = "Qwen3 Forced Aligner · Q8"
-description = "認識テキストと対応音声を再整列します。初期版は55秒以下の対応区間ごとに実行します。"
+sample_rate = 16000
+description = "音声と認識済みテキストを整列。長い区間は設定のVAD事前分割で短くしてください。"
+
+[execution]
+mode = "offline"
+output = "words"
+max_batch_items = 16
+
 [source]
-repo = "https://huggingface.co/audio-cpp/audio.cpp-gguf"
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
 files = ["Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf"]
+
+[source.sha256]
+"Qwen3-ForcedAligner-0.6B-GGUF/qwen3-forced-aligner-0.6b-q8_0.gguf" = "75209490b11cec2b0db749ca5f4ff92266f58efd30f7fd04d9eb2a3ac9cc929f"
+
 [defaults]
 language = "Japanese"

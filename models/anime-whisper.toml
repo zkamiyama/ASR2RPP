@@ -1,20 +1,24 @@
-# Original model: https://huggingface.co/litagin/anime-whisper
-# Experimental conversion: distributor reports possible anomalous transcription.
-# Do NOT set an initial prompt for this model. Compare against original weights.
-runtime = "whisper_cpp"
+schema_version = 2
+provider = "whisper_cpp"
 task = "asr"
 name = "Anime Whisper"
-description = "日本語音声認識。VAD短区間・時刻生成OFF・履歴OFF。VAD区間時刻で出力し、強制アライメントは任意。"
+sample_rate = 16000
+description = "日本語向け派生モデルの実験的GGML変換。初期プロンプト非対応。時刻は設定画面でVADまたは強制アライメントを選択。"
+
+[capabilities]
+timestamps = "none"
+speakers = false
+
 [source]
-repo = "https://huggingface.co/Aratako/anime-whisper-ggml"
+repo = "Aratako/anime-whisper-ggml"
+revision = "35b467f144c62a3ab2d84bfbb517d6af5135444a"
 files = ["ggml-anime-whisper.bin"]
+
+[source.sha256]
+"ggml-anime-whisper.bin" = "bce42c15312fcdbdcc8432b2ce63ba967f4cc3d2cc783fd6ab2ba264caf0db8d"
+
 [defaults]
 language = "ja"
 
 [constraints]
 disabled_parameters = ["initial_prompt", "carry_initial_prompt"]
-
-# Timing workflow is selected in Settings > Timing (or CLI --timing).
-[capabilities]
-timestamps = "none"
-speakers = false

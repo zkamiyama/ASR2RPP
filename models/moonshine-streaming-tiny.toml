@@ -1,0 +1,31 @@
+schema_version = 2
+provider = "audio_cpp"
+task = "asr"
+family = "moonshine_asr"
+name = "Moonshine Streaming Tiny · Q8"
+sample_rate = 16000
+description = "英語専用・小型。このアプリではファイルをVAD分割してオフライン処理します。"
+
+[capabilities]
+timestamps = "none"
+speakers = false
+
+[execution]
+mode = "offline"
+output = "text"
+max_batch_items = 16
+max_audio_seconds = 28
+
+[source]
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
+files = ["Moonshine-Streaming-GGUF/moonshine-streaming-tiny-q8_0.gguf"]
+
+[source.sha256]
+"Moonshine-Streaming-GGUF/moonshine-streaming-tiny-q8_0.gguf" = "b1409ca065d9d8472773b2801ce8bab772720d8f850779180f687871e63b7ba2"
+
+[defaults]
+language = "en"
+
+[defaults.request]
+audio_chunk_mode = "none"

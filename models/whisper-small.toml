@@ -1,9 +1,9 @@
 schema_version = 2
 provider = "whisper_cpp"
 task = "asr"
-name = "Whisper Base"
+name = "Whisper Small"
 sample_rate = 16000
-description = "多言語。最初の動作確認向け。"
+description = "多言語。Baseより大きい標準モデル。"
 
 [capabilities]
 timestamps = "segment"
@@ -12,10 +12,10 @@ speakers = false
 [source]
 repo = "ggerganov/whisper.cpp"
 revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
-files = ["ggml-base.bin"]
+files = ["ggml-small.bin"]
 
 [source.sha256]
-"ggml-base.bin" = "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"
+"ggml-small.bin" = "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
 
 [defaults]
 language = "ja"

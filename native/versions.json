@@ -16,7 +16,11 @@
       "qwen3_asr",
       "sense_asr",
       "qwen3_forced_aligner",
-      "roformer"
+      "roformer",
+      "fun_asr_nano",
+      "canary_asr",
+      "moonshine_asr",
+      "voxtral_realtime"
     ]
   }
 }

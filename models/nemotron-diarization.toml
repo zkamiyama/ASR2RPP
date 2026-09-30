@@ -1,11 +1,24 @@
-runtime = "audio_cpp"
+schema_version = 2
+provider = "audio_cpp"
 task = "diar"
 family = "nemotron_3_diar"
 name = "Nemotron 3 Diarization · BF16"
-description = "最大8話者。音源分離は行いません。audio.cpp 0.8.2以降の対応ビルドが必要です。"
+sample_rate = 16000
+description = "最大8話者の話者区間検出。重なった声の音源分離は行いません。"
+
+[execution]
+mode = "offline"
+output = "turns"
+max_batch_items = 16
+
 [source]
-repo = "https://huggingface.co/audio-cpp/Nemotron-3-Diarization-GGUF"
+repo = "audio-cpp/Nemotron-3-Diarization-GGUF"
+revision = "647d39feaa0e91dca5ce355a95403837b76dff56"
 files = ["nemotron-3-diarization-bf16.gguf"]
+
+[source.sha256]
+"nemotron-3-diarization-bf16.gguf" = "84f6f0f12b9ecf2615548427e884534a72fedbca32d00872d95c0f72a078c953"
+
 [defaults.request]
 speaker_threshold = 0.5
 speaker_min_frames = 10

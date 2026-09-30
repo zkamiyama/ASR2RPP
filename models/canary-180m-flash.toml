@@ -1,0 +1,38 @@
+schema_version = 2
+provider = "audio_cpp"
+task = "asr"
+family = "canary_asr"
+name = "Canary 180M Flash · Q8"
+sample_rate = 16000
+description = "英語・ドイツ語・スペイン語・フランス語。日本語非対応。時刻はVADまたは強制アライメント。"
+
+[capabilities]
+timestamps = "none"
+speakers = false
+
+[execution]
+mode = "offline"
+output = "text"
+max_batch_items = 16
+max_audio_seconds = 28
+
+[source]
+repo = "audio-cpp/audio.cpp-gguf"
+revision = "83c5d96c03023ff5a7712570d057ce26c8769f98"
+files = ["Canary-180M-Flash-GGUF/canary-180m-flash-q8_0.gguf"]
+
+[source.sha256]
+"Canary-180M-Flash-GGUF/canary-180m-flash-q8_0.gguf" = "8a6d06be2b6c8e44b7810e5ad1277db571d3152a7eea8b699974516907a6ef57"
+
+[defaults]
+language = "en"
+
+[defaults.request]
+audio_chunk_mode = "none"
+pnc = true
+
+[parameters.pnc]
+type = "bool"
+default = true
+ja = "句読点・大文字を付与"
+en = "Punctuation and capitalization"
