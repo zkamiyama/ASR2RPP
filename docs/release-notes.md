@@ -12,6 +12,10 @@ OSに合うZIPを新しいフォルダーに全展開し、ASR2RPP.exe / ASR2RPP
 
 Windows x64（AVX2・Vulkan）とApple Silicon（macOS 14以降・Metal）向けです。Windows版は未署名、macOS版はad-hoc署名・未公証です。
 
-公開には、両OSの候補ZIPと、Windowsの物理RTX 4080実機で全21モデルおよび3形式出力を検証した記録が必要です。現時点の30B-A4B実音声確認はWSL/CUDAのソース実行で、60.2秒の日本語会話に独立した時刻・話者ラベルを付与したものです。配布Windows/Vulkan版の合格を意味しません。用語ヒントは改善が保証されず、今回も用語に寄せすぎた言い換えがありました。30分の日本語音声での認識精度・処理時間、macOS実機での30B-A4B動作は未確認です。公開時のZIPのハッシュとWindows事後検証記録は、リリースに添付する `SHA256SUMS.txt` と `VALIDATION-Windows.json` で確認してください。
+Windows 11／RTX 4080実機で、配布ZIPの全21モデルとRPP・OTIO・JSON出力を検証しました。30B-A4Bは約1分の自然な日本語会話で、別のアライナーと話者分離モデルを使って時刻・話者ラベルを付与し、書き出せました。発話の重なりなどで話者不明になる区間は残ります。30分の日本語音声での認識精度・処理時間と、macOS実機での30B-A4B動作は未確認です。
+
+用語ヒントは精度改善を保証しません。無関係なヒントを与えた試験では、音声にない語が入り、区間外のアライメント結果の一部が警告付きで書き出しから除外されました。音声に出なかった用語や読みも生JSON・診断の設定に残るため、共有前に確認してください。
+
+同じWindows ZIPの初回検証では、Whisper TinyのVulkan実行が一度クラッシュしました。単体再試験と、その後の全21モデルの再試験は通過しています。原因は未確定です。詳細は [検証記録](https://github.com/zkamiyama/ASR2RPP/blob/main/docs/validation/0.4.0.md)、配布ファイルのハッシュは添付の `SHA256SUMS.txt` を参照してください。
 
 English: Adds Nemotron 3.5 Transcribe 30B-A4B (IQ4_NL), UTF-8 glossary hints, and optional Japanese readings for Nemotron. Built-in speaker labeling is experimental and off by default. Use the separate forced aligner and diarizer for edit timestamps and speaker labels. Extract the complete ZIP before launching; model files are downloaded separately.

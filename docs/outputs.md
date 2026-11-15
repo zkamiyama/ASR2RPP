@@ -49,7 +49,7 @@ This is a **versioned interchange document**, not a dump of Python objects. It c
 
 `results/history/*` preserves ASR-normalized, aligned and speaker-assigned units where those stages run. Native timestamp granularity and `method` remain distinct: VAD utterance bounds, emission frames, native intervals and forced alignment are not interchangeable.
 
-For a custom converter, use `timeline` for edit placement and `transcript.units`/`results` for additional detail. Paths and text can disclose personal information: review before sharing. The file carries data only; conversion does not execute commands from it. Keep the referenced media available. A moved file must be relinked in the editor, or update the JSON's reference path/URL before conversion.
+For a custom converter, use `timeline` for edit placement and `transcript.units`/`results` for additional detail. Paths and text can disclose personal information. Raw JSON and diagnostics can retain glossary terms and readings even when they do not appear in the recognized transcript. Review before sharing. The file carries data only; conversion does not execute commands from it. Keep the referenced media available. A moved file must be relinked in the editor, or update the JSON's reference path/URL before conversion.
 
 [Machine-readable schema](export-schema.json)
 

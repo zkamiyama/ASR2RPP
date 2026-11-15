@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "scope": "Independent archive inspection and authenticated macOS CI report review; no local macOS execution or physical Mac inference",
+  "source_commit": "7a0e63b8fa82fa6273b3c9d745b48926f0146217",
+  "version": "0.4.0",
+  "run_id": 43724599369,
+  "job_id": 132843923784,
+  "job_conclusion": "success",
+  "artifact_id": 14166555632,
+  "artifact_wrapper_sha256": "0c92a55fa98f5792667e62e4c4e1937b290541ee9e3e4473520fbdb00a3c754f",
+  "package_sha256": "5a28d2c7604d5436dfb50ecc9a327d3280476cd65f5f24754f11c28ac67c411b",
+  "package_bytes": 98775737,
+  "reports_artifact_id": 14166019509,
+  "reports_wrapper_sha256": "ff33aaa313797a4269ced272ff3530e85133b7963e95d264e19fb268e41bde57",
+  "archive_crc_valid": true,
+  "model_definitions_match_exact_source": true,
+  "definition_hashes": {
+    "whisper-tiny": "72aa55e5fad9c0581e55c2b7622030fb10e16f42cac0c4f2ecf902cc31ffce62",
+    "whisper-small": "5025ba8fa132efe71e19cfafee75df47ef6cea20c944f7c843865769013842df",
+    "qwen-forced-aligner": "c52596fd645c4022f16f0329969b5f7bde348019b361a00128fc7cbc34cc40ef",
+    "whisper-medium-q5": "b867d052a9d2c8b68773ae41b369d465d6fef2c3624dd87f48fb127c16b56164",
+    "whisper-large-v3-q5": "dbd3871e702e2f3a4643f2d141774d579ae4416818cc54064c4aa2ea0b45b970",
+    "fun-asr-nano": "15f1a4520586b49d3e2908ca9b563c8282d9ba42e960ea589fb6e5e8fc514ff3",
+    "nemotron-asr": "a9f7c9069cce80e8b9b50ebcc286a15b47809479e0a1c558a0be5449042e89b5",
+    "mel-big-beta7": "8d4f8b769ac07fedb347f43f12df9f6d9877f3fbba3e4277c5652bb404990b12",
+    "vibevoice-asr": "d96293b2e35a29198f3a05ebc4348f25d716933f3fd484ea25dfdafd2dd1fa9d",
+    "qwen3-asr-17b": "195759ef8cbba1e032bc598e0cb884c55ba5bcbfaaba4431ca6c61caa01919b7",
+    "anime-whisper": "294509beca8679aee531ac3acca69c6069d895f89b8a8621f71f117177864495",
+    "whisper-large-v3-turbo-q5": "5b1098cc3f4be83a5b743e2d143c968ac924e3ab24d43b89d96a7a009f8609a5",
+    "voxtral-mini-realtime-q4": "bee2ef99603aeab337b55878d7c2bf04f336d0446e19f7f6ac61786ff7aac14b",
+    "moonshine-streaming-tiny": "c0a623efa59696f519b6a25f8787b058ac5cb60eed13f676c53d2f2093785a0d",
+    "sensevoice-small": "bad7da9d22eb1ed0e949ee8ce36ece552b2e9b5beabffa844a72c8266cb486a2",
+    "whisper-base": "a466979c96efdde484d362ffd64b32fbbd84b4bd5d0cf9c4d046b743a26c027f",
+    "qwen3-asr-06b": "48690c5030906691f356a8151c5311ab8f8ffe2949a1dcde47ca3b605c9ef012",
+    "nemotron-diarization": "08d7ffa32b64bde8e2719804fbb1c1a585f00cd186429efdbcb7443805df3c6b",
+    "reazonspeech-k2": "f3feb79ec3831a216d37ed1bafb60ee3508bbc45a3b5b78ac726c6764e692e70",
+    "nemotron-transcribe-iq4-nl": "68a8437e8f3eda3c846ab2622eec44a292e7202ea755cc55772a1e2aa3c912a9",
+    "canary-180m-flash": "1d13108326e250f3bbde33baecd158600b236536c4cd00567e783b38923c9714"
+  },
+  "runtime_manifest_files_verified": 490,
+  "runtime_hash_mismatches": [],
+  "macho_audit_count": 197,
+  "macho_architectures": [
+    "arm64"
+  ],
+  "unexpected_absolute_library_dependencies": [],
+  "python_tests": {
+    "tests": 604,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "portable_report": {
+    "platform": "macos-arm64",
+    "signature_verified": true,
+    "distribution": {
+      "files_checked": 819,
+      "cuda_bundled": false,
+      "ctranslate2_bundled": false,
+      "faster_whisper_bundled": false
+    },
+    "cases": {
+      "downloaded-ffmpeg": {
+        "returncode": 0,
+        "seconds": 0.03763062499999137
+      },
+      "doctor": {
+        "returncode": 0,
+        "seconds": 0.42113037499998995
+      },
+      "lifecycle": {
+        "returncode": 0,
+        "seconds": 2.777943792000002
+      },
+      "models": {
+        "returncode": 0,
+        "seconds": 27.81488787500001
+      },
+      "whisper-cpu-native": {
+        "returncode": 0,
+        "seconds": 21.870827792,
+        "exports": {
+          "passed": true,
+          "tracks": 2,
+          "clips": 2,
+          "original_muted": true,
+          "source_offsets_verified": true,
+          "raw_results": 5,
+          "formats": [
+            "rpp",
+            "otio",
+            "json"
+          ]
+        }
+      },
+      "whisper-cpu-vad": {
+        "returncode": 0,
+        "seconds": 99.91898779200005,
+        "exports": {
+          "passed": true,
+          "tracks": 2,
+          "clips": 6,
+          "original_muted": true,
+          "source_offsets_verified": true,
+          "raw_results": 6,
+          "formats": [
+            "rpp",
+            "otio",
+            "json"
+          ]
+        }
+      },
+      "reazon-cpu-vad": {
+        "returncode": 0,
+        "seconds": 66.00118683400001,
+        "exports": {
+          "passed": true,
+          "tracks": 2,
+          "clips": 6,
+          "original_muted": true,
+          "source_offsets_verified": true,
+          "raw_results": 16,
+          "formats": [
+            "rpp",
+            "otio",
+            "json"
+          ]
+        }
+      },
+      "qwen-cpu-vad": {
+        "returncode": 0,
+        "seconds": 145.26442020900004,
+        "exports": {
+          "passed": true,
+          "tracks": 2,
+          "clips": 6,
+          "original_muted": true,
+          "source_offsets_verified": true,
+          "raw_results": 21,
+          "formats": [
+            "rpp",
+            "otio",
+            "json"
+          ]
+        }
+      },
+      "whisper-base-metal-vad": {
+        "returncode": 0,
+        "seconds": 148.94568066700003,
+        "exports": {
+          "passed": true,
+          "tracks": 2,
+          "clips": 6,
+          "original_muted": true,
+          "source_offsets_verified": true,
+          "raw_results": 6,
+          "formats": [
+            "rpp",
+            "otio",
+            "json"
+          ]
+        }
+      }
+    },
+    "skipped": {
+      "qwen3-asr-06b-metal-vad": "Device lacks the Apple7 SIMD-group matrix support required by the pinned Qwen Metal encoder"
+    },
+    "metal": {
+      "simdgroup_matrix": false,
+      "available": true,
+      "device": "Apple Paravirtual device",
+      "inference_verified_models": [
+        "whisper-base"
+      ],
+      "coverage_complete": false
+    },
+    "source_unchanged": true,
+    "passed": true
+  },
+  "lifecycle": {
+    "passed": true,
+    "case_count": 10,
+    "inference": "deterministic stubs; native execution tested separately"
+  },
+  "export_report": {
+    "passed": true,
+    "cases": {
+      "replay-all": {
+        "returncode": 0,
+        "expected_returncode": 0,
+        "passed": true,
+        "tracks": 4,
+        "clips": 5,
+        "original_muted": true,
+        "source_offsets_verified": true,
+        "raw_results": 1,
+        "formats": [
+          "rpp",
+          "otio",
+          "json"
+        ]
+      },
+      "replay-rpp": {
+        "returncode": 0,
+        "expected_returncode": 0
+      },
+      "replay-otio": {
+        "returncode": 0,
+        "expected_returncode": 0
+      },
+      "replay-json": {
+        "returncode": 0,
+        "expected_returncode": 0
+      },
+      "empty-convert": {
+        "returncode": 2,
+        "expected_returncode": 2
+      },
+      "empty-run": {
+        "returncode": 2,
+        "expected_returncode": 2
+      }
+    },
+    "fixture": "generated silence / public speech",
+    "otio_reader": "opentimelineio.core",
+    "formats": [
+      "rpp",
+      "otio",
+      "json"
+    ]
+  },
+  "limitations": [
+    "Mac package is ad-hoc signed, not notarized. Signature verification is evidenced by the successful CI relocated-package report, not rerun on this Linux auditor.",
+    "Apple Paravirtual GPU lacks Apple7 SIMD-group matrix support; Qwen3-ASR 0.6B Metal skipped. Only Whisper Base Metal inference verified.",
+    "No physical Mac full 21-model matrix, 30B real-weight inference, or frozen glossary/readings quality claim.",
+    "Frozen GUI lifecycle uses deterministic inference stubs; separate frozen CLI inference cases are listed in portable_report."
+  ]
+}

@@ -1,18 +1,41 @@
 {
-  "schema_version": 1,
-  "tag": "v0.3.0",
-  "source_commit": "af5dca873ab5d44c779f2c3e079ed81b132cefdb",
-  "validation_sha256": "f25f54e5f8ac8e0e38b4e3bf010d7e5c465ef97ff73c2c544d40520e3584ebb2",
+  "schema_version": 2,
+  "tag": "v0.4.0",
+  "source_commit": "7a0e63b8fa82fa6273b3c9d745b48926f0146217",
+  "validation_sha256": "4b0b9667a1b7ead80c9a2afa54387f6d585a621c42c199d255540a617044e6f1",
+  "expected_model_ids": [
+    "anime-whisper",
+    "canary-180m-flash",
+    "fun-asr-nano",
+    "mel-big-beta7",
+    "moonshine-streaming-tiny",
+    "nemotron-asr",
+    "nemotron-diarization",
+    "nemotron-transcribe-iq4-nl",
+    "qwen-forced-aligner",
+    "qwen3-asr-06b",
+    "qwen3-asr-17b",
+    "reazonspeech-k2",
+    "sensevoice-small",
+    "vibevoice-asr",
+    "voxtral-mini-realtime-q4",
+    "whisper-base",
+    "whisper-large-v3-q5",
+    "whisper-large-v3-turbo-q5",
+    "whisper-medium-q5",
+    "whisper-small",
+    "whisper-tiny"
+  ],
   "packages": {
     "windows": {
-      "artifact_id": 11125020774,
-      "run_id": 36773381932,
-      "sha256": "80fc00d07aa0867103881f0317ed5b4a5572119bb5b9048e2892e78546b44219"
+      "artifact_id": 14165859313,
+      "run_id": 43724599369,
+      "sha256": "e13d01af5172567e3da3232e2a96e35cdd71cb13ff61999ecaabd97ba087d694"
     },
     "macos": {
-      "artifact_id": 11124753686,
-      "run_id": 36773381932,
-      "sha256": "8d58b7e41bf7a1b0706d88f036a5f2086a240c9bfe5702b5c46b1e27b22a8285"
+      "artifact_id": 14166555632,
+      "run_id": 43724599369,
+      "sha256": "5a28d2c7604d5436dfb50ecc9a327d3280476cd65f5f24754f11c28ac67c411b"
     }
   }
 }
