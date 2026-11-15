@@ -183,3 +183,56 @@ def test_raw_json_single_and_queue_paths_keep_fine_and_grouped_units(tmp_path, m
         assert data['results']['asr/raw.json']['data']=={'original':'hello world'}
         assert not output.with_suffix('.rpp').exists()
         assert data['provenance']['outputs']=={'json':str(output)}
+
+
+@pytest.mark.parametrize('blank', ['', ' \t', '\u3000'])
+def test_blank_native_speaker_display_roundtrips_without_relabeling(tmp_path, blank):
+    pytest.importorskip('opentimelineio')
+    from asr2rpp.adapters import parse_audio
+    raw = [dict(start_sample=0, end_sample=24000, text='[Silence]', speaker_id=blank),
+           dict(start_sample=24000, end_sample=48000, text='声', speaker_id='0'),
+           dict(start_sample=48000, end_sample=72000, text='再び', speaker_id=blank)]
+    result = parse_audio(raw, 'asr', 'vibevoice_asr', 24000)
+    before = [asdict(unit) for unit in result.units]
+    source = tmp_path/'source.wav'; source.write_bytes(b'unchanged reference')
+    report = tmp_path/'report'; (report/'asr').mkdir(parents=True)
+    (report/'asr/raw.json').write_bytes(json.dumps(raw, ensure_ascii=False).encode('utf-8'))
+    settings = Settings(Stage('vibevoice-asr'), output_formats=('rpp','otio','json'))
+    doc = outputs.make_document(source, source, result.units, result.units, settings, report,
+                                {}, 3, 0, 3)
+    tracks = doc['timeline']['tracks']
+    assert [track['name'] for track in tracks] == ['ORIGINAL', 'UNKNOWN', '0']
+    assert tracks[1]['speaker'] == blank and len(tracks[1]['clips']) == 2
+    assert tracks[2]['speaker'] == '0'
+    assert doc['transcript']['units'] == before
+    assert doc['results']['asr/raw.json']['data'] == raw
+    assert [asdict(unit) for unit in result.units] == before
+    paths = outputs.write_document(doc, tmp_path/'blank.rpp', settings.output_formats)
+    loaded = json.loads(paths['json'].read_text(encoding='utf-8'))
+    assert loaded == doc
+    from tools.smoke_outputs import check_exports
+    assert check_exports(paths['json'])['passed']
+    assert source.read_bytes() == b'unchanged reference'
+
+
+def test_unknown_display_collisions_keep_identity_and_overlap_lanes(tmp_path):
+    units = [Unit(0, 1, 'literal', 'UNKNOWN'), Unit(1, 3, 'blank', ''),
+             Unit(1.5, 2, 'blank overlap', ''), Unit(3, 4, 'missing', None),
+             Unit(4, 5, 'literal suffix', 'UNKNOWN (2)'), Unit(5, 6, 'blank later', '')]
+    before = [asdict(unit) for unit in units]
+    value = build_timeline(tmp_path/'source.wav', units, 0, 0, True, reference_duration=6)
+    tracks = value['tracks'][1:]
+    assert len({track['name'] for track in value['tracks']}) == len(value['tracks'])
+    assert all(track['name'].strip() for track in value['tracks'])
+    assert [track['speaker'] for track in tracks] == ['UNKNOWN', '', '', None, 'UNKNOWN (2)']
+    assert [track['lane'] for track in tracks] == [0, 0, 1, 0, 0]
+    assert len(tracks[1]['clips']) == 2
+    assert sum(len(track['clips']) for track in tracks) == len(units)
+    assert [asdict(unit) for unit in units] == before
+
+
+def test_no_speaker_export_does_not_add_unknown_tracks(tmp_path):
+    units = [Unit(0, 1, 'one', ''), Unit(1, 2, 'two', ' \t')]
+    value = build_timeline(tmp_path/'source.wav', units, 0, 0, False, reference_duration=2)
+    assert [track['name'] for track in value['tracks']] == ['ORIGINAL', 'Transcript']
+    assert value['tracks'][1]['speaker'] is None

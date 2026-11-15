@@ -58,6 +58,10 @@ def build_timeline(reference: Path, units, timeline_origin: float,
         speaker = unit.speaker if diar else None
         key = speaker if diar else '__transcript__'
         title = (str(speaker) if speaker is not None else 'UNKNOWN') if diar else 'Transcript'
+        # Some native turns (for example VibeVoice silence) carry a blank ID.
+        # Only its display title changes; grouping keys and raw IDs stay intact.
+        if not title.strip():
+            title = 'UNKNOWN'
         if title == 'ORIGINAL':
             title = 'Speaker ORIGINAL'
         lanes = groups.setdefault(key, [])
