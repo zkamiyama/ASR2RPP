@@ -1,2 +1,5 @@
 # Model provenance is byte-exact across Windows, macOS and Linux checkouts.
 models/*.toml text eol=lf
+
+# Signed release evidence hashes must survive core.autocrlf Windows checkouts.
+docs/validation/windows-*.json text eol=lf

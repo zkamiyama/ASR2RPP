@@ -160,3 +160,42 @@ def test_evidence_path_cannot_be_overridden_with_invalid_tag(tag, tmp_path):
     a['tag'] = tag
     with pytest.raises(ValueError):
         load_validation(a, tmp_path)
+
+
+def test_signed_evidence_stays_lf_with_windows_git_checkout(tmp_path):
+    import shutil
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    git = shutil.which('git')
+    assert git, 'Git is required to verify release-evidence checkout integrity'
+    evidence = Path('docs/validation/windows-0.3.0.json')
+    expected = (root / evidence).read_bytes()
+    assert b'\r' not in expected
+    (tmp_path / evidence).parent.mkdir(parents=True)
+    (tmp_path / evidence).write_bytes(expected)
+    (tmp_path / '.gitattributes').write_bytes((root / '.gitattributes').read_bytes())
+    def run(*args):
+        subprocess.run([git, '-c', 'core.autocrlf=true', *args], cwd=tmp_path,
+                       check=True, capture_output=True)
+    run('init')
+    run('add', '.gitattributes', str(evidence))
+    (tmp_path / evidence).unlink()
+    run('checkout', '--', str(evidence))
+    assert (tmp_path / evidence).read_bytes() == expected
+
+
+def test_approval_still_rejects_line_ending_change(tmp_path):
+    import hashlib
+    import json
+    from tools.publish_release import load_validation
+    approval, validation = versioned_fixtures()
+    path = tmp_path / 'docs/validation/windows-0.4.0.json'
+    path.parent.mkdir(parents=True)
+    original = (json.dumps(validation, indent=2) + '\n').encode('utf-8')
+    path.write_bytes(original)
+    approval['validation_sha256'] = hashlib.sha256(original).hexdigest()
+    load_validation(approval, tmp_path)
+    path.write_bytes(original.replace(b'\n', b'\r\n'))
+    with pytest.raises(ValueError, match='changed after approval'):
+        load_validation(approval, tmp_path)

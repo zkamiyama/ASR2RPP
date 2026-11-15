@@ -6,11 +6,12 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_cli_terms_file_flows_into_invocation(tmp_path, monkeypatch):
+@pytest.mark.parametrize('newline', ['\n', '\r\n', '\r'])
+def test_cli_terms_file_flows_into_invocation(tmp_path, monkeypatch, newline):
     from asr2rpp import cli, providers, timing
-    text = 'ASR2RPP\tえーえすあーる\nNemotron\n'
+    text = newline.join(('ASR2RPP\tえーえすあーる', 'Nemotron', ''))
     terms = tmp_path / 'terms.txt'
-    terms.write_text('\ufeff' + text, encoding='utf-8')
+    terms.write_bytes(('\ufeff' + text).encode('utf-8'))
     seen = []
     monkeypatch.setattr(cli.Settings, 'validate', lambda *a: None)
     monkeypatch.setattr(timing, 'plan_for', lambda *a: SimpleNamespace(segmented=False))
