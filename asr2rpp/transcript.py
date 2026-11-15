@@ -41,7 +41,10 @@ def group_units(units: list[Unit], maximum: float = 18.0) -> list[Unit]:
                 unit.end - grouped[-1].start <= maximum and
                 not grouped[-1].text.rstrip().endswith(('。', '！', '？', '!', '?'))):
             previous = grouped[-1]
-            previous.text = join_timed(previous.text, unit.text, unit.granularity)
+            if unit.joins_previous is not None:
+                previous.text += ('' if unit.joins_previous else ' ') + unit.text
+            else:
+                previous.text = join_timed(previous.text, unit.text, unit.granularity)
             previous.end = max(previous.end, unit.end)
         else:
             grouped.append(replace(unit, text=unit.text.replace('\u2581', ' ')))

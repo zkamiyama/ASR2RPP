@@ -31,6 +31,8 @@ def normalize(record):
             raise ValueError('Invalid worker speech interval')
         if item.get('granularity', 'segment') not in ('segment','word','token','speaker_turn'):
             raise ValueError('Unknown worker timestamp granularity')
+        if item.get('joins_previous') is not None and type(item['joins_previous']) is not bool:
+            raise ValueError('Invalid word joining hint')
         speaker = item.get('speaker')
         if speaker is not None and not isinstance(speaker, str):
             raise ValueError('Worker speaker must be a string or null')

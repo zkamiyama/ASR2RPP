@@ -32,28 +32,76 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def approval_version(approval):
+    schema = approval.get('schema_version')
+    if type(schema) is not int or schema not in (1, 2):
+        raise ValueError('Invalid release approval schema')
+    tag = approval.get('tag', '')
+    if not isinstance(tag, str) or not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+        raise ValueError('Invalid release tag')
+    # Schema 1 is retained only for recovery of the already published release.
+    # New versions cannot opt out of the versioned evidence/catalog contract.
+    if schema == 1 and tag != 'v0.3.0':
+        raise ValueError('New releases require approval schema 2')
+    return tag[1:]
+
+
+def load_validation(approval, root=Path('.')):
+    version = approval_version(approval)
+    evidence_path = root / 'docs' / 'validation' / ('windows-' + version + '.json')
+    if sha(evidence_path) != approval.get('validation_sha256'):
+        raise ValueError('Validation record changed after approval')
+    return evidence_path, json.loads(evidence_path.read_text(encoding='utf-8'))
+
+
 def verify_approval(approval, validation):
-    if type(approval.get('schema_version')) is not int or approval['schema_version'] != 1 or not re.fullmatch(r'v\d+\.\d+\.\d+', approval.get('tag', '')):
-        raise ValueError('Invalid release approval')
+    version = approval_version(approval)
     commit = approval.get('source_commit', '')
-    if not re.fullmatch(r'[a-f0-9]{40}', commit):
+    if not isinstance(commit, str) or not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise ValueError('Invalid source commit')
-    if set(approval.get('packages', {})) != {'windows', 'macos'}:
+    packages = approval.get('packages', {})
+    if not isinstance(packages, dict) or set(packages) != {'windows', 'macos'}:
         raise ValueError('Both platform packages are required')
+    for package in packages.values():
+        if not isinstance(package, dict) or any(
+                type(package.get(key)) is not int or package[key] <= 0
+                for key in ('artifact_id', 'run_id')):
+            raise ValueError('Invalid CI artifact/run ID')
+        digest = package.get('sha256', '')
+        if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
+            raise ValueError('Missing archive digest')
     if validation.get('passed') is not True or validation.get('validation_mode') != 'frozen-package':
         raise ValueError('Physical Windows frozen-package validation is required')
-    if validation.get('package_commit') != commit or validation.get('package_sha256') != approval['packages']['windows']['sha256']:
+    if validation.get('package_commit') != commit or validation.get('package_sha256') != packages['windows']['sha256']:
         raise ValueError('Windows validation does not describe this exact package')
     cases = validation.get('cases', {})
-    if len(cases) != 20 or not all(v.get('passed') is True and v.get('exports', {}).get('passed') is True for v in cases.values()):
-        raise ValueError('All 20 catalog cases and exporters must pass')
+    if not isinstance(cases, dict) or not cases or not all(
+            isinstance(case, dict) and case.get('passed') is True
+            and isinstance(case.get('exports'), dict) and case['exports'].get('passed') is True
+            and case.get('skipped', False) is False for case in cases.values()):
+        raise ValueError('All catalog cases and exporters must pass without skips')
     if validation.get('source_unchanged') is not True:
         raise ValueError('Source integrity was not verified')
-    for key, package in approval['packages'].items():
-        if type(package.get('artifact_id')) is not int or type(package.get('run_id')) is not int:
-            raise ValueError('Invalid CI artifact/run ID')
-        if not re.fullmatch(r'[a-f0-9]{64}', package.get('sha256', '')):
-            raise ValueError('Missing archive digest')
+    if approval['schema_version'] == 1:
+        if len(cases) != 20:
+            raise ValueError('All 20 legacy catalog cases and exporters must pass')
+    else:
+        if validation.get('package_version') != version:
+            raise ValueError('Windows evidence belongs to a different release version')
+        if (validation.get('platform') != 'windows' or validation.get('physical_hardware') is not True
+                or not isinstance(validation.get('hardware'), str) or not validation['hardware'].strip()):
+            raise ValueError('Explicit physical Windows hardware evidence is required')
+        ids = approval.get('expected_model_ids')
+        if (not isinstance(ids, list) or not ids
+                or any(not isinstance(model_id, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', model_id) for model_id in ids)
+                or len(set(ids)) != len(ids)):
+            raise ValueError('Expected catalog IDs must be nonempty and unique')
+        hashes = validation.get('definition_hashes')
+        if not isinstance(hashes, dict) or set(cases) != set(ids) or set(hashes) != set(ids):
+            raise ValueError('Evidence must cover exactly the approved catalog IDs')
+        if any(not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest)
+               for digest in hashes.values()):
+            raise ValueError('Missing model definition digest')
     return commit
 
 
@@ -73,10 +121,7 @@ def main():
             return json.load(response)
 
     approval = json.loads(Path('release-ready.json').read_text(encoding='utf-8'))
-    evidence_path = Path('docs/validation/windows-0.3.0.json')
-    if sha(evidence_path) != approval.get('validation_sha256'):
-        raise ValueError('Validation record changed after approval')
-    validation = json.loads(evidence_path.read_text(encoding='utf-8'))
+    evidence_path, validation = load_validation(approval)
     commit = verify_approval(approval, validation)
     output = Path('release-files')
     output.mkdir(exist_ok=False)

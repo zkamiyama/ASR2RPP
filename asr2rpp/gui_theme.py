@@ -333,6 +333,10 @@ MODEL_TEXT = {
         "ja": ("Nemotron 3.5 ASR · Q8", "token emission frame由来の時刻。精密な境界にはForced Alignmentを併用できます。"),
         "en": ("Nemotron 3.5 ASR · Q8", "Timing is derived from token emission frames. Forced Alignment can refine edit boundaries."),
     },
+    "nemotron-transcribe-iq4-nl": {
+        "ja": ("Nemotron 3.5 Transcribe 30B-A4B · IQ4_NL（実験的）", "CTC時刻・話者付きASR。約22GB、expert offload既定ON。16GB GPU・30分音声は未検証。"),
+        "en": ("Nemotron 3.5 Transcribe 30B-A4B · IQ4_NL (experimental)", "CTC timing and speakers. About 22GB, expert offload enabled. 16GB GPU and 30-minute audio unverified."),
+    },
     "nemotron-diarization": {
         "ja": ("Nemotron 3 Diarization · BF16", "最大8話者の話者推定。音源分離は行いません。"),
         "en": ("Nemotron 3 Diarization · BF16", "Speaker diarization for up to eight speakers. It does not perform source separation."),

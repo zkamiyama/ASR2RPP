@@ -100,7 +100,7 @@ def test_timing_ui_roundtrip_and_forced_alignment(tmp_path,monkeypatch):
     window.update_state()
     assert window.align.enabled_stage() and not window.align.toggle.isEnabled()
     dialog=PreferencesDialog(window)
-    assert dialog.nav.count()==4
+    assert dialog.nav.count()==5
     assert dialog.timing_mode.currentData()=='alignment'
     assert dialog.vad_maximum.value()==12
     window.save_preferences()

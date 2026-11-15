@@ -26,3 +26,18 @@ def test_ci_samples_preserved_without_force_or_deletion(tmp_path, monkeypatch, c
     assert samples.exists() != expect_move
     if expect_move:
         assert preserve_restored_samples(source) is None
+
+
+def test_native_component_licenses_keep_version_suffix_and_notices(tmp_path):
+    from tools.build_native import copy_licenses
+    source, target = tmp_path / 'source', tmp_path / 'licenses'
+    component = source / 'src/community_models/nemotron_transcribe'
+    component.mkdir(parents=True)
+    for name in ('LICENSE.apache-2.0', 'THIRD_PARTY_NOTICES.md', 'LICENSE'):
+        (component / name).write_text(name)
+    (source / 'build').mkdir(); (source / 'build/LICENSE').write_text('exclude')
+    (source / '.git').mkdir(); (source / '.git/LICENSE').write_text('exclude')
+    copy_licenses(source, target)
+    for name in ('LICENSE.apache-2.0', 'THIRD_PARTY_NOTICES.md', 'LICENSE'):
+        assert (target / component.relative_to(source) / name).read_text() == name
+    assert not (target / 'build').exists() and not (target / '.git').exists()

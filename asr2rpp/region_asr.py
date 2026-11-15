@@ -42,11 +42,17 @@ def infer_regions(model, weights, audio, work, options, cancel, progress):
             requests.append(dict(id=f'r{i:06d}', audio=path, begin=begin,
                                  length=length, window=window))
         from .text_requests import infer_text_requests
+        # Preserve source offsets even if a later region fails or is cancelled.
+        (work / 'region-requests.json').write_text(json.dumps([
+            dict(id=r['id'], start=r['begin'], length=r['length'],
+                 owner_start=r['window'].owner_start, owner_end=r['window'].owner_end)
+            for r in requests], ensure_ascii=False, allow_nan=False), encoding='utf-8')
         results = infer_text_requests(model, weights, requests, work, options, cancel, progress)
-        units, raw = [], dict(vad=record, timing_plan=asdict(plan), segments=[])
+        units, warnings, raw = [], [], dict(vad=record, timing_plan=asdict(plan), segments=[])
         for req in requests:
             checkpoint(cancel)
             text = results[req['id']].text.strip()
+            warnings.extend(results[req['id']].warnings or [])
             if not any(c.isalnum() for c in text):
                 continue
             w = req['window']
@@ -58,6 +64,6 @@ def infer_regions(model, weights, audio, work, options, cancel, progress):
                 end=req['begin'] + req['length'], owner_start=w.owner_start, owner_end=w.owner_end))
         (work / 'raw.json').write_text(json.dumps(raw, ensure_ascii=False, allow_nan=False), encoding='utf-8')
         (work / 'normalized.json').write_text(json.dumps([asdict(u) for u in units], ensure_ascii=False), encoding='utf-8')
-        return Result(units, raw, ''.join(u.text for u in units))
+        return Result(units, raw, ''.join(u.text for u in units), warnings)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)

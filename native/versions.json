@@ -7,7 +7,7 @@
   },
   "audio_cpp": {
     "repository": "0xShug0/audio.cpp",
-    "commit": "9bdd1d908bbd128e9eb405f5a8e38d0defb84c72",
+    "commit": "61c7838baf1f7f34769b5b7bd369c0d78edf9535",
     "target": "audiocpp_cli",
     "models": [
       "nemotron_asr",
@@ -20,7 +20,8 @@
       "fun_asr_nano",
       "canary_asr",
       "moonshine_asr",
-      "voxtral_realtime"
+      "voxtral_realtime",
+      "nemotron_transcribe"
     ]
   }
 }

@@ -258,7 +258,7 @@ def test_dcc_gui_structure_and_screens(tmp_path, monkeypatch):
     dialog = PreferencesDialog(window)
     dialog.show()
     app.processEvents()
-    assert dialog.nav.count() == 4
+    assert dialog.nav.count() == 5
     assert dialog.model_dir.placeholderText()
     assert dialog.temp_dir.placeholderText()
     assert [dialog.whisper_backend.itemData(i) for i in range(dialog.whisper_backend.count())] == list(backends())

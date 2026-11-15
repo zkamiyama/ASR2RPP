@@ -17,6 +17,19 @@ SOURCES = {name: (entry['repository'], entry['commit'], entry['target'])
            for name, entry in LOCK.items() if isinstance(entry, dict)}
 
 
+
+def copy_licenses(source, licenses):
+    """Retain component notices and licenses such as LICENSE.apache-2.0."""
+    licenses.mkdir(parents=True, exist_ok=True)
+    for file in source.rglob('*'):
+        relative = file.relative_to(source)
+        if (file.is_file() and
+                file.name.lower().startswith(('license', 'copying', 'notice', 'third_party_notices')) and
+                not any(part.startswith('build') or part == '.git' for part in relative.parts)):
+            target = licenses / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file, target)
+
 def recipe_digest():
     paths = [Path(__file__), ROOT/'native/versions.json', ROOT/'native/pcm_plan.h',
              ROOT/'native/whisper_regions.cpp', ROOT/'native/whisper/CMakeLists.txt']
@@ -180,14 +193,7 @@ def build(name, backend='cpu'):
     for suffix in ('*.dll', '*.so', '*.so.*', '*.dylib'):
         for library in output.rglob(suffix):
             shutil.copy2(library, destination / library.name)
-    licenses = destination / 'licenses'
-    licenses.mkdir(exist_ok=True)
-    for file in source.rglob('*'):
-        if file.is_file() and file.name.lower().startswith(('license', 'copying', 'notice')) and not any(part.startswith('build') or part == '.git' for part in file.relative_to(source).parts):
-            if file.suffix.lower() in {'', '.txt', '.md', '.rst'}:
-                target_license = licenses / file.relative_to(source)
-                target_license.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(file, target_license)
+    copy_licenses(source, destination / 'licenses')
     for filename in ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
         if (source / filename).is_file():
             shutil.copy2(source / filename, destination / filename)

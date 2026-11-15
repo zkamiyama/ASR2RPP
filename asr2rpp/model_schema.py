@@ -32,6 +32,8 @@ def validate_extensions(model):
     from .catalog import safe_relative
     if type(model.schema_version) is not int or model.schema_version not in (1, 2):
         raise ValueError('Unsupported model schema_version; supported: 1 and 2')
+    from .glossary import validate_glossary_capability
+    validate_glossary_capability(model)
     if not isinstance(model.artifacts, dict):
         raise ValueError('artifacts must map roles to relative filenames')
     for role, name in model.artifacts.items():
@@ -41,7 +43,7 @@ def validate_extensions(model):
             raise ValueError('An artifact must be a file, not a directory')
     if not isinstance(model.execution, dict):
         raise ValueError('execution must be a table')
-    if set(model.execution) - {'mode', 'output', 'max_batch_items', 'max_audio_seconds', 'protocol', 'pass_language'}:
+    if set(model.execution) - {'mode', 'output', 'max_batch_items', 'max_audio_seconds', 'protocol', 'pass_language', 'text_batch_items'}:
         raise ValueError('Unknown execution fields')
     if type(model.execution.get('pass_language', True)) is not bool:
         raise ValueError('execution.pass_language must be boolean')
@@ -49,13 +51,21 @@ def validate_extensions(model):
         raise ValueError('execution.pass_language applies to audio_cpp only')
     if model.execution.get('mode', 'offline') not in ('offline', 'streaming'):
         raise ValueError('execution.mode must be offline or streaming')
-    if model.execution.get('output', 'segments') not in ('text', 'words', 'segments', 'turns'):
-        raise ValueError('execution.output must be text, words, segments or turns')
+    if model.execution.get('output', 'segments') not in ('text', 'words', 'segments', 'turns', 'custom'):
+        raise ValueError('execution.output must be text, words, segments, turns or custom')
+    if model.execution.get('output') == 'custom' and (model.runtime != 'audio_cpp' or model.family != 'nemotron_transcribe'):
+        raise ValueError('custom output currently requires audio_cpp nemotron_transcribe')
     if type(model.execution.get('protocol', 1)) is not int or model.execution.get('protocol', 1) != 1:
         raise ValueError('Unsupported provider protocol')
     maximum = model.execution.get('max_batch_items', 128)
     if type(maximum) is not int or not 1 <= maximum <= 4096:
         raise ValueError('execution.max_batch_items must be 1..4096')
+    if 'text_batch_items' in model.execution:
+        if model.runtime != 'audio_cpp' or model.task != 'asr':
+            raise ValueError('execution.text_batch_items applies to audio_cpp ASR only')
+        count = model.execution['text_batch_items']
+        if type(count) is not int or not 1 <= count <= 128:
+            raise ValueError('execution.text_batch_items must be 1..128')
     duration = model.execution.get('max_audio_seconds', 0)
     if type(duration) not in (int, float) or not math.isfinite(duration) or duration < 0:
         raise ValueError('execution.max_audio_seconds must be finite and nonnegative')
@@ -91,6 +101,12 @@ def validate_extensions(model):
 
 
 def validate_parameters(model, request, session):
+    if model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe':
+        for name in ('return_timestamps', 'diarization'):
+            if name in request and type(request[name]) is not bool:
+                raise ValueError(f'Nemotron Transcribe {name} must be boolean')
+        if request.get('template_name', 'default') != 'default':
+            raise ValueError('Nemotron Transcribe source output requires the transcription template')
     values = dict(request, **{'session.' + k: v for k, v in session.items()})
     for key, value in values.items():
         if key in model.parameters:

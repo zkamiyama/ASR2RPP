@@ -1,0 +1,341 @@
+{
+  "schema": "asr2rpp.local-research-summary.v1",
+  "scope": "Source-checkout WSL CUDA research only; NOT frozen Windows executable/release-gate evidence",
+  "hardware": {
+    "gpu": "RTX 4080 16GB",
+    "physical_ram_gb": 64,
+    "wsl_available_ram_gib_approx": 31
+  },
+  "duration_seconds": 60.2,
+  "cases": {
+    "no-hint": {
+      "asr_requests": 16,
+      "unique_asr_batches": 1,
+      "all_asr_flags_false": true,
+      "all_terminations_end_of_turn": true,
+      "ctc_metadata_absent": true,
+      "alignment_units": 92,
+      "all_positive_in_bounds_forced_alignment": true,
+      "aligned_fields_preserved_through_assignment": true,
+      "diar_raw_turns": 37,
+      "unknown": 1,
+      "ambiguity_warnings": 24,
+      "output_checks": {
+        "json_otio_matching_clip_ranges": 32,
+        "rpp_item_count_matches": true,
+        "original_track_muted": true
+      },
+      "diarization_requests": 1,
+      "text_sanity": {
+        "reference_characters": 387,
+        "hypothesis_characters": 318,
+        "edit_distance": 94,
+        "normalized_char_edit_ratio": 0.24289405684754523
+      },
+      "speaker_exclusive_correct": 60,
+      "speaker_exclusive_eligible": 60,
+      "speaker_excluded": 32,
+      "meaningful_reference_boundary_crossings": 5,
+      "literal_term_counts": {
+        "お盆休み": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "実家": {
+          "reference": 2,
+          "asr": 2,
+          "aligned": 2
+        },
+        "親戚": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "混雑": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "コンディション": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "量子コンピューター": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        },
+        "ネモトロン": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        }
+      },
+      "glossary_entries": [],
+      "rendered_hint_utf8_bytes": 0,
+      "hint_provenance_verified": false,
+      "hint_warnings": [],
+      "outer_wall_seconds": 321.55764019698836,
+      "pipeline_seconds": 319.693185525015,
+      "hash_seconds": 185.5099786509818,
+      "native_process_seconds": 128.03004712500842,
+      "asr_native_request_wall_sum_seconds": 94.89076940000001,
+      "asr_native_decoder_sum_seconds": 94.228052023,
+      "gpu_device_used_peak_mib": 6486,
+      "gpu_device_used_initial_mib": 708,
+      "max_rss_kib": 16736872
+    },
+    "surface": {
+      "asr_requests": 16,
+      "unique_asr_batches": 1,
+      "all_asr_flags_false": true,
+      "all_terminations_end_of_turn": true,
+      "ctc_metadata_absent": true,
+      "alignment_units": 93,
+      "all_positive_in_bounds_forced_alignment": true,
+      "aligned_fields_preserved_through_assignment": true,
+      "diar_raw_turns": 37,
+      "unknown": 0,
+      "ambiguity_warnings": 23,
+      "output_checks": {
+        "json_otio_matching_clip_ranges": 31,
+        "rpp_item_count_matches": true,
+        "original_track_muted": true
+      },
+      "diarization_requests": 1,
+      "text_sanity": {
+        "reference_characters": 387,
+        "hypothesis_characters": 328,
+        "edit_distance": 86,
+        "normalized_char_edit_ratio": 0.2222222222222222
+      },
+      "speaker_exclusive_correct": 63,
+      "speaker_exclusive_eligible": 63,
+      "speaker_excluded": 30,
+      "meaningful_reference_boundary_crossings": 5,
+      "literal_term_counts": {
+        "お盆休み": {
+          "reference": 1,
+          "asr": 2,
+          "aligned": 2
+        },
+        "実家": {
+          "reference": 2,
+          "asr": 2,
+          "aligned": 2
+        },
+        "親戚": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "混雑": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "コンディション": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "量子コンピューター": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        },
+        "ネモトロン": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        }
+      },
+      "glossary_entries": [
+        {
+          "surface": "お盆休み",
+          "reading": null
+        },
+        {
+          "surface": "実家",
+          "reading": null
+        },
+        {
+          "surface": "親戚",
+          "reading": null
+        },
+        {
+          "surface": "混雑",
+          "reading": null
+        },
+        {
+          "surface": "コンディション",
+          "reading": null
+        },
+        {
+          "surface": "量子コンピューター",
+          "reading": null
+        },
+        {
+          "surface": "ネモトロン",
+          "reading": null
+        }
+      ],
+      "rendered_hint_utf8_bytes": 830,
+      "hint_provenance_verified": true,
+      "hint_warnings": [
+        "Glossary entries are recognition hints, not replacements; unspoken or distracting terms can bias errors."
+      ],
+      "outer_wall_seconds": 229.32175487899804,
+      "pipeline_seconds": 227.60203426799853,
+      "hash_seconds": 66.90318114904221,
+      "native_process_seconds": 155.27162115401006,
+      "asr_native_request_wall_sum_seconds": 123.167821771,
+      "asr_native_decoder_sum_seconds": 122.439114498,
+      "gpu_device_used_peak_mib": 6490,
+      "gpu_device_used_initial_mib": 717,
+      "max_rss_kib": 16789784
+    },
+    "readings": {
+      "asr_requests": 16,
+      "unique_asr_batches": 1,
+      "all_asr_flags_false": true,
+      "all_terminations_end_of_turn": true,
+      "ctc_metadata_absent": true,
+      "alignment_units": 90,
+      "all_positive_in_bounds_forced_alignment": true,
+      "aligned_fields_preserved_through_assignment": true,
+      "diar_raw_turns": 37,
+      "unknown": 0,
+      "ambiguity_warnings": 25,
+      "output_checks": {
+        "json_otio_matching_clip_ranges": 32,
+        "rpp_item_count_matches": true,
+        "original_track_muted": true
+      },
+      "diarization_requests": 1,
+      "text_sanity": {
+        "reference_characters": 387,
+        "hypothesis_characters": 323,
+        "edit_distance": 87,
+        "normalized_char_edit_ratio": 0.2248062015503876
+      },
+      "speaker_exclusive_correct": 58,
+      "speaker_exclusive_eligible": 58,
+      "speaker_excluded": 32,
+      "meaningful_reference_boundary_crossings": 5,
+      "literal_term_counts": {
+        "お盆休み": {
+          "reference": 1,
+          "asr": 2,
+          "aligned": 2
+        },
+        "実家": {
+          "reference": 2,
+          "asr": 2,
+          "aligned": 2
+        },
+        "親戚": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "混雑": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "コンディション": {
+          "reference": 1,
+          "asr": 1,
+          "aligned": 1
+        },
+        "量子コンピューター": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        },
+        "ネモトロン": {
+          "reference": 0,
+          "asr": 0,
+          "aligned": 0
+        }
+      },
+      "glossary_entries": [
+        {
+          "surface": "お盆休み",
+          "reading": "おぼんやすみ"
+        },
+        {
+          "surface": "実家",
+          "reading": "じっか"
+        },
+        {
+          "surface": "親戚",
+          "reading": "しんせき"
+        },
+        {
+          "surface": "混雑",
+          "reading": "こんざつ"
+        },
+        {
+          "surface": "コンディション",
+          "reading": "こんでぃしょん"
+        },
+        {
+          "surface": "量子コンピューター",
+          "reading": "りょうしこんぴゅーたー"
+        },
+        {
+          "surface": "ネモトロン",
+          "reading": "ねもとろん"
+        }
+      ],
+      "rendered_hint_utf8_bytes": 936,
+      "hint_provenance_verified": true,
+      "hint_warnings": [
+        "Glossary entries are recognition hints, not replacements; unspoken or distracting terms can bias errors.",
+        "Kana readings in Nemotron instruct are experimental; preservation and recognition accuracy are not guaranteed."
+      ],
+      "outer_wall_seconds": 237.47915024199756,
+      "pipeline_seconds": 235.27567875900422,
+      "hash_seconds": 70.9213480859762,
+      "native_process_seconds": 158.73739741701866,
+      "asr_native_request_wall_sum_seconds": 128.544638704,
+      "asr_native_decoder_sum_seconds": 127.83894815,
+      "gpu_device_used_peak_mib": 6486,
+      "gpu_device_used_initial_mib": 707,
+      "max_rss_kib": 16838488
+    }
+  },
+  "caveats": [
+    "One natural conversational sample, no general accuracy or 30-minute validation claim.",
+    "Reference utterance boundaries are not precise word timing gold. Text edit ratio uses punctuation-normalized ordered utterances; overlap ordering is nonunique, not benchmark CER.",
+    "All five target terms were already recognized without hints; no target recovery benefit established. Both hinted cases add a second occurrence of one target where human reference uses different wording.",
+    "Distractor absence does not prove hints cannot hallucinate. Kana readings remain optional experimental hints; no advantage demonstrated here.",
+    "GPU figures are sampled device-wide used memory, not process allocation peaks. Timing counters are inclusive; do not sum overlapping hash/model-resolution metrics.",
+    "Audio/transcripts restricted to local noncommercial evaluation; no audio or full transcript included."
+  ],
+  "fixture": {
+    "dataset": "IngCrowd/japanese-themed-dialogue",
+    "revision": "e2eed8769400269f20821deb0e47e68b40012e8b",
+    "license": "CC-BY-NC-4.0; isolated noncommercial evaluation",
+    "url": "https://huggingface.co/datasets/IngCrowd/japanese-themed-dialogue/tree/e2eed8769400269f20821deb0e47e68b40012e8b",
+    "sha256": "f18323972427628e5f4360f97b98835ea83f2469584559b5a990e3223aeec14c"
+  },
+  "runtime": {
+    "audio_cpp_commit": "61c7838baf1f7f34769b5b7bd369c0d78edf9535",
+    "asr": "nemotron-transcribe-iq4-nl",
+    "aligner": "qwen-forced-aligner",
+    "diarizer": "nemotron-diarization",
+    "device": "CUDA",
+    "threads": 4
+  },
+  "implementation_snapshot_patch_sha256": "fafc2ba1b8742d2e3eb7bddc3d4067085c33f62eaf44319d42eced4befec87a8",
+  "post_trial_preflight_hardening": {
+    "candidate_patch_sha256": "95671e7e5051bf81fca65f3e2076ee0d8233659caca711fae739ae6708229f90",
+    "all_three_rendered_provenances_equal": true,
+    "note": "Final preparation recomputed against each retained real-run input and exactly matched its recorded provenance; no extra inference claimed."
+  }
+}

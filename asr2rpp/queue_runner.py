@@ -223,6 +223,7 @@ def _prepare_jobs(indexed_paths, settings, catalog, item_callback, cancel):
                     'timestamp_source': 'forced_alignment' if settings.align else
                         'vad' if policy_for(catalog[settings.asr.model_id]).uses_vad_timing else 'native_asr'}
                 job = QueueJob(index, f'q{index:06d}', source, output, report, '', manifest)
+                job.warnings.extend(settings.terms_warnings)
                 jobs.append(job)
                 job.source_sha256 = digest(source)
                 job.manifest['source_sha256'] = job.source_sha256
@@ -400,6 +401,9 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                     from .native_profile import profile
                     limit = profile(asr_model).max_audio_seconds
                     if limit and duration > limit and not timing_plan.segmented:
+                        if asr_model.family == 'nemotron_transcribe':
+                            raise ValueError(f'Model input exceeds {limit:g}s; select a shorter interval. '
+                                             'Independent requests do not preserve native speaker identity.')
                         raise ValueError(f'Model input exceeds {limit:g}s; choose VAD segmentation in Timing settings')
                     job.duration = duration
                     asr_inputs[job.key] = path
@@ -410,11 +414,12 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
 
             asr_results = _asr_batch(asr_model,asr_weights,asr_stage,_active(jobs),
                 asr_inputs,root/'asr-batch',cancel,progress,item_callback,
-                alignment_requested=settings.align is not None, options=stage_options(settings),max_bytes=max_bytes)
+                alignment_requested=settings.align is not None, options=stage_options(settings, asr_model),max_bytes=max_bytes)
             for job in _active(jobs):
                 try:
                     result = asr_results[job.key]
                     _jsonable_result(job, 'asr', result)
+                    job.warnings.extend(result.warnings or [])
                     units = core.clean_bounds(result.units, job.duration, job.warnings)
                     snapshot(job.report, 'asr_normalized', units)
                     if not units:
@@ -425,7 +430,9 @@ def _run_queue_window(indexed_paths, settings, catalog, cancel: threading.Event,
                         job.warnings.append(
                             'ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
                     job.units = ([replace(unit,speaker=None) for unit in units]
-                                 if settings.diar is not None or settings.timing.speaker_source == 'none' else units)
+                                 if (settings.diar is not None or settings.timing.speaker_source == 'none' or
+                                     (asr_model.family == 'nemotron_transcribe' and settings.timing.speaker_source != 'native'))
+                                 else units)
                     if settings.timing.speaker_source == 'native' and not any(u.speaker for u in job.units):
                         raise ValueError('The ASR did not return native speaker labels')
                 except BaseException as exc:

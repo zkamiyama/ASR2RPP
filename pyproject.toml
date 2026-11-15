@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asr2rpp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local speech recognition to RPP, OpenTimelineIO and reusable JSON"
 requires-python = ">=3.11"
 dependencies = ["numpy>=2,<3", "safetensors>=0.4,<1", "opentimelineio==0.18.1"]

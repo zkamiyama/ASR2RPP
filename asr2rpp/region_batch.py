@@ -57,12 +57,17 @@ def infer_many(model, weights, items, work, options, cancel, progress, max_bytes
                 bad = {r['id'] for r in context['regions']}
                 requests = [r for r in requests if r.id not in bad]
         native_root = work/'shared-provider'
+        for context in contexts.values():
+            (context['work']/'region-requests.json').write_text(json.dumps([
+                dict(id=r['id'], start=r['begin'], length=r['length'],
+                     owner_start=r['window'].owner_start, owner_end=r['window'].owner_end)
+                for r in context['regions']], ensure_ascii=False, allow_nan=False), encoding='utf-8')
         native = provider_for(model).infer_many(model,weights,requests,native_root,
             dict(options,_text_only=True),cancel,progress,max_bytes) if requests else Batch()
         for key,context in contexts.items():
             if key in batch.errors:
                 continue
-            units,records = [],[]
+            units,records,warnings = [],[],[]
             failures = []
             for region in context['regions']:
                 request_id = region['id']
@@ -71,6 +76,7 @@ def infer_many(model, weights, items, work, options, cancel, progress, max_bytes
                     failures.append(str(native.errors.get(request_id,'Missing provider result')))
                     continue
                 text = native.results[request_id].text.strip()
+                warnings.extend(native.results[request_id].warnings or [])
                 window = region['window']
                 records.append(dict(id=request_id,text=text,start=region['begin'],end=region['begin']+region['length'],
                                     owner_start=window.owner_start,owner_end=window.owner_end))
@@ -85,7 +91,7 @@ def infer_many(model, weights, items, work, options, cancel, progress, max_bytes
             if failures:
                 batch.errors[key] = ValueError('Incomplete speech-region transcription: ' + '; '.join(failures[:3]))
             else:
-                batch.results[key] = Result(units,raw,''.join(u.text for u in units))
+                batch.results[key] = Result(units,raw,''.join(u.text for u in units),warnings)
         return batch
     finally:
         for context in contexts.values():

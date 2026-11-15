@@ -29,6 +29,8 @@ def main(argv=None):
                      help='Output formats, comma-separated or repeatable; default: rpp')
     run.add_argument('--asr', default='anime-whisper',
                      help='ASR model ID (default: anime-whisper, language ja)')
+    run.add_argument('--terms-file', type=Path, metavar='TXT',
+                     help='UTF-8 glossary: one term per line, optionally TAB kana reading; model support required')
     run.add_argument('--diar', help='omit to disable diarization')
     run.add_argument('--align', help='forced-alignment model; select --timing auto or alignment')
     run.add_argument('--preprocess', help='optional audio.cpp vocal/background separation model')
@@ -191,12 +193,14 @@ def main(argv=None):
             raise ValueError('Choose --same-directory OR --output-dir, not both')
         from .outputs import parse_formats, output_paths
         formats = parse_formats(args.formats)
+        from .glossary import read_terms_file
+        terms_text = read_terms_file(args.terms_file) if args.terms_file else ''
         settings = Settings(stage('asr'), stage('diar'), stage('align'), not bool(args.output_dir), args.output_dir,
                             args.ffmpeg, args.start, args.duration, stage('preprocess'), args.rpp_audio,
                             timing=TimingSettings(args.timing, args.vad_max_seconds, args.vad_threshold,
                                 min_silence_ms=args.vad_min_silence_ms, segment_before_alignment=args.vad_before_alignment,
                                 speaker_source=args.speaker_source),queue_window_items=args.queue_window_items,
-                            output_formats=formats)
+                            output_formats=formats, terms_text=terms_text)
         settings.validate(catalog)
         from .providers import preflight
         from .timing import plan_for

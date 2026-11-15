@@ -12,7 +12,7 @@ class NativeProfile:
 
 
 def profile(model):
-    output = ('turns' if model.task == 'diar' else 'words' if model.task == 'align' else
+    output = ('custom' if model.family == 'nemotron_transcribe' else 'turns' if model.task == 'diar' else 'words' if model.task == 'align' else
               'text' if model.capabilities.get('timestamps') == 'none' else
               'segments' if model.family == 'vibevoice_asr' else 'words')
     mode = 'streaming' if model.task == 'asr' and model.family == 'nemotron_asr' else 'offline'

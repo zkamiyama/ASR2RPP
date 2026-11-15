@@ -99,6 +99,9 @@ def ui_parameters(model, parameters):
     """Remove obsolete saved GUI overrides, but do not hide CLI conflicts."""
     policy = policy_for(model)
     locked = set(policy.forced_parameters) | model.disabled_parameters
+    if model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe':
+        # These are owned by the explicit Timing/Speaker source controls.
+        locked |= {'diarization', 'return_timestamps'}
     if policy.segmentation == 'vad':
         locked |= {'processors', 'translate'}
     return {key: value for key, value in (parameters or {}).items() if key not in locked}

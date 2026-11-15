@@ -65,6 +65,8 @@ Use public or synthetic fixtures on an authorized computer:
 python tools/validate_catalog.py --package PATH_TO_APP --fixture-ja JA.wav --fixture-en EN.wav --report NEW_REPORT_DIRECTORY --weights-dir WEIGHTS_DIRECTORY --ffmpeg PATH_TO_FFMPEG --device vulkan --install
 ```
 
+For physical Windows release acceptance, also pass `--archive EXACT_PACKAGE.zip --physical-hardware --hardware "observed computer and GPU"`. The validator compares the extracted package version with the exact ZIP and records the actual platform; source runs and CI cannot assert physical frozen-package acceptance. Keep the original ZIP unchanged.
+
 Use `--source-root REPO` instead of `--package` for developer validation. `--models ID ID` limits selection; otherwise all bundled definitions run. `--install` can download many gigabytes. Reports must distinguish source/frozen execution, CPU/physical GPU and model-quality evaluation. Nonempty results and valid output structure are functional evidence, not WER/CER or long-recording certification.
 
 ## Updates and releases
@@ -72,5 +74,7 @@ Use `--source-root REPO` instead of `--package` for developer validation. `--mod
 Change the appropriate source revision/family list or TOML, rebuild, inspect capabilities, run unit/PCM checks and relevant real-model cases. The public API eliminates CLI text-patching, not all compatibility work.
 
 Build and release are separate decisions. Before publishing, verify both CI jobs, inspect exact ZIP contents and hashes, and exercise the Windows package on the real model matrix. Do not substitute older model or runtime results. Never overwrite a released asset with different bytes under the same version.
+
+Release approval schema v2 binds the tag to `docs/validation/windows-X.Y.Z.json`, all expected bundled model IDs and definition hashes, exact source/package hashes, and the successful Windows/macOS jobs. Every catalog case must pass; missing/skipped models do not satisfy the gate. The 30B default-off case explicitly uses independent VAD windows and Qwen alignment, not the known-failing experimental native timing path. Historical v0.3.0 schema-v1 evidence remains available only for that release. Do not update `release-ready.json` until the candidate artifacts and physical Windows acceptance are verified.
 
 [Model catalog](models.md) · [Output specification](outputs.md) · [Historical performance](performance.md) · [Implementation records](implementation-stages.md)

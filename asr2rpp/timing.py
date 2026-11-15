@@ -59,23 +59,47 @@ def plan_for(model, timing, alignment_enabled=False):
     timing.validate()
     native = native_timestamps(model)
     mode = timing.mode
+    independent = model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe'
     if mode == 'auto':
         # Legacy TOMLs retain their automatic default, but an explicit user
         # choice of VAD supersedes a legacy mandatory alignment workflow.
         if policy_for(model).requires_alignment and not alignment_enabled:
             raise ValueError('Automatic timing for this legacy TOML requires forced alignment: enable it or choose VAD timing in Settings')
-        mode = 'alignment' if alignment_enabled else ('native' if native else 'vad')
+        if independent and timing.speaker_source != 'native':
+            mode = 'alignment' if alignment_enabled else 'vad'
+        else:
+            mode = 'alignment' if alignment_enabled else ('native' if native else 'vad')
     if mode == 'native' and not native:
         raise ValueError('This model has no native timestamps; choose VAD or forced alignment')
     if mode == 'alignment' and not alignment_enabled:
         raise ValueError('Forced-alignment timing requires an enabled alignment model')
     if mode in ('native', 'vad') and alignment_enabled:
         raise ValueError('Disable the alignment stage or choose automatic / forced-alignment timing')
-    segmented = mode == 'vad' or (mode == 'alignment' and (not native or timing.segment_before_alignment))
+    segmented = mode == 'vad' or (mode == 'alignment' and
+        (independent or not native or timing.segment_before_alignment))
+    if independent and segmented and timing.speaker_source == 'native':
+        raise ValueError('Nemotron native speakers require one complete recording with native timing; '
+                         'independent VAD/alignment windows cannot preserve native speaker identities. '
+                         'Choose an external diarizer or disable native speakers.')
     if segmented and timing.speaker_source == 'native':
         raise ValueError('Native speaker labels require native ASR intervals; choose native timing or an external diarizer')
     return TimingPlan(mode, segmented, mode == 'alignment',
                       'forced_alignment' if mode == 'alignment' else 'vad' if segmented else 'native_asr')
+
+
+def asr_parameters(model, timing, alignment_enabled, parameters):
+    """Own the native speaker/timing switches, not user-supplied decoder flags."""
+    result = dict(parameters or {})
+    if model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe':
+        plan = plan_for(model, timing, alignment_enabled)
+        required = {'diarization': timing.speaker_source == 'native',
+                    'return_timestamps': not plan.segmented}
+        for key, value in required.items():
+            if key in result and (type(result[key]) is not bool or result[key] != value):
+                raise ValueError(f'Nemotron {key} is controlled by Timing / Speaker source; '
+                                 f'this run requires {key}={value}. Remove the conflicting ASR override.')
+            result[key] = value
+    return result
 
 
 def prepare_run(settings, catalog):
@@ -83,6 +107,13 @@ def prepare_run(settings, catalog):
     settings = copy.deepcopy(settings)
     model = catalog[settings.asr.model_id]
     plan = plan_for(model, settings.timing, settings.align is not None)
+    settings.asr = replace(settings.asr, parameters=asr_parameters(
+        model, settings.timing, settings.align is not None, settings.asr.parameters))
+    from .glossary import prepare_terms
+    terms = prepare_terms(model, settings.terms_text, settings.asr.parameters,
+                          language=settings.asr.language)
+    settings.terms_provenance = terms.provenance
+    settings.terms_warnings = terms.warnings
     if model.runtime == 'whisper_cpp' and plan.segmented:
         constraints = copy.deepcopy(model.constraints)
         constraints['inference'] = dict(segmentation='vad', timestamps=False,
@@ -97,6 +128,11 @@ def prepare_run(settings, catalog):
     return settings, catalog, plan
 
 
-def stage_options(settings):
-    return dict(settings.asr.options(), timing=asdict(settings.timing),
-                alignment_requested=settings.align is not None, ffmpeg=settings.ffmpeg)
+def stage_options(settings, model):
+    from .glossary import prepare_terms
+    params = asr_parameters(model, settings.timing, settings.align is not None,
+                            settings.asr.parameters)
+    terms = prepare_terms(model, settings.terms_text, params, language=settings.asr.language)
+    return dict(settings.asr.options(), parameters=terms.parameters,
+                timing=asdict(settings.timing), alignment_requested=settings.align is not None,
+                ffmpeg=settings.ffmpeg)

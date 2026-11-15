@@ -19,3 +19,11 @@ files = ["ggml-large-v3-q5_0.bin"]
 
 [defaults]
 language = "ja"
+
+[capabilities.glossary]
+version = 1
+adapter = "whisper_initial_prompt_v1"
+readings = "none"
+max_terms = 32
+max_utf8_bytes = 200
+max_prompt_utf8_bytes = 223

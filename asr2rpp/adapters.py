@@ -177,6 +177,9 @@ def parse_whisper(data: dict) -> Result:
 
 
 def parse_audio(data, task: str, family: str, sample_rate: int | None = None) -> Result:
+    if family == 'nemotron_transcribe':
+        from .nemotron_transcribe import parse_result
+        return parse_result(data)
     keys = {'asr': ('segments', 'words', 'speaker_turns', 'turns'),
             'diar': ('speaker_turns', 'turns', 'segments'), 'align': ('words', 'segments')}[task]
     records, detected = data, ''
@@ -325,7 +328,9 @@ def audio_session_args(model: Model, session: dict) -> list[str]:
     for key, value in session.items():
         if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_.]*', key):
             raise ValueError('Invalid audio.cpp session parameter name')
-        option = key if '.' in key else f'{model.family}.{key}'
+        shared = {'moe_disk_experts', 'moe_pin_experts', 'moe_expert_cache_size',
+                  'moe_disk_expert_read_threads', 'moe_cpu_expert_layers', 'moe_cpu_share'}
+        option = key if '.' in key or key in shared else f'{model.family}.{key}'
         args += ['--session-option', f'{option}={scalar(value)}']
     return args
 
@@ -341,6 +346,14 @@ def infer(model: Model, weights: Path, audio: Path, work: Path, options: dict,
     if model.runtime in {'sherpa_onnx', 'faster_whisper', 'external_json'}:
         from .worker_client import infer_requests
         return infer_requests(model, weights, [{'id':'single', 'audio':audio}], work, options, cancel, progress)['single']
+    if model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe':
+        from .native_batches import audio_many
+        from .providers import Request
+        batch = audio_many(model, weights, [Request('single', audio, transcript)], work,
+                           options, cancel, progress, 64 * 1024**2)
+        if 'single' in batch.errors:
+            raise batch.errors['single']
+        return batch.results['single']
     device = options.get('device', 'cpu')
     binary = executable(model.runtime, device, options.get('executable', ''))
     language = options.get('language', model.defaults.get('language', 'ja'))

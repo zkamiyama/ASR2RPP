@@ -11,6 +11,7 @@ class Unit:
     method: str = 'native_interval'
     owner_start: float | None = None
     owner_end: float | None = None
+    joins_previous: bool | None = None
 
 @dataclass
 class Result:

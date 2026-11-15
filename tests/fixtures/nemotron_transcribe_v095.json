@@ -1,0 +1,42 @@
+{
+  "id": "recording",
+  "text": "<spk:0>今日は。 <spk:1>はい。",
+  "custom_schema_output": {
+    "schema": "nemotron_transcribe.result.v1",
+    "data": {
+      "template_name": "default",
+      "termination": "end_of_turn",
+      "stop_token_id": 11,
+      "prompt_tokens": 640,
+      "generated_tokens": 16,
+      "audio_frames": 625,
+      "frontend_ms": 1.0,
+      "encoder_ms": 2.0,
+      "decoder_ms": 3.0,
+      "alignment_status": "aligned",
+      "alignment_failure_reason": "",
+      "alignment_error": "",
+      "alignment_ms": 1.0,
+      "words": [
+        {"word": "今", "display": "今", "joins_previous": false, "start": 1.25, "end": 1.42, "speaker_id": "speaker_2", "transcript_speaker_tag": "spk:0", "speaker_column": 2, "speaker_confidence": 0.8},
+        {"word": "日", "display": "日", "joins_previous": true, "start": 1.42, "end": 1.6, "speaker_id": "speaker_2", "transcript_speaker_tag": "spk:0", "speaker_column": 2, "speaker_confidence": 0.8},
+        {"word": "は", "display": "は。", "joins_previous": true, "start": 1.6, "end": 1.85, "speaker_id": "speaker_2", "transcript_speaker_tag": "spk:0", "speaker_column": 2, "speaker_confidence": 0.8},
+        {"word": "は", "display": "は", "joins_previous": false, "start": 1.7, "end": 1.9, "speaker_id": "speaker_0", "transcript_speaker_tag": "spk:1", "speaker_column": 0, "speaker_confidence": null},
+        {"word": "い", "display": "い。", "joins_previous": true, "start": 1.9, "end": 2.1, "speaker_id": "speaker_0", "transcript_speaker_tag": "spk:1", "speaker_column": 0, "speaker_confidence": null}
+      ],
+      "failed_streams": [],
+      "wall_ms": 7.0
+    }
+  },
+  "word_timestamps": [
+    {"start_sample": 60000, "end_sample": 68160, "word": "今", "confidence": 0},
+    {"start_sample": 68160, "end_sample": 76800, "word": "日", "confidence": 0},
+    {"start_sample": 76800, "end_sample": 88800, "word": "は", "confidence": 0},
+    {"start_sample": 81600, "end_sample": 91200, "word": "は", "confidence": 0},
+    {"start_sample": 91200, "end_sample": 100800, "word": "い", "confidence": 0}
+  ],
+  "speaker_turns": [
+    {"start_sample": 48000, "end_sample": 91200, "speaker_id": "speaker_2", "confidence": 0},
+    {"start_sample": 81600, "end_sample": 105600, "speaker_id": "speaker_0", "confidence": 0}
+  ]
+}

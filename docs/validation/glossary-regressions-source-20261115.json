@@ -1,0 +1,64 @@
+{
+  "scope": "Actual WSL CUDA source-checkout regressions, not frozen Windows gate evidence",
+  "duration_seconds": 60.2,
+  "cases": {
+    "anime-regression": {
+      "exit_code": 0,
+      "wall_seconds": 32.894365234998986,
+      "aligned_units": 83,
+      "positive_in_bounds_forced_alignment": true,
+      "alignment_preserved_except_speaker": true,
+      "json_otio_clip_ranges_match": 35,
+      "rpp_item_count_matches": true,
+      "original_track_muted": true,
+      "diarization_requests": 1,
+      "diarization_turns": 37,
+      "speaker_ids": [
+        "speaker_0",
+        "speaker_1"
+      ],
+      "unknown_units": 0,
+      "ambiguity_warnings": 22,
+      "asr_processes": 1,
+      "asr_input_files": 16,
+      "no_glossary_prompt": true,
+      "no_context_flag": true
+    },
+    "whisper-surface": {
+      "exit_code": 0,
+      "wall_seconds": 12.366053845995339,
+      "aligned_units": 87,
+      "positive_in_bounds_forced_alignment": true,
+      "alignment_preserved_except_speaker": true,
+      "json_otio_clip_ranges_match": 28,
+      "rpp_item_count_matches": true,
+      "original_track_muted": true,
+      "diarization_requests": 1,
+      "diarization_turns": 37,
+      "speaker_ids": [
+        "UNKNOWN",
+        "speaker_0",
+        "speaker_1"
+      ],
+      "unknown_units": 1,
+      "ambiguity_warnings": 25,
+      "asr_processes": 1,
+      "asr_input_files": 1,
+      "actual_prompt_matches_provenance": true,
+      "carry_initial_prompt_flag": true,
+      "prompt_utf8_bytes": 105,
+      "glossary_entries": 7,
+      "readings_supported": false,
+      "hint_warnings": [
+        "Glossary entries are recognition hints, not replacements; unspoken or distracting terms can bias errors.",
+        "Whisper may ignore glossary conditioning during high-temperature fallback; decoder settings were not changed."
+      ],
+      "fallback_warning_retained": true
+    }
+  },
+  "limits": [
+    "Structural checks do not establish transcription or exact word timing accuracy.",
+    "Whisper command proves initial prompt and carry flag were passed, not that every decoding window obeyed hints; high-temperature fallback can ignore conditioning.",
+    "No audio/full transcript/private paths included."
+  ]
+}

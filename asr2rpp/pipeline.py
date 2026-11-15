@@ -68,6 +68,9 @@ class Settings:
     queue_window_items: int = field(default=16, kw_only=True)
     runtime_provenance: dict = field(default_factory=dict, kw_only=True)
     output_formats: tuple[str, ...] = field(default=('rpp',), kw_only=True)
+    terms_text: str = field(default='', kw_only=True)
+    terms_provenance: dict = field(default_factory=dict, kw_only=True)
+    terms_warnings: tuple[str, ...] = field(default=(), kw_only=True)
 
     def validate(self, catalog: dict[str, Model]):
         validate_formats(self.output_formats)
@@ -79,6 +82,8 @@ class Settings:
             raise ValueError('Clip start/duration must be finite and nonnegative')
         if self.asr is None:
             raise ValueError('ASR is required')
+        from .glossary import parse_terms
+        has_terms = bool(parse_terms(self.terms_text))
         for task, stage in [('asr', self.asr), ('diar', self.diar), ('align', self.align)]:
             if stage is not None:
                 if stage.model_id not in catalog:
@@ -88,7 +93,24 @@ class Settings:
                 from .platforms import validate_backend
                 validate_backend(stage.device)
                 model = catalog[stage.model_id]
-                request, session = split_engine_parameters(model, stage.parameters or {})
+                parameters = stage.parameters or {}
+                if task == 'asr':
+                    from .timing import asr_parameters
+                    from .glossary import prepare_terms
+                    if (has_terms and model.capabilities.get('glossary') and model.runtime == 'whisper_cpp' and
+                            plan_for(model, self.timing, self.align is not None).segmented):
+                        raise ValueError('Whisper glossary hints require native ASR timing; '
+                                         'VAD text mode disables the prompt context. Choose native timing or another glossary-capable model.')
+                    if model.family == 'nemotron_transcribe':
+                        effective, effective_session = split_engine_parameters(model, parameters)
+                        if (any(effective.get(key) for key in ('instruct', 'system_prompt', 'text_input')) or
+                                any(value for key, value in effective_session.items() if key.endswith('system_prompt'))):
+                            raise ValueError('Nemotron source transcription requires the code-owned instruction; '
+                                             'use the glossary TXT field instead of instruct/system_prompt/text_input')
+                    parameters = asr_parameters(model, self.timing, self.align is not None, parameters)
+                    parameters = prepare_terms(model, self.terms_text, parameters,
+                                               language=stage.language).parameters
+                request, session = split_engine_parameters(model, parameters)
                 validate_model_parameter_constraints(model, request, session)
                 if policy_for(model).segmentation == 'vad':
                     from .vad import VadOptions
@@ -174,7 +196,7 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         report_directory(report)
         output = None
     started = time.monotonic()
-    warnings, pcm_files = [], []
+    warnings, pcm_files = list(settings.terms_warnings), []
     cache_directory = cache_root()
     cache_directory.mkdir(parents=True, exist_ok=True)
     temporary = tempfile.TemporaryDirectory(prefix='job-', dir=cache_directory)
@@ -217,7 +239,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         progress('ASR — transcribing')
         asr = infer_persist(
             asr_model, weights['asr'], audio, work / 'asr', report / 'asr',
-            stage_options(settings))
+            stage_options(settings, asr_model))
+        warnings.extend(asr.warnings or [])
         units = clean_bounds(asr.units, duration, warnings)
         snapshot(report, 'asr_normalized', units)
         (report/'asr').mkdir(exist_ok=True)
@@ -228,7 +251,8 @@ def run_job(source: Path, settings: Settings, catalog: dict[str, Model], cancel:
         if any(u.method == 'emission_frame' for u in units):
             warnings.append('ASR times are emission-frame estimates, not exact spoken-word boundaries; alignment recommended')
         # Keep the finest native intervals until speaker assignment is complete.
-        if settings.diar is not None or settings.timing.speaker_source == 'none':
+        if (settings.diar is not None or settings.timing.speaker_source == 'none' or
+                (asr_model.family == 'nemotron_transcribe' and settings.timing.speaker_source != 'native')):
             units = [replace(u, speaker=None) for u in units]
         if settings.timing.speaker_source == 'native' and not any(u.speaker for u in units):
             raise ValueError('The ASR did not return native speaker labels')

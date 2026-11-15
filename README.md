@@ -38,7 +38,7 @@ Background removal can save a continuous `*_vocals.wav`; choose **Reference audi
 
 ## Models and timing
 
-The ZIP contains **20 model definitions, not 20 sets of weights**. Only selected weights are downloaded. The [model table](docs/models.md) lists languages, sizes and validation scope. Canary and Moonshine's included models are English-oriented, not Japanese ASR.
+The source catalog contains **21 model definitions, not 21 sets of weights**; an older release ZIP may contain fewer. Only selected weights are downloaded. The [model table](docs/models.md) lists languages, sizes and validation scope. Canary and Moonshine's included models are English-oriented, not Japanese ASR.
 
 Choose timing under **Settings → Timing**:
 
@@ -48,6 +48,8 @@ Choose timing under **Settings → Timing**:
 | **Native model intervals** | Use intervals returned by the ASR. Not available for text-only models. |
 | **VAD speech regions** | Locate utterances and recognize each region. **These are not word boundaries.** |
 | **Forced alignment** | Align the recognized text to the audio. Select the aligner in the main window; use VAD before alignment for long/coarse segments. |
+
+The experimental [30B Nemotron definition](docs/nemotron-transcribe.md) defaults native speakers OFF and uses independent VAD windows (plus forced alignment when enabled), rather than its known-problematic native CTC. [Glossary TXT and optional kana readings →](docs/glossary.md)
 
 Recognition, timing and speaker labels can be wrong. Alignment does not fix a wrong transcript. Speaker labeling does not separate overlapping voices into separate recordings.
 

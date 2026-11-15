@@ -2,8 +2,8 @@
 
 [使い始め方](../README.ja.md) · [English](../README.md) · [カスタマイズ](custom-models.ja.md)
 
-**20定義：whisper.cpp 7、audio.cppのASR 9と補助工程3、sherpa-onnxのReazonSpeech 1。**
-All 20 definitions are bundled; weights are downloaded only when selected. The table is not a quality ranking.
+**21定義：whisper.cpp 7、audio.cppのASR 10と補助工程3、sherpa-onnxのReazonSpeech 1。**
+All 21 definitions are bundled; weights are downloaded only when selected. The table is not a quality ranking.
 
 ## 一覧 / Catalog
 
@@ -32,6 +32,9 @@ Download size is not a memory requirement. VibeVoice alone downloads about 9.86 
 | [`qwen-forced-aligner`](../models/qwen-forced-aligner.toml) | `audio_cpp` · `align` | 1.13 GB | テキストと音声を整列 / alignment | RTX 4080 / Vulkan |
 | [`nemotron-diarization`](../models/nemotron-diarization.toml) | `audio_cpp` · `diar` | 198.7 MB | 話者区間 / speaker diarization | RTX 4080 / Vulkan |
 | [`mel-big-beta7`](../models/mel-big-beta7.toml) | `audio_cpp` · `sep` | 約945 MB + 変換領域 | 音声・背景音の分離 / separation · 初回に自動変換 | RTX 4080 / Vulkan |
+| [`nemotron-transcribe-iq4-nl`](../models/nemotron-transcribe-iq4-nl.toml) | `audio_cpp` · `asr` | 22.04 GB / 2 files | 30B ASR・用語/実験的な読みヒント。内蔵話者OFF、独立時刻が通常経路 | native CTC不具合を短音声で確認。新経路の検証は別途 |
+
+[Nemotron Transcribe setup and limits](nemotron-transcribe.md). This new entry requires rebuilt audio.cpp v0.9.5 runtimes. Native speakers are OFF by default; automatic timing uses independent VAD windows, optionally followed by Qwen forced alignment. The historical results below do not cover this model or the new runtime revision.
 
 ## 確認したこと・していないこと / Validation scope
 
@@ -49,9 +52,17 @@ Functional tests used source code with native binaries and an isolated CPU worke
 
 最初は小さいモデルで入出力を確認し、手持ちの音声で本文・時刻を比較してください。大きいモデルが常に用途に適するとは限りません。VibeVoiceは特に重く、16GB GPUで今回の短い音声が動いたことから長尺の使用量は推測できません。
 
-Whisperは通常ネイティブ区間、Nemotronは出力フレーム推定、VibeVoiceはネイティブ区間・話者を返します。Anime Whisper、Qwen3-ASR、SenseVoice、Fun-ASR、Canary、Moonshine、Voxtral、ReazonSpeechは、この構成ではVAD発話区間か強制アライメントを使います。設定 → 時刻付与で変更します。VAD時刻を単語境界として扱わないでください。
+Whisperは通常ネイティブ区間、`nemotron-asr`（0.6B）は出力フレーム推定、VibeVoiceはネイティブ区間・話者を返します。Anime Whisper、Qwen3-ASR、SenseVoice、Fun-ASR、Canary、Moonshine、Voxtral、ReazonSpeechは、この構成ではVAD発話区間か強制アライメントを使います。設定 → 時刻付与で変更します。VAD時刻を単語境界として扱わないでください。
 
 Moonshine/Realtime/Streamingというモデル名でも、ASR2RPPは録音済みファイルを処理します。このアプリにマイク入力のリアルタイムUIが付くわけではありません。
+
+## 用語ヒント / Glossary hints
+
+UTF-8 TXTの1行に1用語、必要ならTAB区切りの読みを追加します。GUIは **設定 → 用語ヒント**で貼付け/読込、CLIは `--terms-file`。詳細は[用語と読みの仕様](glossary.md)を参照してください。
+
+通常の6つのWhisper定義は**表記のみ**対応します。Anime Whisperは既存の初期プロンプト禁止を維持し、用語非対応です。30B `nemotron-transcribe-iq4-nl`は表記と実験的なかな読みを受け付けます。未対応のモデル・読み・上限超過・競合はモデル取得前にエラーとし、黙って捨てません。ヒントは精度保証ではありません。
+
+For 30B, automatic timing uses bounded VAD audio windows with text-only ASR; an enabled aligner then derives independent times. Without an aligner, times remain coarse VAD regions. Only explicit `--speaker-source native` enables experimental native speaker inference, with a full-recording native-timing request. An enabled standalone diarizer in automatic mode instead runs once on the original audio; its labels are not mixed with native labels. See [30B workflow and known CTC limits](nemotron-transcribe.md).
 
 ## 取得元とモデルの条件 / Publishers and terms
 

@@ -17,6 +17,17 @@ def checked_text(path):
 def infer_text_requests(model, weights, requests, work, options, cancel, progress):
     if not requests:
         return {}
+    if model.runtime == 'audio_cpp' and model.family == 'nemotron_transcribe':
+        from .native_batches import audio_many
+        from .providers import Request
+        result = audio_many(model, weights, [Request(r['id'], r['audio']) for r in requests],
+            work, dict(options, _text_only=True), cancel, progress, 64 * 1024**2)
+        if result.errors:
+            raise ValueError('Incomplete speech-region transcription: ' +
+                             '; '.join(f'{key}: {error}' for key, error in result.errors.items()))
+        if set(result.results) != {r['id'] for r in requests}:
+            raise ValueError('Missing Nemotron text-only request results')
+        return result.results
     if model.runtime != 'audio_cpp':
         from .worker_client import infer_requests
         return infer_requests(model, weights, requests, work, dict(options, _text_only=True), cancel, progress)

@@ -533,6 +533,13 @@ class Worker(QThread):
         return [self.settings.preprocess, self.settings.asr, self.settings.align, self.settings.diar]
 
     def _prepare_models(self):
+        # Workers can also be invoked without MainWindow.start_work. Reject
+        # invalid invocation data before probing runtimes or acquiring weights.
+        validation = copy.deepcopy(self.settings)
+        if self.prepare_only:
+            validation.same_directory = True
+            validation.output_formats = ('rpp',)
+        validation.validate(self.catalog)
         seen = set()
         for stage in self._stages():
             checkpoint(self.cancel)
@@ -640,6 +647,7 @@ class PreferencesDialog(QDialog):
         self.nav.setFixedWidth(112)
         for key in ("general", "timing", "runtime", "advanced"):
             self.nav.addItem(tr[key])
+        self.nav.addItem("用語ヒント" if self.lang == "ja" else "Glossary")
         content.addWidget(self.nav)
 
         self.pages = QStackedWidget()
@@ -689,6 +697,21 @@ class PreferencesDialog(QDialog):
             self.timing_mode.addItem(jp if ja else en, key)
         self.timing_mode.setCurrentIndex(self.timing_mode.findData(owner.timing_settings.mode))
         timing_form.addRow('時刻の取得方法' if ja else 'Timestamp source', self.timing_mode)
+        self.speaker_source = QComboBox()
+        self.speaker_source.setObjectName('speakerSource')
+        for key, en, jp in [('auto', 'Automatic', '自動'),
+                            ('native', 'Native ASR speakers (experimental for 30B)', 'ASR内蔵話者（30Bは実験的）'),
+                            ('diarizer', 'Separate diarizer', '専用の話者推定'),
+                            ('none', 'No speaker labels', '話者ラベルなし')]:
+            self.speaker_source.addItem(jp if ja else en, key)
+        self.speaker_source.setCurrentIndex(self.speaker_source.findData(owner.timing_settings.speaker_source))
+        timing_form.addRow('話者ラベルの取得元' if ja else 'Speaker source', self.speaker_source)
+        speaker_note = QLabel(('30Bの内蔵話者推定は既定OFFです。明示的にASR内蔵話者を選んだ場合のみON。'
+                               '自動では有効な専用話者推定を使用します。') if ja else
+                              ('30B native speaker inference is OFF by default and requires explicit Native ASR speakers. '
+                               'Automatic uses an enabled separate diarizer.'))
+        speaker_note.setWordWrap(True)
+        timing_form.addRow(speaker_note)
         self.vad_maximum = QDoubleSpinBox()
         self.vad_maximum.setRange(2, 28)
         self.vad_maximum.setSuffix(' s')
@@ -780,6 +803,34 @@ class PreferencesDialog(QDialog):
         advanced_layout.addStretch()
         self.pages.addWidget(advanced)
 
+        glossary_page = QWidget()
+        glossary_layout = QVBoxLayout(glossary_page)
+        glossary_layout.setContentsMargins(10, 10, 10, 10)
+        description = QLabel(('UTF-8 TXT: 1行に1用語。任意でタブの後によみがな。'
+                              'ここに貼り付けるかTXTを読み込んでください。'
+                              '現在の実行に使用し、モデル定義や共通設定には保存しません。') if ja else
+                             ('UTF-8 TXT: one term per line, optionally followed by TAB and a kana reading. '
+                              'Paste here or import TXT. Used for this run, not saved in model definitions or global preferences.'))
+        description.setWordWrap(True)
+        glossary_layout.addWidget(description)
+        self.terms_edit = QPlainTextEdit(owner.terms_text)
+        self.terms_edit.setObjectName('termsText')
+        self.terms_edit.setTabChangesFocus(False)
+        self.terms_edit.setPlaceholderText('ASR2RPP\tえーえすあーるつーあーるぴーぴー\nNemotron')
+        glossary_layout.addWidget(self.terms_edit, 1)
+        self.terms_import = QPushButton('TXTを読み込む（置換）' if ja else 'Import TXT (replace)')
+        self.terms_import.setObjectName('importTerms')
+        self.terms_import.clicked.connect(self._import_terms)
+        glossary_layout.addWidget(self.terms_import)
+        model = owner.catalog.get(owner.asr.model.currentData())
+        from .glossary import capability_notice
+        message = capability_notice(model, self.lang) if model else ('モデルを選択してください。' if ja else 'Select a model.')
+        self.terms_notice = QLabel(message)
+        self.terms_notice.setObjectName('termsNotice')
+        self.terms_notice.setWordWrap(True)
+        glossary_layout.addWidget(self.terms_notice)
+        self.pages.addWidget(glossary_page)
+
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
@@ -790,6 +841,20 @@ class PreferencesDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _import_terms(self):
+        value, _ = QFileDialog.getOpenFileName(self,
+            '用語TXTを読み込む' if self.lang == 'ja' else 'Import glossary TXT', '',
+            'UTF-8 text (*.txt);;All files (*)')
+        if not value:
+            return
+        try:
+            from .glossary import read_terms_file
+            text = read_terms_file(Path(value))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, '用語ヒント' if self.lang == 'ja' else 'Glossary', str(exc))
+            return
+        self.terms_edit.setPlainText(text)
 
     def _path_row(self, edit):
         box = QWidget()
@@ -851,6 +916,7 @@ class MainWindow(QMainWindow):
         self.resize(1180, 760)
         self.setMinimumSize(920, 600)
 
+        self.terms_text = ''  # Invocation data, deliberately not a global preference.
         self.preferences = preferences if preferences is not None else QSettings("ASR2RPP", "ASR2RPP")
         # Migrate unavailable backend selections once; preserve explicit CPU/auto choices.
         if not self.preferences.value("runtime_defaults_v3", False, type=bool):
@@ -1377,6 +1443,7 @@ class MainWindow(QMainWindow):
             clip_duration=0.0,
             preprocess=preprocess,
             timing=self.timing_settings,
+            terms_text=self.terms_text,
             output_formats=self.output_formats.formats(),
             reference_audio=(self.preprocess.reference.currentData() or "original")
                 if preprocess else "original",
@@ -1578,7 +1645,9 @@ class MainWindow(QMainWindow):
             self.timing_settings = replace(self.timing_settings,
                 mode=dialog.timing_mode.currentData(), max_seconds=dialog.vad_maximum.value(),
                 threshold=dialog.vad_threshold.value(), min_silence_ms=dialog.vad_silence.value(),
-                segment_before_alignment=dialog.vad_presegment.isChecked())
+                segment_before_alignment=dialog.vad_presegment.isChecked(),
+                speaker_source=dialog.speaker_source.currentData())
+            self.terms_text = dialog.terms_edit.toPlainText()
             if self.timing_settings.mode in ('native', 'vad'):
                 self._alignment_previous = False
                 self.align.toggle.setChecked(False)

@@ -1,0 +1,133 @@
+schema_version = 2
+provider = "audio_cpp"
+task = "asr"
+family = "nemotron_transcribe"
+name = "Nemotron 3.5 Transcribe 30B-A4B · IQ4_NL (experimental)"
+sample_rate = 16000
+description = "実験的な30B ASR。話者推定は既定OFF。通常はVAD音声窓から文字起こしし、Qwen強制整列で独立時刻を取得します。ネイティブCTCには実機でゼロ長・時刻ずれを確認。約22.04GB、16GB GPUではexpert offload。"
+
+[capabilities]
+timestamps = "word"
+speakers = true
+
+[capabilities.glossary]
+version = 1
+adapter = "nemotron_instruct_v1"
+readings = "experimental"
+max_terms = 64
+max_utf8_bytes = 4096
+max_prompt_utf8_bytes = 8192
+
+[execution]
+mode = "offline"
+output = "custom"
+max_batch_items = 1
+text_batch_items = 16
+max_audio_seconds = 3600
+
+[source]
+repo = "Jmica/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF"
+revision = "304032f14e1e9e4042f5491d2d0194c044710bb7"
+entry = "nemotron-transcribe-30b-a4b-experts-IQ4_NL.gguf"
+files = ["nemotron-transcribe-30b-a4b-experts-IQ4_NL.gguf", "mmproj-NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-Encoder-F16.gguf"]
+
+[source.sha256]
+"nemotron-transcribe-30b-a4b-experts-IQ4_NL.gguf" = "81af0d93cd98e778fef906bb350220215396c3bfdf99d6240c0607eba51933ef"
+"mmproj-NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-Encoder-F16.gguf" = "4221029c8a565c4a80c507ffa760c716e595acf663f9f4273ce69910050e7ba2"
+
+[defaults]
+language = "ja"
+
+[defaults.request]
+return_timestamps = false
+diarization = false
+
+[defaults.session]
+moe_disk_experts = true
+weight_type = "native"
+moe_expert_cache_size = 8
+prefill_batch_size = 64
+
+[parameters.repetition_guard]
+type = "bool"
+default = false
+en = "Repetition guard"
+ja = "反復ガード"
+tip_en = "Stops detected token loops but may truncate legitimate repeated speech; partial results are marked."
+tip_ja = "反復ループを停止しますが正当な反復も切る可能性があります。不完全な結果として記録します。"
+
+[parameters."session.moe_disk_experts"]
+type = "bool"
+default = true
+en = "Stage expert weights from host"
+ja = "expert重みをホストから転送"
+tip_en = "Bounds routed-expert GPU storage, not total VRAM. Dense weights, encoder and activations remain on the backend."
+tip_ja = "GPUのexpert保存量を制限しますが総VRAM保証ではありません。dense重み・encoder・中間データはGPUに残ります。"
+
+[parameters."session.weight_type"]
+type = "enum"
+default = "native"
+values = ["native"]
+en = "Native mixed weight storage"
+ja = "元の混合量子化形式を維持"
+tip_en = "Required for expert staging. Avoid expanding mixed quantized weights to F16/F32."
+tip_ja = "expert転送に必須。混合量子化重みをF16/F32へ展開しません。"
+
+[parameters."session.moe_expert_cache_size"]
+type = "int"
+default = 8
+min = 6
+max = 128
+en = "Expert cache slots per layer"
+ja = "層ごとのexpert cache数"
+tip_en = "Six slots cover this checkpoint's six selected experts; eight is the native default. Larger caches consume additional VRAM."
+tip_ja = "このモデルでは6以上（既定8）。大きくするとVRAM消費量が増えます。"
+
+[parameters."session.moe_pin_experts"]
+type = "bool"
+default = false
+en = "Pin host expert banks"
+ja = "ホストexpertバンクを固定"
+tip_en = "Off by default; needs backend support and additional pinned host memory."
+tip_ja = "既定OFF。バックエンド対応とホストの固定メモリが必要です。"
+
+[parameters."session.moe_disk_expert_read_threads"]
+type = "int"
+default = 4
+min = 1
+max = 64
+en = "Expert staging workers"
+ja = "expert転送ワーカー数"
+tip_en = "Use 1 if the runtime has neither OpenMP nor Apple dispatch."
+tip_ja = "OpenMPもApple dispatchもないビルドでは1を指定。"
+
+[parameters."session.moe_cpu_expert_layers"]
+type = "int"
+default = 0
+min = 0
+max = 23
+en = "First MoE layers on CPU"
+ja = "先頭のMoE層をCPUで実行"
+tip_en = "Counts routed MoE layers, not dense-only backbone layers. May substantially reduce speed."
+tip_ja = "denseのみの層を除くMoE層数。速度が大幅に低下する場合があります。"
+
+[parameters."session.moe_cpu_share"]
+type = "float"
+default = 0.0
+min = 0.0
+max = 1.0
+step = 0.1
+en = "CPU share of staged misses"
+ja = "cache missのCPU分担率"
+tip_en = "Requires expert staging; CPU-selected layers take precedence."
+tip_ja = "expert転送が必要。CPUに指定した層が優先されます。"
+
+[parameters."session.prefill_batch_size"]
+type = "int"
+default = 64
+min = 1
+max = 2048
+en = "Prefill rows per graph"
+ja = "prefill graphごとの行数"
+tip_en = "Larger batches amortize transfers but consume more activation memory. Keep 64 until hardware validation."
+tip_ja = "大きいほど転送効率が向上しますが中間メモリが増えます。実機確認前は64を維持。"

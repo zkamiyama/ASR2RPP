@@ -129,7 +129,7 @@ class Model:
             raise ValueError('capabilities must be a table')
         if self.capabilities.get('timestamps', 'segment') not in {'none', 'token', 'word', 'segment'}:
             raise ValueError('capabilities.timestamps must be none, token, word or segment')
-        if set(self.capabilities) - {'timestamps', 'speakers'}:
+        if set(self.capabilities) - {'timestamps', 'speakers', 'glossary'}:
             raise ValueError('Unknown model capability')
         if 'speakers' in self.capabilities and type(self.capabilities['speakers']) is not bool:
             raise ValueError('capabilities.speakers must be boolean')
