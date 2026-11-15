@@ -1,26 +1,17 @@
-## ASR2RPP 0.3.0
+## ASR2RPP 0.4.0
 
-ローカルの音声・動画から、RPP・OpenTimelineIO・再利用可能なJSONを作成します。WindowsはVulkan、Apple SiliconはMetal。CPUも利用できます。
+### 新機能
 
-### 試し方
+- モデル一覧に **NVIDIA Nemotron 3.5 Transcribe 30B-A4B（IQ4_NL）** を追加しました。従来のNemotron ASRや独立したNemotron話者分離モデルとは別です。初回のモデル取得は約22 GBです。
+- 対応するモデルに用語ヒントを渡せます。GUIの **Settings → Glossary**、またはCLIの `--terms-file terms.txt` から指定します。UTF-8で1行1語。30B-A4Bの日本語では「表記」と「読み」をタブで区切って指定できます。読みは実験的なヒントで、正しい表記を保証しません。少数の関連語に絞ってお試しください。
+- 30B-A4B内蔵の話者推定は **初期状態でオフ** です。編集用の細かい時刻にはQwen Forced Aligner、話者ラベルには独立したNemotron Diarizationを推奨します。アライナーなしではVAD区間単位の粗い時刻になります。内蔵の時刻・話者推定を明示的に選ぶと、不正な区間を検出して書き出しを止めることがあります。
 
-OSに合う一式ZIPを新しいフォルダーへ全展開し、ASR2RPP.exe / ASR2RPP.appを起動してください。`examples/sample.wav`をドラッグし、Whisper Base・言語en・追加工程OFF・時刻付与「自動」でGO。初回は選択モデルと未導入のFFmpegを取得するため、ネット接続が必要です。Pythonや開発用SDKの手動導入は不要です。
+### インストールと検証範囲
 
-初期ASRは **Anime Whisper／ja**（GUI・CLI共通）。保存済みの選択は変更しません。同梱の英語サンプルにはWhisper Base／enを明示的に選んでください。
+OSに合うZIPを新しいフォルダーに全展開し、ASR2RPP.exe / ASR2RPP.appを起動します。既定のASRは従来どおりAnime Whisper／jaです。モデルの重みと未導入のFFmpegは初回に別途取得します。音声は書き出しに埋め込まず参照するため、素材ファイルは同じ場所に置いてください。
 
-### 主な変更
+Windows x64（AVX2・Vulkan）とApple Silicon（macOS 14以降・Metal）向けです。Windows版は未署名、macOS版はad-hoc署名・未公証です。
 
-- 出力チップでRPP / OTIO / JSONを追加・削除。初期値RPP、未選択なら実行拒否。
-- ORIGINAL全長ミュート、話者別トラック、無音区間、重複発話レーンを共通タイムラインから出力。
-- JSONには生の結果・補正履歴・詳細区間・設定・モデル来歴・音源参照を収録。CLI `convert`で推論せず再変換可能。
-- 20種類の代表モデルTOML、設定画面でのVAD／強制アライメント、CPU版ReazonSpeechを同梱。
-- 新しいオリジナルSVG／EXEアイコン。READMEと依存関係・カスタマイズガイドを整理。
-- CUDA・CTranslate2・faster-whisperは配布に含めません。モデル重みとFFmpegも初回の別取得です。
+公開には、両OSの候補ZIPと、Windowsの物理RTX 4080実機で全21モデルおよび3形式出力を検証した記録が必要です。現時点の30B-A4B実音声確認はWSL/CUDAのソース実行で、60.2秒の日本語会話に独立した時刻・話者ラベルを付与したものです。配布Windows/Vulkan版の合格を意味しません。用語ヒントは改善が保証されず、今回も用語に寄せすぎた言い換えがありました。30分の日本語音声での認識精度・処理時間、macOS実機での30B-A4B動作は未確認です。公開時のZIPのハッシュとWindows事後検証記録は、リリースに添付する `SHA256SUMS.txt` と `VALIDATION-Windows.json` で確認してください。
 
-Windows: x64 / AVX2対応CPU。Mac: Apple Silicon / macOS 14以降、Intel非対応。Windowsは未署名、Macはad-hoc署名・未公証です。
-
-OTIOのミュート指定を反映するかは受け側の編集ソフトにも依存します。音声は埋め込まず参照します。JSONと診断フォルダーは本文や個人のパスを含むため、共有前に確認してください。
-
-公開はWindows実機の全20ケースと3形式出力、両OSのCI成果物を検証した後に行います。機能検証は認識品質・全長尺音声の保証ではありません。Mac CIの仮想GPUではQwen3-ASRのMetal行列演算機能が不足する場合、そのケースは未検証として明示します。
-
-English: Extract the complete ZIP, launch the app, drop `examples/sample.wav`, select Whisper Base and language en, then GO. First use requires internet for weights and missing FFmpeg. RPP is the default; add OTIO/JSON with the format chips. JSON can be re-exported without inference. Media is referenced, not embedded. See the included English/Japanese README, licenses and validation assets.
+English: Adds Nemotron 3.5 Transcribe 30B-A4B (IQ4_NL), UTF-8 glossary hints, and optional Japanese readings for Nemotron. Built-in speaker labeling is experimental and off by default. Use the separate forced aligner and diarizer for edit timestamps and speaker labels. Extract the complete ZIP before launching; model files are downloaded separately.
