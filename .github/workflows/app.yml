@@ -1,7 +1,7 @@
 name: ASR2RPP application
 on:
   push:
-    branches: [main, feat/provider-timing-runtime, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance, fix/restart-catalog]
+    branches: [main, feat/provider-timing-runtime, feat/queue-gui, feat/vad-region-timestamps, feat/pipeline-performance, fix/restart-catalog, ci/linux-audio-cpp-smoke]
     paths: ['asr2rpp/**', 'native/**', 'rpp_writer.py', 'models/**', 'assets/**', 'tests/**', 'tools/**', 'THIRD_PARTY.md', 'README.md', 'README.ja.md', '.gitattributes', 'docs/**', '*.py', 'pyproject.toml', '.github/workflows/app.yml', 'ci-trigger.txt']
   pull_request:
   workflow_dispatch:
@@ -179,9 +179,9 @@ jobs:
           retention-days: 7
   linux-native:
     needs: test
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[build]') || contains(github.event.head_commit.message, '[linux-build]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       ASR2RPP_HOME: ${{ github.workspace }}/build/runtime-home
     steps:
@@ -193,13 +193,27 @@ jobs:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng
       - run: python -m pip install .
-      - run: python tools/build_native.py whisper_cpp
-      - run: python -m asr2rpp.cli models install whisper-base
+      - uses: actions/cache@v4
+        id: native
+        with:
+          path: |
+            engines/whisper_cpp-cpu/
+            engines/audio_cpp-cpu/
+          key: linux-native-cpu-v1-${{ hashFiles('tools/build_native.py', 'native/**') }}
+          restore-keys: linux-native-cpu-v1-
+      - run: python tools/build_native.py whisper_cpp audio_cpp
+        env:
+          ASR2RPP_REUSE_VERIFIED_NATIVE: '1'
+      - run: python -m asr2rpp.cli models install whisper-base qwen-forced-aligner nemotron-diarization mel-big-beta7
       - run: |
           mkdir -p reports
           espeak-ng -v en-us -w reports/synthetic.wav 'This is a short test of the audio conversion application.'
           python -m asr2rpp.cli run reports/synthetic.wav --asr whisper-base --asr-device cpu --asr-language en --format rpp,otio,json --output-dir reports/output
           python -c "import pathlib; assert list(pathlib.Path('reports/output').glob('*.rpp'))"
+      - name: Linux audio.cpp stages smoke (align + diarization + separation)
+        run: |
+          python -m asr2rpp.cli run reports/synthetic.wav --asr whisper-base --asr-device cpu --asr-language en --align qwen-forced-aligner --align-device cpu --diar nemotron-diarization --diar-device cpu --preprocess mel-big-beta7 --preprocess-device cpu --timing alignment --vad-before-alignment --reference-audio processed --format rpp,otio,json --output-dir reports/stage-output
+          python -c "import pathlib; d=pathlib.Path('reports/stage-output'); assert list(d.glob('*.rpp')), 'missing rpp'; assert list(d.glob('*.json')), 'missing json'; assert list(d.glob('*_vocals.wav')), 'missing vocals wav'"
       - name: Stage-major two-file native Whisper smoke
         shell: python
         run: |
@@ -229,6 +243,7 @@ jobs:
           name: linux-local-validation-kit-${{ github.run_id }}
           path: |
             engines/whisper_cpp-cpu/
+            engines/audio_cpp-cpu/
             build/runtime-home/weights/whisper-base/
           retention-days: 3
           compression-level: 1
